@@ -226,6 +226,44 @@ class LLMAdapterTest(unittest.TestCase):
         body = json.loads(requests[0][0].data.decode("utf-8"))
         self.assertIn("score", body["messages"][1]["content"])
 
+    def test_openai_compatible_http_client_scores_scheduling_state_with_visible_features_only(self) -> None:
+        requests = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "choices": [{"message": {"content": '{"score":0.25}'}}],
+                        "usage": {"prompt_tokens": 19, "completion_tokens": 3},
+                    }
+                ).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            requests.append((request, timeout))
+            return FakeResponse()
+
+        task = generate_scheduling_fixture(random.Random(26), "sched-score", job_count=4, machine_count=2)
+        client = OpenAICompatibleHTTPClient(
+            base_url="https://llm.example/v1",
+            api_key="secret-key",
+            model="test-model",
+            urlopen=fake_urlopen,
+        )
+        response = client.score_state(task=task, node=task.root_node(), model="test-model")
+        self.assertEqual(response["score"], 0.25)
+        self.assertEqual(response["input_tokens"], 19)
+        body = json.loads(requests[0][0].data.decode("utf-8"))
+        prompt = json.loads(body["messages"][1]["content"])
+        self.assertEqual(prompt["task"], "precedence_constrained_scheduling_state_value")
+        self.assertIn("eligible_jobs", prompt)
+        self.assertNotIn("best_descendant_objective", prompt)
+
     def test_openai_compatible_http_client_retries_timeout(self) -> None:
         calls = {"count": 0}
 

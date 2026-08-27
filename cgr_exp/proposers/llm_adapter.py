@@ -154,24 +154,16 @@ class OpenAICompatibleHTTPClient:
         }
 
     def score_state(self, *args, **kwargs):
+        task = kwargs.get("task")
         node = kwargs.get("node")
         model = kwargs.get("model") or self.model
         started = time.perf_counter()
+        prompt = self._prompt_for_state_score(task, node)
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "Score Game24 search states for Tree-of-Thought style value guidance. Return only JSON."},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "instruction": "Return a JSON object with score in [0, 1]. Higher means this state is more promising for reaching 24.",
-                            "response_schema": {"score": "number between 0 and 1"},
-                            "node": _safe_jsonable(node),
-                        },
-                        sort_keys=True,
-                    ),
-                },
+                {"role": "system", "content": "Score search frontier states for Tree-of-Thought style value guidance. Return only JSON."},
+                {"role": "user", "content": prompt},
             ],
             "temperature": 0.0,
             "top_p": 1.0,
@@ -198,6 +190,49 @@ class OpenAICompatibleHTTPClient:
             "latency": time.perf_counter() - started,
             "raw_output": content,
         }
+
+    def _prompt_for_state_score(self, task, node) -> str:
+        if isinstance(task, SchedulingTask) and hasattr(node, "structured_state"):
+            scheduled = tuple(node.structured_state.get("scheduled", []))
+            return json.dumps(
+                {
+                    "task": "precedence_constrained_scheduling_state_value",
+                    "task_id": task.task_id,
+                    "node_id": getattr(node, "node_id", None),
+                    "instruction": (
+                        "Return a JSON object with score in [0, 1]. Higher means this partial schedule is more promising "
+                        "for finding an optimal or near-optimal complete schedule within the remaining search budget. "
+                        "Use only the visible scheduling data and current partial schedule; do not invent hidden oracle labels."
+                    ),
+                    "response_schema": {"score": "number between 0 and 1"},
+                    "jobs": {
+                        job: {
+                            "duration": task.durations[job],
+                            "release_time": task.release_times[job],
+                            "due_date": task.due_dates[job],
+                            "allowed_machines": list(task.allowed[job]),
+                            "predecessors": list(task.predecessors.get(job, ())),
+                        }
+                        for job in task.durations
+                    },
+                    "machines": list(task.machines),
+                    "partial_schedule": list(scheduled),
+                    "machine_loads": node.structured_state.get("machine_loads", {}),
+                    "eligible_jobs": task.ready_jobs(scheduled),
+                    "depth": getattr(node, "depth", 0),
+                    "lower_bound": getattr(node, "lower_bound", None),
+                    "incumbent_at_creation": getattr(node, "incumbent_at_creation", None),
+                },
+                sort_keys=True,
+            )
+        return json.dumps(
+            {
+                "instruction": "Return a JSON object with score in [0, 1]. Higher means this state is more promising for reaching the task goal.",
+                "response_schema": {"score": "number between 0 and 1"},
+                "node": _safe_jsonable(node),
+            },
+            sort_keys=True,
+        )
 
     def _post_json(self, req):
         last_error = None

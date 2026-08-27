@@ -242,6 +242,26 @@ class SimulatedLLMValuePolicy:
         return -lower + 0.02 * float(node.depth) - 0.001 * branch + noise
 
 
+class RealLLMValuePolicy:
+    name = "real_llm_value"
+
+    def __init__(self, task: SchedulingTask, client, model: str):
+        self.task = task
+        self.client = client
+        self.model = model
+        self.cost = CostLedger()
+
+    def score(self, node: SearchNode) -> float:
+        response = self.client.score_state(task=self.task, node=node, model=self.model)
+        self.cost = self.cost + CostLedger(
+            evaluation_calls=1,
+            input_tokens=int(response.get("input_tokens", 0)),
+            output_tokens=int(response.get("output_tokens", 0)),
+            wall_clock_seconds=float(response.get("latency", 0.0)),
+        )
+        return float(response.get("score", 0.0))
+
+
 def make_level2_scheduling_episodes(tasks: Sequence[SchedulingTask], seed: int = 0, perturbation: str = "mixed") -> List[Level2SchedulingEpisode]:
     rng = random.Random(seed)
     episodes = []
@@ -456,6 +476,7 @@ def run_scheduling_llm_pilot_from_env(
     batch_size: int = 1,
     parallel_episodes: int = 1,
     resume: bool = False,
+    include_gpt_value: bool = False,
 ) -> Dict[str, object]:
     client = OpenAICompatibleHTTPClient.from_env()
     client.timeout = timeout
@@ -477,6 +498,7 @@ def run_scheduling_llm_pilot_from_env(
         batch_size=batch_size,
         parallel_episodes=parallel_episodes,
         resume=resume,
+        include_gpt_value=include_gpt_value,
     )
 
 
@@ -494,6 +516,7 @@ def preflight_scheduling_llm_pilot(
     batch_size: int = 1,
     parallel_episodes: int = 1,
     perturbation: str = "mixed",
+    include_gpt_value: bool = False,
     env=None,
 ) -> Dict[str, object]:
     source = os.environ if env is None else env
@@ -504,7 +527,10 @@ def preflight_scheduling_llm_pilot(
     completed_counts: Dict[str, int] = {}
     for row in existing_rows:
         completed_counts[str(row.get("rendering_id"))] = completed_counts.get(str(row.get("rendering_id")), 0) + 1
-    method_count = 4
+    policy_names = ["Random", "Hand heuristic", "Solver-trained MLP", "Oracle"]
+    if include_gpt_value:
+        policy_names.insert(2, "GPT-value / ToT-style")
+    method_count = len(policy_names)
     completed_renderings = {rendering_id for rendering_id, count in completed_counts.items() if count >= method_count}
     remaining = [episode for episode in episodes if episode.rendering_id not in completed_renderings]
     avg_prompt_tokens = _mean(_estimate_prompt_tokens(episode.text) for episode in episodes)
@@ -527,8 +553,10 @@ def preflight_scheduling_llm_pilot(
         "node_budget": node_budget,
         "action_budget": action_budget,
         "method_count": method_count,
-        "policy_names": ["Random", "Hand heuristic", "Solver-trained MLP", "Oracle"],
+        "policy_names": policy_names,
+        "include_gpt_value": include_gpt_value,
         "worst_case_request_count_upper_bound": worst_case_proposal_calls,
+        "worst_case_value_request_count_upper_bound": len(remaining) * node_budget if include_gpt_value else 0,
         "estimated_prompt_tokens_per_request": avg_prompt_tokens,
         "estimated_prompt_tokens_upper_bound": int(worst_case_proposal_calls * avg_prompt_tokens),
         "resume_safe": True,
@@ -557,6 +585,7 @@ def run_scheduling_llm_pilot(
     batch_size: int = 1,
     parallel_episodes: int = 1,
     resume: bool = False,
+    include_gpt_value: bool = False,
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     instances = generate_scheduling_micro_instances(train_count, validation_count, test_count, seed, job_count, machine_count)
@@ -581,6 +610,11 @@ def run_scheduling_llm_pilot(
         ranking_records=source_test_records,
     )
     episodes = make_level2_scheduling_episodes(instances["test"], seed=seed + 7000, perturbation=perturbation)
+    policy_names = ["Random", "Hand heuristic", "Solver-trained MLP", "Oracle"]
+    value_policy_factory = None
+    if include_gpt_value:
+        policy_names.insert(2, "GPT-value / ToT-style")
+        value_policy_factory = lambda episode, idx: RealLLMValuePolicy(episode.hidden_task, client, model)
     table_rows, per_instance_rows, proposal_cache_rows, proposal_state_rows = _evaluate_level2_transfer(
         episodes,
         ranker,
@@ -588,9 +622,10 @@ def run_scheduling_llm_pilot(
         action_budget,
         seed,
         useful_action_recall=1.0,
-        policy_names=("Random", "Hand heuristic", "Solver-trained MLP", "Oracle"),
+        policy_names=tuple(policy_names),
         proposal_adapter_factory=lambda: RealLLMProposerAdapter(client=client, model=model, prompt_template_version="scheduling-level2-v1", temperature=0.0, top_p=1.0),
         proposal_model=model,
+        real_value_policy_factory=value_policy_factory,
         checkpoint_dir=out_dir,
         output_prefix="scheduling_llm_pilot",
         batch_size=batch_size,
@@ -612,6 +647,7 @@ def run_scheduling_llm_pilot(
         "batch_size": batch_size,
         "parallel_episodes": max(1, int(parallel_episodes)),
         "resume": resume,
+        "include_gpt_value": include_gpt_value,
         "model": model,
         "live_network_required": not isinstance(client, ScriptedSchedulingClient),
         "training_source": "level1_solver_traces_only",
@@ -676,8 +712,19 @@ class ScriptedSchedulingClient:
         }
 
     def score_state(self, *args, **kwargs):
-        del args, kwargs
-        raise RuntimeError("scheduling pilot does not use LLM state scoring")
+        del args
+        task = kwargs["task"]
+        node = kwargs["node"]
+        scheduled = tuple(node.structured_state.get("scheduled", []))
+        remaining = len(task.durations) - len(scheduled)
+        score = 1.0 / max(1, remaining)
+        return {
+            "score": score,
+            "input_tokens": self.input_tokens,
+            "output_tokens": max(1, self.output_tokens // 4),
+            "latency": 0.0,
+            "raw_output": json.dumps({"score": score}),
+        }
 
 
 def run_scheduling_fewshot_curve(
@@ -885,6 +932,7 @@ def _evaluate_level2_transfer(
     parallel_episodes: int = 1,
     resume: bool = False,
     progress_label: str | None = None,
+    real_value_policy_factory=None,
 ) -> tuple[List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]]]:
     all_policies = {
         "Random": lambda episode, idx: RandomPolicy(seed + idx),
@@ -893,6 +941,8 @@ def _evaluate_level2_transfer(
         "Solver-trained MLP": lambda episode, idx: SchedulingMLPPolicy(episode.hidden_task, ranker),
         "Oracle": lambda episode, idx: CachedSchedulingOraclePolicy(episode.hidden_task),
     }
+    if real_value_policy_factory is not None:
+        all_policies["GPT-value / ToT-style"] = real_value_policy_factory
     selected_names = tuple(policy_names) if policy_names is not None else tuple(all_policies)
     policies = {name: all_policies[name] for name in selected_names}
     by_policy: Dict[str, List[Dict[str, object]]] = {name: [] for name in policies}
@@ -1015,7 +1065,7 @@ def _evaluate_one_level2_episode(
         )
         if name == "Oracle":
             oracle_success = result.best_objective == result.optimum
-        value_cost = policy.cost if isinstance(policy, SimulatedLLMValuePolicy) else CostLedger()
+        value_cost = policy.cost if isinstance(policy, (SimulatedLLMValuePolicy, RealLLMValuePolicy)) else CostLedger()
         episode_rows.append(
             {
                 "Policy": name,

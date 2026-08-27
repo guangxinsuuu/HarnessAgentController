@@ -416,6 +416,34 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertEqual(preflight["parallel_episodes"], 3)
             self.assertTrue((root / "scheduling_llm_pilot_preflight.json").exists())
 
+    def test_scheduling_llm_pilot_can_include_gpt_value_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            metrics = run_scheduling_llm_pilot(
+                Path(tmp),
+                client=ScriptedSchedulingClient(model="mock-scheduling"),
+                model="mock-scheduling",
+                seed=27,
+                train_count=8,
+                validation_count=3,
+                test_count=3,
+                job_count=5,
+                machine_count=2,
+                node_budget=50,
+                action_budget=5,
+                records_per_instance=10,
+                rank_epochs=4,
+                perturbation="canonical",
+                batch_size=1,
+                include_gpt_value=True,
+            )
+            self.assertIn("GPT-value / ToT-style", metrics["methods"])
+            value_row = metrics["methods"]["GPT-value / ToT-style"]
+            self.assertGreater(value_row["value_calls"], 0)
+            self.assertGreater(value_row["value_tokens"], 0)
+            self.assertGreater(value_row["total_tokens"], value_row["proposal_tokens"])
+            saved = (Path(tmp) / "scheduling_llm_pilot_table.csv").read_text(encoding="utf-8")
+            self.assertIn("GPT-value / ToT-style", saved)
+
     def test_fewshot_curve_writes_regime_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             metrics = run_scheduling_fewshot_curve(

@@ -1,0 +1,45 @@
+{
+  "seed": 13,
+  "dataset": {
+    "level": 2,
+    "family": "assignment",
+    "train_instances": 200,
+    "val_instances": 50,
+    "test_instances": 100,
+    "ood_mode": "paraphrase"
+  },
+  "proposer": {
+    "type": "simulator",
+    "k": 8,
+    "useful_action_recall": 0.8,
+    "invalid_action_prob": 0.05,
+    "duplicate_prob": 0.05
+  },
+  "verification": {
+    "false_negative_rate": 0.0,
+    "false_positive_rate": 0.0,
+    "uncertain_noise_rate": 0.0
+  },
+  "search": {
+    "policy": "cgr",
+    "node_budget": 500,
+    "proposal_call_budget": 500
+  },
+  "training": {
+    "regime": "solver_zero_shot",
+    "target_adaptation_trajectories": 0
+  },
+  "graph": {
+    "parent_child": false,
+    "sibling_failure": false,
+    "shared_constraint": false,
+    "equivalent_state": false,
+    "tool_observation": false
+  },
+  "memory": {
+    "enabled": false,
+    "top_r": 0,
+    "frozen_at_test": true
+  }
+}
+

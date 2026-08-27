@@ -1,0 +1,10 @@
+[project]
+name = "cgr-exp"
+version = "0.1.0"
+description = "Certified Graph-Guided Reasoning research experiments"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["cgr_exp*"]
+

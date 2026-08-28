@@ -274,6 +274,10 @@ class Table5Q2Test(unittest.TestCase):
                         "wall_clock_seconds": 10,
                         "status": "complete",
                         "source_policy": "native",
+                        "native_runtime_sample_count": 1,
+                        "native_runtime_selection_events": 1,
+                        "native_runtime_valid_samples": 1,
+                        "native_runtime_parse_failures": 0,
                     }
                 ),
                 encoding="utf-8",
@@ -318,6 +322,10 @@ class Table5Q2Test(unittest.TestCase):
                         "wall_clock_seconds": 10,
                         "status": "complete",
                         "source_policy": "native",
+                        "native_runtime_sample_count": 1,
+                        "native_runtime_selection_events": 1,
+                        "native_runtime_valid_samples": 1,
+                        "native_runtime_parse_failures": 0,
                     }
                 ),
                 encoding="utf-8",
@@ -332,6 +340,38 @@ class Table5Q2Test(unittest.TestCase):
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
             self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "True")
             self.assertNotIn("scheduling_native_q2_samples.jsonl", audit_rows["Direct / CoT"]["result_blockers"])
+
+    def test_readiness_audit_rejects_native_without_runtime_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Direct / CoT",
+                        "success": 0.45,
+                        "gap": 0.2,
+                        "llm_calls": 1,
+                        "tokens": 1000,
+                        "wall_clock_seconds": 10,
+                        "status": "complete",
+                        "source_policy": "native",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_samples.jsonl").write_text(
+                json.dumps({"Method": "Direct / CoT", "task_id": "t0"}) + "\n",
+                encoding="utf-8",
+            )
+            _write_native_manifest(native, ["Direct / CoT"], test_count=1)
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", direct_dir=native, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
+            self.assertIn("must record native runtime samples", audit_rows["Direct / CoT"]["result_blockers"])
+            self.assertIn("must record one native selection event per task", audit_rows["Direct / CoT"]["result_blockers"])
 
     def test_readiness_audit_rejects_native_samples_with_partial_task_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

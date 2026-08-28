@@ -380,6 +380,9 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 invalid.append(f"scheduling_native_q2_manifest.json missing Q2 method alignment for {method}")
             else:
                 invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_native_q2_manifest.json"))
+            native_table_rows = _read_csv(source_dir / "scheduling_native_q2_table.csv")
+            native_table_row = next((item for item in native_table_rows if str(item.get("Method")) == method), row)
+            invalid.extend(_native_runtime_count_blockers(method, native_table_row, methods.get(method, {}) if isinstance(methods, Mapping) else {}, row))
         sample_path = source_dir / "scheduling_native_q2_samples.jsonl"
         if sample_path.exists() and sample_path.stat().st_size > 0:
             samples, error = _read_jsonl_for_audit(sample_path)
@@ -630,6 +633,33 @@ def _native_sample_count_blockers(
     return []
 
 
+def _native_runtime_count_blockers(
+    method: str,
+    table_row: Mapping[str, object],
+    method_protocol: object,
+    readiness_row: Mapping[str, object],
+) -> List[str]:
+    if not isinstance(method_protocol, Mapping):
+        return []
+    expected_tasks = _expected_count_from_row(readiness_row)
+    if expected_tasks is None:
+        return []
+    declared = int(max(0, _as_float(method_protocol.get("sample_count"))))
+    expected_samples = expected_tasks if method == "Direct / CoT" else expected_tasks * declared
+    observed_samples = int(max(0, _as_float(table_row.get("native_runtime_sample_count", table_row.get("total_samples")))))
+    observed_selections = int(max(0, _as_float(table_row.get("native_runtime_selection_events"))))
+    invalid = []
+    if observed_samples < expected_samples:
+        invalid.append(f"{method} table row must record native runtime samples: {observed_samples}/{expected_samples}")
+    if observed_selections < expected_tasks:
+        invalid.append(f"{method} table row must record one native selection event per task: {observed_selections}/{expected_tasks}")
+    if method == "Best-of-N":
+        valid_samples = int(max(0, _as_float(table_row.get("native_runtime_valid_samples", table_row.get("valid_samples")))))
+        if valid_samples <= 0:
+            invalid.append("Best-of-N table row must record verifier-observed valid samples")
+    return invalid
+
+
 def _tot_trace_protocol_blockers(trace: List[Mapping[str, object]]) -> List[str]:
     events = {str(event.get("event")) for event in trace}
     invalid = []
@@ -827,6 +857,9 @@ def _row_from_native_artifacts(method: str, transfer_setting: str, source_dir: P
     }
     if method == "Tree of Thoughts":
         for key in ("tot_generate_events", "tot_evaluate_events", "tot_select_events", "tot_value_sample_count"):
+            row[key] = data.get(key, "")
+    if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
+        for key in ("native_runtime_sample_count", "native_runtime_selection_events", "native_runtime_valid_samples", "native_runtime_parse_failures", "total_samples", "valid_samples"):
             row[key] = data.get(key, "")
     return row
 

@@ -39,6 +39,7 @@ class Table5Q2Test(unittest.TestCase):
             _write_csv(solver / "timing_metrics.csv", [{"component": "proposal_cache", "wall_clock_seconds": "3600", "call_count": "1"}])
             (solver / "scheduling_llm_pilot_ranker.json").write_text("{}", encoding="utf-8")
             _write_learned_metrics(solver, ["Solver-trained priority"], ["Solver-trained MLP"])
+            _write_solver_audit_artifacts(solver, train_ids=["train-0"], validation_ids=["validation-0"], test_ids=[f"t{i}" for i in range(100)])
 
             gpt = root / "gpt"
             gpt.mkdir()
@@ -821,6 +822,7 @@ class Table5Q2Test(unittest.TestCase):
             )
             (solver / "scheduling_llm_pilot_ranker.json").write_text("{}", encoding="utf-8")
             _write_learned_metrics(solver, ["Solver-trained priority"], ["Solver-trained MLP"])
+            _write_solver_audit_artifacts(solver, train_ids=["train-0"], validation_ids=["validation-0"], test_ids=[f"t{i}" for i in range(100)])
             out = root / "out"
             manifest = audit_table5_q2_readiness(out, solver_prior_dir=solver, expected_test_count=100)
             readiness = manifest["readiness"]
@@ -1111,6 +1113,39 @@ class Table5Q2Test(unittest.TestCase):
             self.assertIn("Solver-trained MLP protocol must declare zero-shot transfer", audit_rows["Solver-trained priority"]["result_blockers"])
             self.assertIn("source-only solver training", audit_rows["Solver-trained priority"]["result_blockers"])
 
+    def test_readiness_audit_rejects_solver_prior_train_test_overlap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solver = root / "solver"
+            solver.mkdir()
+            _write_solver_table_artifacts(solver, "Solver-trained MLP", ["heldout-0"])
+            _write_learned_metrics(solver, ["Solver-trained priority"], ["Solver-trained MLP"])
+            _write_solver_audit_artifacts(solver, train_ids=["heldout-0"], validation_ids=[], test_ids=["heldout-0"])
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=solver, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Solver-trained priority"]["result_ready"], "False")
+            self.assertIn("train/test overlap", audit_rows["Solver-trained priority"]["result_blockers"])
+            self.assertIn("training_instance_ids overlap held-out test", audit_rows["Solver-trained priority"]["result_blockers"])
+
+    def test_readiness_audit_rejects_solver_prior_feature_schema_leakage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solver = root / "solver"
+            solver.mkdir()
+            _write_solver_table_artifacts(solver, "Solver-trained MLP", ["heldout-0"])
+            _write_learned_metrics(solver, ["Solver-trained priority"], ["Solver-trained MLP"])
+            _write_solver_audit_artifacts(solver, train_ids=["train-0"], validation_ids=[], test_ids=["heldout-0"])
+            (solver / "feature_schema.json").write_text(
+                json.dumps({"oracle_labels_in_inference_features": True}),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=solver, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Solver-trained priority"]["result_ready"], "False")
+            self.assertIn("feature_schema.json must exclude oracle labels", audit_rows["Solver-trained priority"]["result_blockers"])
+
 
 def _write_csv(path: Path, rows) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -1198,3 +1233,48 @@ def _write_learned_metrics(path: Path, methods: list[str], policies: list[str]) 
         ),
         encoding="utf-8",
     )
+
+
+def _write_solver_table_artifacts(path: Path, policy: str, task_ids: list[str]) -> None:
+    (path / "scheduling_llm_pilot_ranker.json").write_text("{}", encoding="utf-8")
+    _write_csv(
+        path / "scheduling_llm_pilot_table.csv",
+        [
+            {
+                "Policy": policy,
+                "success": "0.89",
+                "gap": "0.02",
+                "nodes_mean": "80",
+                "proposal_calls_mean": "80",
+                "value_calls": "0",
+                "proposal_tokens": "1000",
+                "value_tokens": "0",
+                "total_tokens": "1000",
+                "on_demand_total_tokens": "1000",
+            }
+        ],
+    )
+    _write_csv(path / "scheduling_llm_pilot_per_instance.csv", [{"Policy": policy, "task_id": task_id} for task_id in task_ids])
+
+
+def _write_solver_audit_artifacts(path: Path, train_ids: list[str], validation_ids: list[str], test_ids: list[str]) -> None:
+    feature_schema = {
+        "schema_version": "test",
+        "oracle_labels_in_inference_features": False,
+    }
+    (path / "split_manifest.json").write_text(
+        json.dumps({"train": train_ids, "validation": validation_ids, "test": test_ids}),
+        encoding="utf-8",
+    )
+    (path / "checkpoint_metadata.json").write_text(
+        json.dumps(
+            {
+                "source_training_split": "train",
+                "training_instance_ids": train_ids,
+                "validation_instance_ids": validation_ids,
+                "feature_schema_hash_sha256": "test",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (path / "feature_schema.json").write_text(json.dumps(feature_schema), encoding="utf-8")

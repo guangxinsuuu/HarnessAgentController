@@ -297,8 +297,20 @@ def _missing_required_artifacts(row: Mapping[str, object]) -> List[str]:
             "target_prm_trace_records.jsonl",
             "target_prm_train_pairs.jsonl",
         ],
-        "Solver-trained priority": ["scheduling_llm_pilot_metrics.json", "scheduling_llm_pilot_ranker.json"],
-        "Solver-trained priority + certified pruning": ["scheduling_llm_pilot_metrics.json", "scheduling_llm_pilot_ranker.json"],
+        "Solver-trained priority": [
+            "scheduling_llm_pilot_metrics.json",
+            "scheduling_llm_pilot_ranker.json",
+            "split_manifest.json",
+            "checkpoint_metadata.json",
+            "feature_schema.json",
+        ],
+        "Solver-trained priority + certified pruning": [
+            "scheduling_llm_pilot_metrics.json",
+            "scheduling_llm_pilot_ranker.json",
+            "split_manifest.json",
+            "checkpoint_metadata.json",
+            "feature_schema.json",
+        ],
     }
     missing = []
     for filename in required_by_method.get(method, []):
@@ -438,6 +450,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
         if overlap:
             invalid.append("target_prm_trace_records.jsonl overlaps held-out evaluation tasks: " + ", ".join(overlap[:5]))
     if method in {"Solver-trained priority", "Solver-trained priority + certified pruning"}:
+        invalid.extend(_solver_prior_audit_blockers(source_dir))
         learned_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_llm_pilot_metrics.json")
         if manifest_error:
             invalid.append(f"scheduling_llm_pilot_metrics.json {manifest_error}")
@@ -475,6 +488,37 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                     if str(cert_protocol.get("pruning_authority")) != "verified lower-bound/feasibility logic only":
                         invalid.append("certified pruning protocol must declare verified pruning authority")
     return invalid
+
+
+def _solver_prior_audit_blockers(source_dir: Path) -> List[str]:
+    blockers: List[str] = []
+    split_manifest, split_error = _read_json_manifest_for_audit(source_dir / "split_manifest.json")
+    if split_error:
+        blockers.append(f"split_manifest.json {split_error}")
+    if split_manifest:
+        train_ids = {str(task_id) for task_id in split_manifest.get("train", [])}
+        validation_ids = {str(task_id) for task_id in split_manifest.get("validation", [])}
+        test_ids = {str(task_id) for task_id in split_manifest.get("test", [])}
+        if train_ids & test_ids:
+            blockers.append("split_manifest.json train/test overlap")
+        if validation_ids & test_ids:
+            blockers.append("split_manifest.json validation/test overlap")
+    checkpoint, checkpoint_error = _read_json_manifest_for_audit(source_dir / "checkpoint_metadata.json")
+    if checkpoint_error:
+        blockers.append(f"checkpoint_metadata.json {checkpoint_error}")
+    if checkpoint:
+        if str(checkpoint.get("source_training_split")) != "train":
+            blockers.append("checkpoint_metadata.json source_training_split must be train")
+        training_ids = {str(task_id) for task_id in checkpoint.get("training_instance_ids", [])}
+        test_ids = {str(task_id) for task_id in split_manifest.get("test", [])} if split_manifest else set()
+        if training_ids & test_ids:
+            blockers.append("checkpoint_metadata.json training_instance_ids overlap held-out test")
+    feature_schema, feature_error = _read_json_manifest_for_audit(source_dir / "feature_schema.json")
+    if feature_error:
+        blockers.append(f"feature_schema.json {feature_error}")
+    if feature_schema and feature_schema.get("oracle_labels_in_inference_features") is not False:
+        blockers.append("feature_schema.json must exclude oracle labels from inference features")
+    return blockers
 
 
 def _expected_count_from_row(row: Mapping[str, object]) -> Optional[int]:

@@ -90,6 +90,7 @@ def run_scheduling_tot_q2(
     if resume:
         existing = [row for row in existing if str(row.get("rendering_id")) in completed]
         existing_trace = [row for row in existing_trace if str(row.get("rendering_id")) in completed]
+        existing = _attach_tot_protocol_counts(existing, existing_trace)
         if existing_trace:
             _write_jsonl(trace_path, existing_trace)
         elif trace_path.exists():
@@ -172,6 +173,24 @@ def _completed_tot_renderings(rows: Sequence[Dict[str, object]], trace_rows: Seq
         if str(row.get("event")) == "finish"
     }
     return row_renderings & finished_trace_renderings
+
+
+def _attach_tot_protocol_counts(rows: Sequence[Dict[str, object]], trace_rows: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:
+    trace_by_rendering: Dict[str, List[Dict[str, object]]] = {}
+    for event in trace_rows:
+        rendering_id = str(event.get("rendering_id", ""))
+        if rendering_id:
+            trace_by_rendering.setdefault(rendering_id, []).append(event)
+    out = []
+    for row in rows:
+        item = dict(row)
+        if all(str(item.get(key, "")) not in {"", "0", "0.0"} for key in ("tot_generate_events", "tot_evaluate_events", "tot_select_events", "tot_value_sample_count")):
+            out.append(item)
+            continue
+        counts = _tot_protocol_counts(trace_by_rendering.get(str(item.get("rendering_id", "")), []))
+        item.update(counts)
+        out.append(item)
+    return out
 
 
 def _run_one_tot_episode(
@@ -321,6 +340,9 @@ def _run_one_tot_episode(
         "notes": "ToT BFS propose/value/select; value scores averaged across samples",
     }
     trace_events.append(_tot_trace_event(episode, task_index, level, "finish", row=row))
+    protocol_counts = _tot_protocol_counts(trace_events)
+    row.update(protocol_counts)
+    trace_events[-1]["row"] = row
     return row, trace_events
 
 
@@ -355,9 +377,23 @@ def _summarize(rows: Sequence[Dict[str, object]], expected_count: int, wall_cloc
         "llm_calls": sum(int(row["llm_calls"]) for row in rows),
         "tokens": sum(int(row["total_tokens"]) for row in rows),
         "wall_clock_seconds": wall_clock_seconds,
+        "tot_generate_events": sum(int(row.get("tot_generate_events", 0)) for row in rows),
+        "tot_evaluate_events": sum(int(row.get("tot_evaluate_events", 0)) for row in rows),
+        "tot_select_events": sum(int(row.get("tot_select_events", 0)) for row in rows),
+        "tot_value_sample_count": sum(int(row.get("tot_value_sample_count", 0)) for row in rows),
         "status": "complete" if len(rows) >= expected_count else f"partial: {len(rows)}/{expected_count}",
         "source_policy": "native_tot_bfs",
         "notes": "ToT BFS with propose/evaluate/select and averaged LLM value samples",
+    }
+
+
+def _tot_protocol_counts(trace_events: Sequence[Mapping[str, object]]) -> Dict[str, int]:
+    evaluate_events = [event for event in trace_events if str(event.get("event")) in {"evaluate", "evaluate_select"}]
+    return {
+        "tot_generate_events": sum(1 for event in trace_events if str(event.get("event")) == "generate"),
+        "tot_evaluate_events": len(evaluate_events),
+        "tot_select_events": sum(1 for event in trace_events if str(event.get("event")) in {"select", "evaluate_select"}),
+        "tot_value_sample_count": sum(len(event.get("value_samples", [])) for event in evaluate_events if isinstance(event.get("value_samples"), list)),
     }
 
 

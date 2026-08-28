@@ -421,6 +421,16 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 invalid.append(f"scheduling_tot_q2_manifest.json missing Q2 method alignment for {method}")
             else:
                 invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_tot_q2_manifest.json"))
+        table_rows = _read_csv(source_dir / "scheduling_tot_q2_table.csv")
+        source_policy_row = next((item for item in table_rows if str(item.get("Method")) == method), table_rows[0] if table_rows else row)
+        if _as_float(source_policy_row.get("tot_generate_events")) <= 0:
+            invalid.append("Tree of Thoughts table row must record positive generate events")
+        if _as_float(source_policy_row.get("tot_evaluate_events")) <= 0:
+            invalid.append("Tree of Thoughts table row must record positive evaluate events")
+        if _as_float(source_policy_row.get("tot_select_events")) <= 0:
+            invalid.append("Tree of Thoughts table row must record positive select events")
+        if _as_float(source_policy_row.get("tot_value_sample_count")) <= 0:
+            invalid.append("Tree of Thoughts table row must record positive value sample count")
         trace_path = source_dir / "scheduling_tot_q2_trace.jsonl"
         if trace_path.exists() and trace_path.stat().st_size > 0:
             trace, error = _read_jsonl_for_audit(trace_path)
@@ -802,7 +812,7 @@ def _row_from_native_artifacts(method: str, transfer_setting: str, source_dir: P
     source_policy = str(data.get("source_policy", "native"))
     if method == "Tree of Thoughts" and source_policy != "native_tot_bfs":
         return None
-    return {
+    row = {
         "Method": method,
         "Transfer setting": transfer_setting,
         "Success": _fmt_float(_as_float(data.get("success", data.get("Success"))), 4),
@@ -815,6 +825,10 @@ def _row_from_native_artifacts(method: str, transfer_setting: str, source_dir: P
         "source_policy": source_policy,
         "notes": str(data.get("notes", "native protocol row")),
     }
+    if method == "Tree of Thoughts":
+        for key in ("tot_generate_events", "tot_evaluate_events", "tot_select_events", "tot_value_sample_count"):
+            row[key] = data.get(key, "")
+    return row
 
 
 def _native_method_dir_name(method: str) -> str:
@@ -881,8 +895,13 @@ def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
         return
+    fieldnames = list(rows[0])
+    for row in rows[1:]:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(key)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
 

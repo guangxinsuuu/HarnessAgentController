@@ -755,6 +755,10 @@ class Table5Q2Test(unittest.TestCase):
                         "wall_clock_seconds": 300,
                         "status": "complete",
                         "source_policy": "native_tot_bfs",
+                        "tot_generate_events": 1,
+                        "tot_evaluate_events": 1,
+                        "tot_select_events": 1,
+                        "tot_value_sample_count": 1,
                     }
                 ),
                 encoding="utf-8",
@@ -807,6 +811,10 @@ class Table5Q2Test(unittest.TestCase):
                         "wall_clock_seconds": 300,
                         "status": "complete",
                         "source_policy": "native_tot_bfs",
+                        "tot_generate_events": 1,
+                        "tot_evaluate_events": 1,
+                        "tot_select_events": 1,
+                        "tot_value_sample_count": 1,
                     }
                 ),
                 encoding="utf-8",
@@ -834,6 +842,10 @@ class Table5Q2Test(unittest.TestCase):
                         "wall_clock_seconds": 300,
                         "status": "complete",
                         "source_policy": "native_tot_bfs",
+                        "tot_generate_events": 1,
+                        "tot_evaluate_events": 1,
+                        "tot_select_events": 1,
+                        "tot_value_sample_count": 1,
                     }
                 ),
                 encoding="utf-8",
@@ -897,6 +909,10 @@ class Table5Q2Test(unittest.TestCase):
                         "wall_clock_seconds": 300,
                         "status": "complete",
                         "source_policy": "native_tot_bfs",
+                        "tot_generate_events": 1,
+                        "tot_evaluate_events": 1,
+                        "tot_select_events": 1,
+                        "tot_value_sample_count": 1,
                     }
                 ),
                 encoding="utf-8",
@@ -917,6 +933,45 @@ class Table5Q2Test(unittest.TestCase):
             audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot, expected_test_count=1)
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
             self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "True")
+
+    def test_readiness_audit_rejects_tot_without_runtime_protocol_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            (tot / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": 0.6,
+                        "gap": 0.07,
+                        "llm_calls": 1200,
+                        "tokens": 23000000,
+                        "wall_clock_seconds": 300,
+                        "status": "complete",
+                        "source_policy": "native_tot_bfs",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_trace.jsonl").write_text(
+                "\n".join(
+                    [
+                        json.dumps({"event": "generate", "rendering_id": "r0"}),
+                        json.dumps({"event": "evaluate_select", "rendering_id": "r0", "value_samples": [{"sample_index": 0, "scores": [1.0]}]}),
+                        json.dumps({"event": "finish", "rendering_id": "r0"}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            _write_tot_manifest(tot, test_count=1)
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
+            self.assertIn("must record positive generate events", audit_rows["Tree of Thoughts"]["result_blockers"])
+            self.assertIn("must record positive value sample count", audit_rows["Tree of Thoughts"]["result_blockers"])
 
     def test_readiness_audit_rejects_tot_manifest_without_official_entrypoints(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

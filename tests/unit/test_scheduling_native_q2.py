@@ -149,6 +149,37 @@ class SchedulingNativeQ2Test(unittest.TestCase):
             self.assertEqual(len([row for row in samples if row["method_key"] == "direct"]), 2)
             self.assertEqual(len([row for row in samples if row["method_key"] == "self_consistency"]), 4)
 
+    def test_resume_reruns_self_consistency_rows_with_stale_selection_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            client = ScriptedSchedulingClient(input_tokens=10, output_tokens=5, model="mock")
+            kwargs = dict(
+                client=client,
+                model="mock",
+                seed=17,
+                train_count=1,
+                validation_count=0,
+                test_count=2,
+                job_count=4,
+                machine_count=2,
+                methods=("self_consistency",),
+                sample_count=2,
+            )
+            run_scheduling_native_q2(out, **kwargs)
+            per_instance_path = out / "scheduling_native_q2_per_instance.csv"
+            stale_rows = _read_csv(per_instance_path)
+            for row in stale_rows:
+                row["selection_rule"] = "majority_job_order_then_objective"
+            _write_csv(per_instance_path, stale_rows)
+
+            run_scheduling_native_q2(out, **kwargs, resume=True)
+
+            rows = _read_csv(per_instance_path)
+            self.assertEqual(len(rows), 2)
+            self.assertEqual({row["selection_rule"] for row in rows}, {"majority_job_order_then_first_valid"})
+            samples = _read_jsonl(out / "scheduling_native_q2_samples.jsonl")
+            self.assertEqual(len([row for row in samples if row["method_key"] == "self_consistency"]), 4)
+
     def test_runner_streams_per_instance_rows_before_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
@@ -183,3 +214,10 @@ def _read_csv(path: Path):
 def _read_jsonl(path: Path):
     with path.open(encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+
+def _write_csv(path: Path, rows) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)

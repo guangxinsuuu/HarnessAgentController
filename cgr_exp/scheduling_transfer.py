@@ -1490,6 +1490,7 @@ def _evaluate_level2_transfer(
             rendering_id
             for rendering_id, rows_by_policy in rows_by_rendering.items()
             if requested_policy_names.issubset(rows_by_policy)
+            and all(_resume_policy_row_is_current(policy, rows_by_policy[policy]) for policy in requested_policy_names)
         }
         completed_task_ids = {
             str(row.get("task_id"))
@@ -1740,6 +1741,39 @@ def _policy_diagnostics(policy) -> Dict[str, object]:
         return {}
     data = diagnostics()
     return dict(data) if isinstance(data, dict) else {}
+
+
+def _resume_policy_row_is_current(policy: str, row: Mapping[str, object]) -> bool:
+    required_common = ("success", "gap", "nodes", "proposal_calls", "proposal_tokens", "total_tokens", "frontier_decisions")
+    if any(str(row.get(key, "")) == "" for key in required_common):
+        return False
+    if policy == "PRM-guided MCTS (ReST-MCTS-style)":
+        if "PRM_prior" not in str(row.get("policy_diagnostics", "")):
+            return False
+        for key in (
+            "mcts_selection_calls",
+            "mcts_expansion_observations",
+            "mcts_prior_evaluations",
+            "mcts_leaf_value_evaluations",
+            "mcts_backup_updates",
+        ):
+            if _resume_float(row.get(key)) <= 0:
+                return False
+    if policy == "Solver-trained MLP + certified pruning":
+        if str(row.get("certified_pruning", "")).lower() not in {"true", "1", "yes"}:
+            return False
+        if "false_prunes" not in row or "on_demand_total_tokens" not in row:
+            return False
+    return True
+
+
+def _resume_float(value: object) -> float:
+    try:
+        if value in (None, ""):
+            return 0.0
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _run_frontier_search_with_ranking_diagnostics(

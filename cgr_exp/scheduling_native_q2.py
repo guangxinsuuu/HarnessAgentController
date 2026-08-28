@@ -203,7 +203,8 @@ def _completed_native_method_tasks(
             continue
         task_id = str(row.get("task_id"))
         key = (method_key, task_id)
-        if sample_counts.get(key, 0) >= _expected_native_sample_count(method_key, sample_count):
+        expected_selection = str(NATIVE_METHODS[method_key]["selection"])
+        if str(row.get("selection_rule", "")) == expected_selection and sample_counts.get(key, 0) >= _expected_native_sample_count(method_key, sample_count):
             completed.add(key)
     return completed
 

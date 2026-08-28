@@ -700,6 +700,47 @@ class SchedulingTransferTest(unittest.TestCase):
             proposal_renderings = [row["rendering_id"] for row in proposal_rows]
             self.assertEqual(len(proposal_renderings), len(set(proposal_renderings)))
 
+    def test_scheduling_llm_pilot_resume_reruns_stale_rest_mcts_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            kwargs = dict(
+                client=ScriptedSchedulingClient(model="mock-scheduling"),
+                model="mock-scheduling",
+                seed=38,
+                train_count=8,
+                validation_count=3,
+                test_count=2,
+                job_count=5,
+                machine_count=2,
+                node_budget=35,
+                action_budget=5,
+                records_per_instance=10,
+                rank_epochs=4,
+                perturbation="canonical",
+                batch_size=1,
+                target_prm_train_count=4,
+                include_rest_mcts=True,
+            )
+            run_scheduling_llm_pilot(root, **kwargs)
+            per_instance_path = root / "scheduling_llm_pilot_per_instance.csv"
+            with per_instance_path.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+            for row in rows:
+                if row["Policy"] == "PRM-guided MCTS (ReST-MCTS-style)":
+                    row["policy_diagnostics"] = "{}"
+            with per_instance_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+
+            run_scheduling_llm_pilot(root, **kwargs, resume=True)
+
+            with per_instance_path.open(newline="", encoding="utf-8") as handle:
+                refreshed_rows = list(csv.DictReader(handle))
+            rest_rows = [row for row in refreshed_rows if row["Policy"] == "PRM-guided MCTS (ReST-MCTS-style)"]
+            self.assertTrue(rest_rows)
+            self.assertTrue(all("PRM_prior" in row["policy_diagnostics"] for row in rest_rows))
+
     def test_prm_guided_mcts_policy_tracks_visits_and_backups(self) -> None:
         class ConstantRanker:
             def score(self, features):

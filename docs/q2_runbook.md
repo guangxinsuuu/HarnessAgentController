@@ -5,6 +5,9 @@ row in the Q2 end-to-end Scheduling table. It is intentionally strict: rows
 with partial artifacts, diagnostic-only artifacts, or shared-cache fallback
 token accounting should remain marked as pending or qualified.
 
+For the row-level algorithm requirements and source-aligned claim boundaries,
+see `docs/q2_table4_required_algorithms.md`.
+
 ## Global Setup
 
 Real-LLM rows require an OpenAI-compatible chat-completions endpoint:

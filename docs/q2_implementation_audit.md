@@ -4,6 +4,10 @@ This audit maps each row in the Scheduling Q2 quality-compute table to the
 current implementation evidence. A row is table-ready only when both the method
 logic and the completed run artifact match the claimed scope.
 
+The normative row checklist is `docs/q2_table4_required_algorithms.md`; this
+audit records the current implementation and artifact evidence against that
+checklist.
+
 ## Current Evidence Summary
 
 | Row | Implementation evidence | Test evidence | Run evidence | Claim status |

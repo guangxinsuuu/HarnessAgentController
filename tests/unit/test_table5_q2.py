@@ -1565,6 +1565,49 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "False")
             self.assertIn("must not claim full iterative self-training", audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_blockers"])
 
+    def test_readiness_audit_rejects_method_alignment_claiming_wrong_reproduction_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rest = root / "rest"
+            rest.mkdir()
+            policy = "PRM-guided MCTS (ReST-MCTS-style)"
+            method = "PRM-guided MCTS (ReST-MCTS-style)"
+            _write_solver_table_artifacts(rest, policy, ["heldout-0"])
+            (rest / "target_prm_ranker.json").write_text("{}", encoding="utf-8")
+            (rest / "target_prm_trace_records.jsonl").write_text(json.dumps({"task_id": "train-0"}) + "\n", encoding="utf-8")
+            (rest / "target_prm_train_pairs.jsonl").write_text(json.dumps({"left": 0, "right": 1}) + "\n", encoding="utf-8")
+            _write_target_prm_label_manifest(rest)
+            wrong_alignment = q2_method_contracts([method])
+            wrong_alignment[method]["claim_scope"] = "official_reproduction"
+            wrong_alignment[method]["official_reproduction"] = True
+            (rest / "scheduling_llm_pilot_metrics.json").write_text(
+                json.dumps(
+                    {
+                        "q2_method_alignment": wrong_alignment,
+                        "semantic_state_schema": {"oracle_labels_in_inference_features": False},
+                        "learned_search_protocol": {
+                            "policies": {
+                                policy: {
+                                    "training_distribution": "same target LLM-induced PRM as Target-PRM",
+                                    "mcts_components": ["selection", "expansion", "simulation/evaluation", "backpropagation"],
+                                    "process_reward_guidance": "target PRM prior and leaf value estimates",
+                                    "selection_score": "Q(node) + prior_weight * PRM_prior(node) + exploration * PRM_prior(node) * sqrt(parent_visits + 1) / (1 + node_visits)",
+                                    "full_iterative_self_training": False,
+                                    "oracle_future_labels_exposed": False,
+                                }
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", rest_mcts_dir=rest, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows[method]["result_ready"], "False")
+            self.assertIn("method alignment claim_scope mismatch", audit_rows[method]["result_blockers"])
+            self.assertIn("method alignment official_reproduction mismatch", audit_rows[method]["result_blockers"])
+
     def test_readiness_audit_rejects_rest_mcts_without_mcts_components(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

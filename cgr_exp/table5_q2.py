@@ -409,7 +409,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_structured_q2_metrics.json missing Q2 method alignment for {method}")
             else:
-                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_structured_q2_metrics.json"))
+                invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_structured_q2_metrics.json"))
             table_rows = _read_csv(source_dir / "scheduling_structured_q2_table.csv")
             structured_row = next((candidate for candidate in table_rows if candidate.get("Method") == method), {})
             invalid.extend(_structured_runtime_evidence_blockers(method, structured_row))
@@ -431,7 +431,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_native_q2_manifest.json missing Q2 method alignment for {method}")
             else:
-                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_native_q2_manifest.json"))
+                invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_native_q2_manifest.json"))
             native_table_rows = _read_csv(source_dir / "scheduling_native_q2_table.csv")
             native_table_row = next((item for item in native_table_rows if str(item.get("Method")) == method), row)
             invalid.extend(_native_runtime_count_blockers(method, native_table_row, methods.get(method, {}) if isinstance(methods, Mapping) else {}, row))
@@ -481,7 +481,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_tot_q2_manifest.json missing Q2 method alignment for {method}")
             else:
-                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_tot_q2_manifest.json"))
+                invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_tot_q2_manifest.json"))
         table_rows = _read_csv(source_dir / "scheduling_tot_q2_table.csv")
         source_policy_row = next((item for item in table_rows if str(item.get("Method")) == method), table_rows[0] if table_rows else row)
         if _as_float(source_policy_row.get("tot_generate_events")) <= 0:
@@ -516,7 +516,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_llm_pilot_metrics.json missing Q2 method alignment for {method}")
             else:
-                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_llm_pilot_metrics.json"))
+                invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_llm_pilot_metrics.json"))
             protocols = learned_manifest.get("learned_search_protocol")
             protocol_by_policy = protocols.get("policies") if isinstance(protocols, Mapping) else None
             source_policy = str(row.get("source_policy", ""))
@@ -595,7 +595,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_llm_pilot_metrics.json missing Q2 method alignment for {method}")
             else:
-                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_llm_pilot_metrics.json"))
+                invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_llm_pilot_metrics.json"))
             schema = learned_manifest.get("semantic_state_schema")
             if not isinstance(schema, Mapping) or schema.get("oracle_labels_in_inference_features") is not False:
                 invalid.append("scheduling_llm_pilot_metrics.json must exclude oracle labels from inference features")
@@ -628,19 +628,37 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
     return invalid
 
 
-def _source_primitive_blockers(alignment: Mapping[str, object], method: str, artifact_name: str) -> List[str]:
+def _method_alignment_blockers(alignment: Mapping[str, object], method: str, artifact_name: str) -> List[str]:
     method_alignment = alignment.get(method)
     if not isinstance(method_alignment, Mapping):
         return [f"{artifact_name} missing Q2 method alignment for {method}"]
+    blockers: List[str] = []
+    contract = q2_method_contract(method)
+    for key in ("claim_scope", "source_url", "required_table_wording"):
+        expected = str(contract.get(key, ""))
+        observed = str(method_alignment.get(key, ""))
+        if observed != expected:
+            blockers.append(f"{artifact_name} method alignment {key} mismatch for {method}: expected {expected!r}, observed {observed!r}")
+    if bool(method_alignment.get("official_reproduction", False)) != bool(contract.get("official_reproduction", False)):
+        blockers.append(f"{artifact_name} method alignment official_reproduction mismatch for {method}")
     declared = method_alignment.get("source_primitives")
     if not isinstance(declared, list):
-        return [f"{artifact_name} missing source_primitives for {method}"]
+        blockers.append(f"{artifact_name} missing source_primitives for {method}")
+        declared = []
     declared_set = {str(item) for item in declared}
-    required = {str(item) for item in q2_method_contract(method).get("source_primitives", [])}
+    required = {str(item) for item in contract.get("source_primitives", [])}
     missing = sorted(required - declared_set)
     if missing:
-        return [f"{artifact_name} source_primitives incomplete for {method}: " + ", ".join(missing)]
-    return []
+        blockers.append(f"{artifact_name} source_primitives incomplete for {method}: " + ", ".join(missing))
+    declared_non_claims = method_alignment.get("non_claims")
+    if not isinstance(declared_non_claims, list):
+        blockers.append(f"{artifact_name} missing non_claims for {method}")
+    else:
+        required_non_claims = {str(item) for item in contract.get("non_claims", [])}
+        missing_non_claims = sorted(required_non_claims - {str(item) for item in declared_non_claims})
+        if missing_non_claims:
+            blockers.append(f"{artifact_name} non_claims incomplete for {method}: " + ", ".join(missing_non_claims))
+    return blockers
 
 
 def _structured_runtime_evidence_blockers(method: str, row: Mapping[str, object]) -> List[str]:

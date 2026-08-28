@@ -58,6 +58,13 @@ stricter than a row name match: old or ad hoc artifacts cannot populate a
 baseline row unless they also declare the official-method primitive that the
 local Scheduling adaptation implements.
 
+The same readiness gate also checks `claim_scope`,
+`official_reproduction`, `required_table_wording`, and `non_claims` against the
+method contract. This matters for adapted baselines: for example, a
+ReST-MCTS-style artifact may not promote itself as a full official ReST-MCTS*
+reproduction unless the full iterative self-training protocol has actually
+been implemented and evaluated.
+
 Examples:
 
 - Tree of Thoughts requires `method_generate`, `method_evaluate`,
@@ -106,3 +113,6 @@ Examples:
   `PRMGuidedMCTSStylePolicy`.
 - Native ToT rows must come from `run-scheduling-tot-q2`, not from older
   `--include-gpt-frontier-ranking` diagnostic artifacts.
+- Method-alignment manifests must match the row contract's claim scope,
+  official-reproduction flag, required wording, source primitives, and
+  non-claims; a row name plus partial primitive list is not enough.

@@ -123,6 +123,26 @@ def _render_markdown(
             "",
             _q4_summary(q4_rows),
             "",
+            "| Row | Source artifact | Current promotion status | Notes |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    for row in q4_rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape(row.get("Method", "")),
+                    _escape(_source_artifact_status(row)),
+                    _escape(_promotion_status(row)),
+                    _escape(row.get("notes", "")),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
             "Pinned Q4 source evidence:",
             "",
         ]

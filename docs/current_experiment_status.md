@@ -34,6 +34,14 @@ Machine audit: `runs/q4_tau_table_current_audit/q4_tau_readiness.csv`.
 
 All Q4 tau/tau2 rows remain pending; the repository still has no native tau/tau2 runner artifact in the audited directories.
 
+| Row | Source artifact | Current promotion status | Notes |
+| --- | --- | --- | --- |
+| Native agent rerun | runs/q4_tau_native | Blocked: pending; q4_tau_manifest.json missing; q4_tau_per_instance.csv partial task coverage: 0/100; q4_tau_row.json or q4_tau_table.csv missing aggregate row | native tau/tau2 artifact missing; external adapter is currently an explicit stub |
+| Best-of-N | runs/q4_tau_best_of_n | Blocked: pending; q4_tau_manifest.json missing; q4_tau_per_instance.csv partial task coverage: 0/100; q4_tau_row.json or q4_tau_table.csv missing aggregate row | native tau/tau2 artifact missing; external adapter is currently an explicit stub |
+| Value-guided search | runs/q4_tau_value_guided | Blocked: pending; q4_tau_manifest.json missing; q4_tau_per_instance.csv partial task coverage: 0/100; q4_tau_row.json or q4_tau_table.csv missing aggregate row | native tau/tau2 artifact missing; external adapter is currently an explicit stub |
+| Target-PRM | runs/q4_tau_target_prm | Blocked: pending; q4_tau_manifest.json missing; q4_tau_per_instance.csv partial task coverage: 0/100; q4_tau_row.json or q4_tau_table.csv missing aggregate row | native tau/tau2 artifact missing; external adapter is currently an explicit stub |
+| Solver-derived controller | runs/q4_tau_solver_controller | Blocked: pending; q4_tau_manifest.json missing; q4_tau_per_instance.csv partial task coverage: 0/100; q4_tau_row.json or q4_tau_table.csv missing aggregate row | native tau/tau2 artifact missing; external adapter is currently an explicit stub |
+
 Pinned Q4 source evidence:
 
 - tau-bench: `59a200c6d575d595120f1cb70fea53cef0632f6b`

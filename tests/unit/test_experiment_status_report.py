@@ -31,7 +31,18 @@ class ExperimentStatusReportTest(unittest.TestCase):
                     }
                 ],
             )
-            _write_csv(q4, [{"Method": "Native agent rerun", "result_ready": "False", "result_blockers": "pending"}])
+            _write_csv(
+                q4,
+                [
+                    {
+                        "Method": "Native agent rerun",
+                        "source_artifact": "runs/q4_tau_native",
+                        "result_ready": "False",
+                        "result_blockers": "pending",
+                        "notes": "native tau artifact missing",
+                    }
+                ],
+            )
             _write_csv(cert, [{"Table": "Table 6 clean certification", "result_ready": "True", "result_blockers": ""}])
             _write_csv(
                 matrix,
@@ -52,6 +63,8 @@ class ExperimentStatusReportTest(unittest.TestCase):
             self.assertIn("Blocked: pending; artifact missing", text)
             self.assertIn("Blocked: missing token accounting", text)
             self.assertIn("All Q4 tau/tau2 rows remain pending", text)
+            self.assertIn("runs/q4_tau_native", text)
+            self.assertIn("native tau artifact missing", text)
             saved = json.loads((root / "out" / "current_experiment_status.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["artifact"], "current_experiment_status")
 

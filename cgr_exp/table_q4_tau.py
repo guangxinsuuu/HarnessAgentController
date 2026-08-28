@@ -162,6 +162,8 @@ def _row_from_tau_artifacts(method: str, transfer_setting: str, source_dir: Path
         return None
     instance_count = len(_task_ids(source_dir / "q4_tau_per_instance.csv", method))
     status = str(data.get("status", data.get("Status", "complete" if instance_count >= expected_test_count else f"partial: {instance_count}/{expected_test_count}")))
+    manifest, _manifest_error = _read_json_manifest(source_dir / "q4_tau_manifest.json")
+    source_revision = str(data.get("source_revision", manifest.get("source_revision", "")))
     return {
         "Method": method,
         "Transfer setting": transfer_setting,
@@ -175,7 +177,7 @@ def _row_from_tau_artifacts(method: str, transfer_setting: str, source_dir: Path
         "source_artifact": str(artifact_path),
         "source_url": str(data.get("source_url", TAU_SOURCE_URL)),
         "preferred_current_source_url": str(data.get("preferred_current_source_url", TAU2_SOURCE_URL)),
-        "source_revision": str(data.get("source_revision", "")),
+        "source_revision": source_revision,
         "expected_test_count": expected_test_count,
         "notes": str(data.get("notes", "native tau/tau2 protocol artifact")),
     }
@@ -195,8 +197,10 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
         blockers.extend(_tau_artifact_blockers(method, source_dir, int(_as_float(row.get("expected_test_count")))))
     return {
         "Method": method,
+        "source_artifact": row.get("source_artifact", ""),
         "source_url": row.get("source_url", ""),
         "preferred_current_source_url": row.get("preferred_current_source_url", ""),
+        "source_revision": row.get("source_revision", ""),
         "Status": status,
         "result_ready": not blockers,
         "result_blockers": "; ".join(blockers),

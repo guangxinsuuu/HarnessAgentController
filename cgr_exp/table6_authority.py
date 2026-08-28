@@ -23,7 +23,8 @@ from cgr_exp.verification.level1_scheduling_verifier import Level1SchedulingVeri
 
 
 TABLE6_SETTINGS = [
-    ("Clean", "clean", 0.0),
+    ("Clean certified", "clean", 0.0),
+    ("Verified FN 1%", "verified_fn", 0.01),
     ("Verified FN 5%", "verified_fn", 0.05),
     ("Verified FN 10%", "verified_fn", 0.10),
     ("Verified FN 20%", "verified_fn", 0.20),
@@ -31,6 +32,9 @@ TABLE6_SETTINGS = [
     ("Verified FP 1%", "verified_fp", 0.01),
     ("Verified FP 2%", "verified_fp", 0.02),
     ("Verified FP 5%", "verified_fp", 0.05),
+    ("Uncertain-only 1%", "uncertain_only", 0.01),
+    ("Uncertain-only 5%", "uncertain_only", 0.05),
+    ("Uncertain-only 10%", "uncertain_only", 0.10),
     ("Uncertain-only 20%", "uncertain_only", 0.20),
     ("Learned-score pruning clean", "learned_score_pruning", 0.20),
 ]
@@ -207,12 +211,21 @@ def _run_authority_search(
     valid_bounds = 0
     slacks: List[float] = []
     seen = set()
+    descendant_cache: Dict[Tuple[Tuple[str, str, int, int], ...], float] = {}
+
+    def true_descendant_best(node: SearchNode) -> float:
+        scheduled = tuple(node.structured_state.get("scheduled", []))
+        key = tuple((str(row["job"]), str(row["machine"]), int(row["start"]), int(row["finish"])) for row in scheduled)
+        if key not in descendant_cache:
+            descendant_cache[key] = true_task.best_descendant_objective(node)
+        return descendant_cache[key]
+
     while frontier and expanded < node_budget:
         survivors = []
         for node in frontier:
-            _record_bound_audit(true_task, node, slacks)
+            true_best = true_descendant_best(node)
+            _record_bound_audit(node, true_best, slacks)
             bound_checks += 1
-            true_best = true_task.best_descendant_objective(node)
             if node.lower_bound is not None and float(node.lower_bound) <= true_best + 1e-9:
                 valid_bounds += 1
             decision = should_prune(node, incumbent)
@@ -235,7 +248,7 @@ def _run_authority_search(
                 if node.node_id in pruned_ids:
                     learned_prunes += 1
                     audited += 1
-                    true_best = true_task.best_descendant_objective(node)
+                    true_best = true_descendant_best(node)
                     if incumbent is None or true_best < incumbent:
                         semantic_false_prunes += 1
                 else:
@@ -262,7 +275,7 @@ def _run_authority_search(
                 verified_rejections += 1
                 audited += 1
                 true_child = true_task.apply(node, action, child_index=idx)
-                true_best = true_task.best_descendant_objective(true_child)
+                true_best = true_descendant_best(true_child)
                 if incumbent is None or true_best < incumbent:
                     semantic_false_prunes += 1
                 continue
@@ -392,10 +405,9 @@ def _schedule_prefix_respects_precedences(scheduled: Sequence[Dict[str, object]]
     return True
 
 
-def _record_bound_audit(true_task: SchedulingTask, node: SearchNode, slacks: List[float]) -> None:
+def _record_bound_audit(node: SearchNode, true_best: float, slacks: List[float]) -> None:
     if node.lower_bound is None:
         return
-    true_best = true_task.best_descendant_objective(node)
     if true_best < float("inf"):
         slacks.append(max(0.0, true_best - float(node.lower_bound)))
 

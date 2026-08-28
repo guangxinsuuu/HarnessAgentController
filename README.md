@@ -11,7 +11,17 @@ It implements:
 - Baselines: DFS, random, certified best-bound, solver oracle ordering, and learned priority.
 - Metrics: success, optimality gap, false-prune rate, nodes, proposer calls, proposal recall, schema validity, ranking error, and domain-classifier discrepancy proxy.
 
-The code uses only the Python standard library.
+The default smoke pipeline uses only the Python standard library. Real-LLM and
+structured-reference experiments have optional dependencies:
+
+- OpenAI-compatible API access for real LLM pilots.
+- `ortools` for the Q2 CP-SAT structured scheduling reference.
+
+Install the CP-SAT extra when you need the CP-SAT row:
+
+```bash
+python3 -m pip install -e ".[q2-structured]"
+```
 
 ## Quick Start
 

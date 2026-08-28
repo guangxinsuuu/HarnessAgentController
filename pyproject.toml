@@ -5,6 +5,8 @@ description = "Certified Graph-Guided Reasoning research experiments"
 requires-python = ">=3.10"
 dependencies = []
 
+[project.optional-dependencies]
+q2-structured = ["ortools>=9.10"]
+
 [tool.setuptools.packages.find]
 include = ["cgr_exp*"]
-

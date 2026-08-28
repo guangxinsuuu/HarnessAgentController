@@ -23,6 +23,7 @@ def run_scheduling_structured_q2(
     out_dir.mkdir(parents=True, exist_ok=True)
     instances = generate_scheduling_micro_instances(train_count, validation_count, test_count, seed, job_count, machine_count)
     tasks = instances["test"]
+    cpsat_available, cpsat_import_error = _cpsat_dependency_status()
     per_instance_rows: List[Dict[str, object]] = []
     for idx, task in enumerate(tasks):
         optimum = task.exhaustive_oracle()
@@ -36,6 +37,8 @@ def run_scheduling_structured_q2(
         "seed": seed,
         "splits": {split: len(split_tasks) for split, split_tasks in instances.items()},
         "cpsat_time_limit_seconds": cpsat_time_limit_seconds,
+        "cpsat_available": cpsat_available,
+        "cpsat_import_error": cpsat_import_error,
         "llm_calls": 0,
         "tokens": 0,
         "structured_input": True,
@@ -62,6 +65,16 @@ def _cpsat_row(task: SchedulingTask, task_index: int, optimum: float, time_limit
         status = f"error:{exc.__class__.__name__}"
     elapsed = time.perf_counter() - started
     return _row("CP-SAT", "Structured-input solver", task, task_index, objective, optimum, elapsed, status)
+
+
+def _cpsat_dependency_status() -> Tuple[bool, str]:
+    try:
+        from ortools.sat.python import cp_model  # type: ignore
+
+        del cp_model
+        return True, ""
+    except Exception as exc:
+        return False, f"{exc.__class__.__name__}: {exc}"
 
 
 def _solve_with_cpsat(task: SchedulingTask, time_limit_seconds: float) -> Tuple[Optional[float], str]:

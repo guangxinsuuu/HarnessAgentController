@@ -31,11 +31,12 @@ LEARNED_DIR="${LEARNED_DIR:-runs/q2_learned_search_100_seed0}"
 TOT_DIR="${TOT_DIR:-runs/q2_tot_bfs_100_seed0}"
 TABLE_DIR="${TABLE_DIR:-runs/q2_table_current_seed0}"
 AUDIT_DIR="${AUDIT_DIR:-runs/q2_table_current_seed0_audit}"
+SOURCE_AUDIT_DIR="${SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/run_q2_table4.sh [all|preflight|structured|llm|native|learned|tot|build|audit]
+  scripts/run_q2_table4.sh [all|preflight|source-audit|structured|llm|native|learned|tot|build|audit]
 
 Environment:
   CGR_LLM_API_KEY must be set for llm/native/learned/tot/all.
@@ -162,8 +163,15 @@ audit_table() {
     --overwrite
 }
 
+source_audit() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-source-evidence \
+    --output-dir "${SOURCE_AUDIT_DIR}" \
+    --overwrite
+}
+
 preflight() {
   "${PYTHON_BIN}" -m cgr_exp.cli audit-table4-q2 --help >/dev/null
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-source-evidence --help >/dev/null
   print "python: ${PYTHON_BIN}"
   print "model: ${MODEL}"
   print "seed/test_count: ${SEED}/${TEST_COUNT}"
@@ -171,11 +179,13 @@ preflight() {
   print "native_dir: ${NATIVE_DIR}"
   print "learned_dir: ${LEARNED_DIR}"
   print "tot_dir: ${TOT_DIR}"
+  print "source_audit_dir: ${SOURCE_AUDIT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: missing"
   else
     print "llm_key: present"
   fi
+  source_audit
   audit_table
 }
 
@@ -199,12 +209,14 @@ run_llm_parallel() {
 
 case "${MODE}" in
   all)
+    source_audit
     run_structured
     run_llm_parallel
     build_table
     audit_table
     ;;
   preflight) preflight ;;
+  source-audit) source_audit ;;
   structured) run_structured ;;
   llm) run_llm_parallel ;;
   native) run_native ;;

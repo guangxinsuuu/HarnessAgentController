@@ -95,6 +95,7 @@ def _matrix_row(method: str, transfer_setting: str) -> Dict[str, object]:
         "Official full reproduction": bool(contract.get("official_reproduction", False)),
         "Source URL": str(contract.get("source_url", "")),
         "Official source files": _join(evidence.get("source_files", [])),
+        "Official source anchors": _join(evidence.get("official_source_anchors", [])),
         "Official primitives": _join(evidence.get("official_primitives", contract.get("source_primitives", []))),
         "Local code paths": _join(local_paths),
         "Local code present": not missing_local_paths,

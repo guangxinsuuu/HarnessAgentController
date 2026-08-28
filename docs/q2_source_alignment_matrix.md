@@ -34,12 +34,12 @@ Each Q2 artifact must now carry the `source_primitives` field from
 `cgr_exp/q2_method_contracts.py` inside its method-alignment manifest. The
 machine-readable official-source checklist lives in
 `cgr_exp/q2_source_evidence.py`, which records the source URL, source files,
-official primitives, and local promotion gates for each external baseline.
-The Table 4 audit rejects completed rows whose artifact does not declare the
-expected primitives for that method. This is intentionally stricter than a row
-name match: old or ad hoc artifacts cannot populate a baseline row unless they
-also declare the official-method primitive that the local Scheduling adaptation
-implements.
+source anchors, official primitives, and local promotion gates for each
+external baseline. The Table 4 audit rejects completed rows whose artifact does
+not declare the expected primitives for that method. This is intentionally
+stricter than a row name match: old or ad hoc artifacts cannot populate a
+baseline row unless they also declare the official-method primitive that the
+local Scheduling adaptation implements.
 
 Examples:
 

@@ -15,6 +15,10 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
             "ortools/sat/docs/scheduling.md",
             "ortools/sat/python/cp_model.py",
         ],
+        "official_source_anchors": [
+            "scheduling.md: optional intervals are controlled by presence literals and ignored by NoOverlap when inactive",
+            "cp_model API: NewOptionalIntervalVar / AddNoOverlap / Minimize",
+        ],
         "official_primitives": [
             "integer variables for scheduling decisions",
             "interval variables",
@@ -31,6 +35,9 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Direct / CoT": {
         "source_url": "https://arxiv.org/abs/2201.11903",
         "source_files": ["paper"],
+        "official_source_anchors": [
+            "paper method: sample one chain of intermediate reasoning steps before the final answer",
+        ],
         "official_primitives": [
             "single chain-of-thought reasoning path",
             "intermediate natural-language rationale",
@@ -45,6 +52,9 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Self-Consistency": {
         "source_url": "https://arxiv.org/abs/2203.11171",
         "source_files": ["paper"],
+        "official_source_anchors": [
+            "paper method: sample diverse reasoning paths and marginalize/aggregate final answers",
+        ],
         "official_primitives": [
             "multiple independent reasoning paths",
             "final-answer aggregation",
@@ -59,6 +69,9 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Best-of-N": {
         "source_url": "https://arxiv.org/abs/2408.03314",
         "source_files": ["paper"],
+        "official_source_anchors": [
+            "test-time scaling primitive: draw N candidate outputs and select by reward/verifier score",
+        ],
         "official_primitives": [
             "multiple complete answer samples",
             "verifier or reward scoring",
@@ -73,6 +86,10 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Tree of Thoughts": {
         "source_url": "https://github.com/princeton-nlp/tree-of-thought-llm",
         "source_files": ["src/tot/methods/bfs.py"],
+        "official_source_anchors": [
+            "README/run.py: ToT+BFS selected by method_generate/method_evaluate/method_select",
+            "src/tot/methods/bfs.py: generation, evaluation, and greedy/sample selection loop",
+        ],
         "official_primitives": [
             "method_generate",
             "method_evaluate",
@@ -91,6 +108,10 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Target-PRM priority": {
         "source_url": "https://github.com/openai/prm800k",
         "source_files": ["README.md", "data/*.jsonl"],
+        "official_source_anchors": [
+            "README: PRM800K is a process-supervision dataset with step-level correctness labels",
+            "data schema: per-step completions receive ratings rather than only terminal labels",
+        ],
         "official_primitives": [
             "intermediate-step labels",
             "process supervision",
@@ -107,6 +128,10 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "PRM-guided MCTS (ReST-MCTS-style)": {
         "source_url": "https://github.com/THUDM/ReST-MCTS",
         "source_files": ["MCTS/mcts.py", "MCTS/base.py", "README.md"],
+        "official_source_anchors": [
+            "README: MCTS mode uses propose_method, value_method, iteration_limit, and branch",
+            "MCTS implementation: selection, expansion, simulation/evaluation, and backpropagation",
+        ],
         "official_primitives": [
             "MCTS selection",
             "MCTS expansion",
@@ -180,6 +205,9 @@ def _audit_source_evidence_row(method: str) -> Dict[str, object]:
     official_primitives = [str(item) for item in evidence.get("official_primitives", [])] if isinstance(evidence.get("official_primitives"), list) else []
     if not official_primitives:
         blockers.append("missing official_primitives")
+    source_anchors = [str(item) for item in evidence.get("official_source_anchors", [])] if isinstance(evidence.get("official_source_anchors"), list) else []
+    if not source_anchors:
+        blockers.append("missing official_source_anchors")
     contract_primitives = {str(item) for item in contract.get("source_primitives", [])}
     if official_primitives and contract_primitives and not (set(official_primitives) & contract_primitives):
         blockers.append("official_primitives do not intersect contract source_primitives")
@@ -191,6 +219,7 @@ def _audit_source_evidence_row(method: str) -> Dict[str, object]:
         "source_url": source_url,
         "contract_source_url": contract_url,
         "source_files": "; ".join(source_files),
+        "official_source_anchors": "; ".join(source_anchors),
         "official_primitives": "; ".join(official_primitives),
         "local_promotion_gates": "; ".join(promotion_gates),
         "source_ready": not blockers,

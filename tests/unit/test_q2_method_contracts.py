@@ -113,6 +113,7 @@ class Q2MethodContractsTest(unittest.TestCase):
             contract = q2_method_contract(method)
             self.assertEqual(evidence["source_url"], contract["source_url"], method)
             self.assertTrue(evidence["source_files"], method)
+            self.assertTrue(evidence["official_source_anchors"], method)
             self.assertTrue(evidence["official_primitives"], method)
             self.assertTrue(evidence["local_promotion_gates"], method)
             declared = {str(item) for item in evidence["official_primitives"]}
@@ -134,6 +135,8 @@ class Q2MethodContractsTest(unittest.TestCase):
             by_method = {row["Method"]: row for row in saved["rows"]}
             self.assertEqual(by_method["Tree of Thoughts"]["source_url"], "https://github.com/princeton-nlp/tree-of-thought-llm")
             self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["source_files"])
+            self.assertIn("method_generate", by_method["Tree of Thoughts"]["official_source_anchors"])
+            self.assertIn("process-supervision", by_method["Target-PRM priority"]["official_source_anchors"])
 
     def test_implementation_matrix_covers_table_rows_with_local_code_and_artifacts(self) -> None:
         table_methods = {method for method, _setting, _source, _kind in TABLE5_METHODS}
@@ -153,6 +156,8 @@ class Q2MethodContractsTest(unittest.TestCase):
             saved = json.loads((out / "q2_implementation_matrix.json").read_text(encoding="utf-8"))
             by_method = {row["Method"]: row for row in saved["rows"]}
             self.assertIn("cgr_exp/scheduling_tot_q2.py", by_method["Tree of Thoughts"]["Local code paths"])
+            self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["Official source files"])
+            self.assertIn("generation, evaluation", by_method["Tree of Thoughts"]["Official source anchors"])
             self.assertIn("method_generate", by_method["Tree of Thoughts"]["Official primitives"])
             self.assertIn("target_prm_ranker.json", by_method["Target-PRM priority"]["Required result artifacts"])
             self.assertIn("not full ReST-MCTS iterative self-training", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["Non-claims"])

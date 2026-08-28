@@ -167,6 +167,9 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
     missing_artifacts = _missing_required_artifacts(row)
     if missing_artifacts:
         result_blockers.append("missing artifacts: " + ", ".join(missing_artifacts))
+    invalid_artifacts = _invalid_required_artifacts(row)
+    if invalid_artifacts:
+        result_blockers.append("invalid artifacts: " + ", ".join(invalid_artifacts))
     if tokens == "--":
         compute_blockers.append("missing token accounting")
     if "shared-cache fallback accounting" in notes:
@@ -226,6 +229,36 @@ def _artifact_run_root(method: str, artifact: Path) -> Path:
         if source_dir.name == _native_method_dir_name(method):
             return source_dir.parent
     return source_dir
+
+
+def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
+    method = str(row.get("Method", ""))
+    status = str(row.get("Status", "pending"))
+    if status != "complete":
+        return []
+    artifact_value = str(row.get("source_artifact", "")).strip()
+    if not artifact_value:
+        return []
+    source_dir = _artifact_run_root(method, Path(artifact_value))
+    invalid = []
+    if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
+        sample_path = source_dir / "scheduling_native_q2_samples.jsonl"
+        if sample_path.exists() and sample_path.stat().st_size > 0:
+            samples = _read_jsonl(sample_path)
+            if not any(str(sample.get("Method")) == method for sample in samples):
+                invalid.append("scheduling_native_q2_samples.jsonl missing method rows")
+    if method == "Tree of Thoughts":
+        trace_path = source_dir / "scheduling_tot_q2_trace.jsonl"
+        if trace_path.exists() and trace_path.stat().st_size > 0:
+            trace = _read_jsonl(trace_path)
+            if not any(str(event.get("event")) == "finish" for event in trace):
+                invalid.append("scheduling_tot_q2_trace.jsonl missing finish event")
+    if method in {"Target-PRM priority", "PRM-guided MCTS (ReST-MCTS-style)"}:
+        for filename in ("target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
+            path = source_dir / filename
+            if path.exists() and path.stat().st_size > 0 and not _read_jsonl(path):
+                invalid.append(f"{filename} empty jsonl")
+    return invalid
 
 
 def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path]) -> Dict[str, object]:
@@ -355,6 +388,18 @@ def _read_csv(path: Path) -> List[Dict[str, str]]:
         return []
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+def _read_jsonl(path: Path) -> List[Dict[str, object]]:
+    if not path.exists() or path.stat().st_size == 0:
+        return []
+    rows = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            rows.append(json.loads(line))
+    return rows
 
 
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:

@@ -246,12 +246,38 @@ class Table5Q2Test(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (native / "scheduling_native_q2_samples.jsonl").write_text("{}\n", encoding="utf-8")
+            (native / "scheduling_native_q2_samples.jsonl").write_text(json.dumps({"Method": "Direct / CoT"}) + "\n", encoding="utf-8")
             out = root / "out"
             audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", direct_dir=native)
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
             self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "True")
             self.assertNotIn("scheduling_native_q2_samples.jsonl", audit_rows["Direct / CoT"]["result_blockers"])
+
+    def test_readiness_audit_rejects_native_samples_without_matching_method(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Direct / CoT",
+                        "success": 0.45,
+                        "gap": 0.2,
+                        "llm_calls": 100,
+                        "tokens": 1000,
+                        "wall_clock_seconds": 10,
+                        "status": "complete",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_samples.jsonl").write_text(json.dumps({"Method": "Self-Consistency"}) + "\n", encoding="utf-8")
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", direct_dir=native)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
+            self.assertIn("missing method rows", audit_rows["Direct / CoT"]["result_blockers"])
 
     def test_builder_reads_structured_reference_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -319,6 +345,33 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(by_method["Tree of Thoughts"]["Status"], "complete")
             self.assertEqual(by_method["Tree of Thoughts"]["Tokens"], "23.00M")
             self.assertEqual(by_method["Tree of Thoughts"]["source_policy"], "native_tot_bfs")
+
+    def test_readiness_audit_rejects_tot_trace_without_finish_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            (tot / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": 0.6,
+                        "gap": 0.07,
+                        "llm_calls": 1200,
+                        "tokens": 23000000,
+                        "wall_clock_seconds": 300,
+                        "status": "complete",
+                        "source_policy": "native_tot_bfs",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_trace.jsonl").write_text(json.dumps({"event": "generate"}) + "\n", encoding="utf-8")
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
+            self.assertIn("missing finish event", audit_rows["Tree of Thoughts"]["result_blockers"])
 
     def test_readiness_audit_flags_pending_and_shared_cache_fallback_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

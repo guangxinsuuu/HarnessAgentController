@@ -61,6 +61,9 @@ algorithmic primitive rather than a convenient substitute.
 - Target-PRM and ReST-MCTS-style rows must include target PRM trace records,
   training pairs, a PRM ranker artifact, Q2 method alignment, and no overlap
   between target PRM training task IDs and held-out evaluation task IDs.
+- ReST-MCTS-style rows must additionally declare the MCTS search primitives:
+  selection, expansion, simulation/evaluation, and backpropagation, plus PRM
+  process-reward guidance. A plain Target-PRM priority artifact is not enough.
 - Solver prior rows must include split manifests, checkpoint metadata,
   feature schema, and a manifest proving oracle labels are absent from
   inference features.

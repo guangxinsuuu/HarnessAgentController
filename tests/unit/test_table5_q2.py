@@ -1142,6 +1142,57 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "False")
             self.assertIn("must not claim full iterative self-training", audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_blockers"])
 
+    def test_readiness_audit_rejects_rest_mcts_without_mcts_components(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rest = root / "rest"
+            rest.mkdir()
+            _write_csv(
+                rest / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "PRM-guided MCTS (ReST-MCTS-style)",
+                        "success": "0.84",
+                        "gap": "0.09",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                        "on_demand_total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(
+                rest / "scheduling_llm_pilot_per_instance.csv",
+                [{"Policy": "PRM-guided MCTS (ReST-MCTS-style)", "task_id": "t0"}],
+            )
+            for name in ("target_prm_ranker.json", "target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
+                (rest / name).write_text("{}\n", encoding="utf-8")
+            (rest / "scheduling_llm_pilot_metrics.json").write_text(
+                json.dumps(
+                    {
+                        "q2_method_alignment": q2_method_contracts(["PRM-guided MCTS (ReST-MCTS-style)"]),
+                        "learned_search_protocol": {
+                            "policies": {
+                                "PRM-guided MCTS (ReST-MCTS-style)": {
+                                    "training_distribution": "same target LLM-induced PRM as Target-PRM",
+                                    "full_iterative_self_training": False,
+                                    "oracle_future_labels_exposed": False,
+                                }
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", rest_mcts_dir=rest, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "False")
+            self.assertIn("must declare MCTS selection, expansion, simulation/evaluation, and backpropagation", audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_blockers"])
+
     def test_readiness_audit_reports_malformed_learned_metrics_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1328,6 +1379,8 @@ def _write_learned_metrics(path: Path, methods: list[str], policies: list[str]) 
         elif policy == "PRM-guided MCTS (ReST-MCTS-style)":
             policy_protocols[policy] = {
                 "training_distribution": "same target LLM-induced PRM as Target-PRM",
+                "mcts_components": ["selection", "expansion", "simulation/evaluation", "backpropagation"],
+                "process_reward_guidance": "target PRM prior and leaf value estimates",
                 "full_iterative_self_training": False,
                 "oracle_future_labels_exposed": False,
             }

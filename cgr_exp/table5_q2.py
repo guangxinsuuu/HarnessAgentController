@@ -457,6 +457,12 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                         invalid.append("ReST-MCTS-style manifest must not claim full iterative self-training")
                     if "target LLM-induced" not in str(policy_protocol.get("training_distribution", "")):
                         invalid.append("ReST-MCTS-style protocol must use the target PRM training distribution")
+                    declared_components = policy_protocol.get("mcts_components")
+                    required_components = {"selection", "expansion", "simulation/evaluation", "backpropagation"}
+                    if not isinstance(declared_components, list) or required_components - {str(item) for item in declared_components}:
+                        invalid.append("ReST-MCTS-style protocol must declare MCTS selection, expansion, simulation/evaluation, and backpropagation")
+                    if "PRM" not in str(policy_protocol.get("process_reward_guidance", "")):
+                        invalid.append("ReST-MCTS-style protocol must declare PRM process reward guidance")
         for filename in ("target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
             path = source_dir / filename
             if path.exists() and path.stat().st_size > 0:

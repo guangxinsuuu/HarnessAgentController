@@ -110,6 +110,13 @@ def _learned_search_protocol_manifest(
             "official_primitive": "MCTS selection/expansion/evaluation/backup guided by process reward estimates",
             "training_distribution": "same target LLM-induced PRM as Target-PRM",
             "inference": "PUCT/UCB-style frontier scoring with persistent visit/value backups",
+            "mcts_components": [
+                "selection",
+                "expansion",
+                "simulation/evaluation",
+                "backpropagation",
+            ],
+            "process_reward_guidance": "target PRM prior and leaf value estimates",
             "implemented_scope": "ReST-MCTS-style search component only",
             "full_iterative_self_training": False,
             "oracle_future_labels_exposed": False,

@@ -6,6 +6,7 @@ from pathlib import Path
 from dataclasses import replace
 
 from cgr_exp.analysis.statistics import write_seed_aggregate
+from cgr_exp.certification_table_readiness import audit_certification_tables
 from cgr_exp.experiments import PRESETS, run_experiment
 from cgr_exp.game24_experiments import run_game24_offline_experiment
 from cgr_exp.game24_llm_pilot import ScriptedGame24Client, run_game24_llm_pilot, run_game24_llm_pilot_from_env
@@ -73,6 +74,7 @@ COMMANDS = [
     "build-table-q4-tau",
     "audit-table-q4-tau",
     "run-table6-authority",
+    "audit-certification-tables",
 ]
 
 
@@ -285,6 +287,10 @@ def main() -> None:
             p.add_argument("--records-per-instance", type=int, default=60)
             p.add_argument("--rank-epochs", type=int, default=25)
             p.add_argument("--corruption-seeds", default="0,1,2")
+        if name == "audit-certification-tables":
+            p.add_argument("--certification-dir", type=Path, default=None)
+            p.add_argument("--authority-dir", type=Path, default=None)
+            p.add_argument("--expected-test-count", type=int, default=100)
     args, rest = parser.parse_known_args()
     if args.command in (None, "run-smoke"):
         import sys
@@ -1104,6 +1110,26 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table6_authority.csv'}")
+            return
+        if args.command == "audit-certification-tables":
+            manifest = audit_certification_tables(
+                args.output_dir,
+                certification_dir=args.certification_dir,
+                authority_dir=args.authority_dir,
+                expected_test_count=args.expected_test_count,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "expected_test_count": args.expected_test_count,
+                "certification_dir": None if args.certification_dir is None else str(args.certification_dir),
+                "authority_dir": None if args.authority_dir is None else str(args.authority_dir),
+                "all_rows_ready": manifest["all_rows_ready"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'certification_tables_readiness.csv'}")
             return
         if args.command == "run-transfer-matrix":
             seeds = [int(part) for part in (args.seeds or str(args.seed)).split(",") if part.strip()]

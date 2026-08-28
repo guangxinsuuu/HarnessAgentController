@@ -425,6 +425,21 @@ positives, uncertain-only conditions, and the learned-score-pruning stress test.
 It audits each prune/rejection against the uncorrupted descendant subproblem and
 records that uncertain constraints have no pruning authority.
 
+Before promoting either certification table, run:
+
+```bash
+python3 -m cgr_exp.cli audit-certification-tables \
+  --output-dir runs/certification_tables_readiness \
+  --certification-dir runs/q2_structured_cert_reference_100_seed0 \
+  --authority-dir runs/table7_grounding_robustness_100_seed0 \
+  --expected-test-count 100 \
+  --overwrite
+```
+
+This audit checks table-specific alias files, per-task coverage, the clean
+priority/pruning rows, required robustness conditions, and the certification
+authority protocol.
+
 ## Fast Combined Runs
 
 The checked-in helper script mirrors the commands below:

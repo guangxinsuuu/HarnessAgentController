@@ -499,6 +499,10 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertEqual(metrics["target_prm_train_count"], 4)
             self.assertGreater(metrics["target_prm_trace_record_count"], 0)
             self.assertGreater(metrics["target_prm_pair_count"], 0)
+            target_protocol = metrics["learned_search_protocol"]["policies"]["Target-PRM"]
+            self.assertEqual(target_protocol["training_distribution"], "target LLM-induced Scheduling trajectories from disjoint training instances")
+            self.assertFalse(target_protocol["zero_shot_transfer"])
+            self.assertIn("Target-PRM priority", metrics["q2_method_alignment"])
             for name in (
                 "target_prm_ranker.json",
                 "target_prm_trace_records.jsonl",
@@ -534,6 +538,13 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertIn("Solver-trained MLP + certified pruning", metrics["methods"])
             self.assertEqual(metrics["target_prm_train_count"], 4)
             self.assertGreater(metrics["target_prm_trace_record_count"], 0)
+            rest_protocol = metrics["learned_search_protocol"]["policies"]["PRM-guided MCTS (ReST-MCTS-style)"]
+            self.assertFalse(rest_protocol["full_iterative_self_training"])
+            cert_protocol = metrics["learned_search_protocol"]["policies"]["Solver-trained MLP + certified pruning"]
+            self.assertEqual(cert_protocol["pruning_authority"], "verified lower-bound/feasibility logic only")
+            self.assertFalse(cert_protocol["learned_score_authorizes_pruning"])
+            self.assertIn("PRM-guided MCTS (ReST-MCTS-style)", metrics["q2_method_alignment"])
+            self.assertIn("Solver-trained priority + certified pruning", metrics["q2_method_alignment"])
             certified = metrics["methods"]["Solver-trained MLP + certified pruning"]
             self.assertGreaterEqual(certified["false_prunes"], 0)
             self.assertIn("on_demand_total_tokens", certified)

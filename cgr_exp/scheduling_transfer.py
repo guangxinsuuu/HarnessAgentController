@@ -17,6 +17,7 @@ from cgr_exp.certification.prune import should_prune
 from cgr_exp.datasets.level1_scheduling import ScheduleAction, SchedulingTask
 from cgr_exp.datasets.level2_renderer import Level2Rendering, render_scheduling_level2_variants
 from cgr_exp.proposers.llm_adapter import OpenAICompatibleHTTPClient, RealLLMProposerAdapter
+from cgr_exp.q2_method_contracts import q2_method_contracts
 from cgr_exp.scheduling_micro import (
     CachedSchedulingOraclePolicy,
     SCHEDULING_FEATURE_NAMES,
@@ -69,6 +70,76 @@ ORACLE_LABEL_FIELDS = [
     "oracle_rank",
     "exact_future_objective",
 ]
+
+
+def _q2_methods_for_level2_policies(policy_names: Sequence[str]) -> List[str]:
+    mapping = {
+        "GPT-value / ToT-style": "Tree of Thoughts",
+        "GPT-frontier-rank / ToT-style": "Tree of Thoughts",
+        "Target-PRM": "Target-PRM priority",
+        "PRM-guided MCTS (ReST-MCTS-style)": "PRM-guided MCTS (ReST-MCTS-style)",
+        "Solver-trained MLP": "Solver-trained priority",
+        "Solver-trained MLP + certified pruning": "Solver-trained priority + certified pruning",
+    }
+    methods = []
+    for policy_name in policy_names:
+        method = mapping.get(policy_name)
+        if method is not None and method not in methods:
+            methods.append(method)
+    return methods
+
+
+def _learned_search_protocol_manifest(
+    policy_names: Sequence[str],
+    include_target_prm: bool,
+    include_rest_mcts: bool,
+    include_solver_certification: bool,
+) -> Dict[str, object]:
+    protocols: Dict[str, Dict[str, object]] = {}
+    if "Target-PRM" in policy_names:
+        protocols["Target-PRM"] = {
+            "official_primitive": "process reward model trained from intermediate target-domain search states",
+            "training_distribution": "target LLM-induced Scheduling trajectories from disjoint training instances",
+            "supervision": "frontier/process ranking pairs",
+            "inference": "frozen canonical-feature priority controller",
+            "oracle_future_labels_exposed": False,
+            "zero_shot_transfer": False,
+        }
+    if "PRM-guided MCTS (ReST-MCTS-style)" in policy_names:
+        protocols["PRM-guided MCTS (ReST-MCTS-style)"] = {
+            "official_primitive": "MCTS selection/expansion/evaluation/backup guided by process reward estimates",
+            "training_distribution": "same target LLM-induced PRM as Target-PRM",
+            "inference": "PUCT/UCB-style frontier scoring with persistent visit/value backups",
+            "implemented_scope": "ReST-MCTS-style search component only",
+            "full_iterative_self_training": False,
+            "oracle_future_labels_exposed": False,
+        }
+    if "Solver-trained MLP" in policy_names:
+        protocols["Solver-trained MLP"] = {
+            "official_primitive": "CGR source-trained external frontier priority controller",
+            "training_distribution": "solver-induced Scheduling source trajectories only",
+            "supervision": "solver-trace frontier ranking pairs",
+            "inference": "frozen canonical-feature priority controller over real LLM-induced states",
+            "oracle_future_labels_exposed": False,
+            "zero_shot_transfer": True,
+        }
+    if "Solver-trained MLP + certified pruning" in policy_names:
+        protocols["Solver-trained MLP + certified pruning"] = {
+            "official_primitive": "CGR source-trained priority plus verified pruning authority",
+            "training_distribution": "same solver-induced source controller as Solver-trained MLP",
+            "pruning_authority": "verified lower-bound/feasibility logic only",
+            "learned_score_authorizes_pruning": False,
+            "oracle_future_labels_exposed": False,
+            "zero_shot_transfer": True,
+        }
+    return {
+        "shared_candidate_cache": True,
+        "canonical_state_representation": True,
+        "target_prm_requested": include_target_prm,
+        "rest_mcts_requested": include_rest_mcts,
+        "solver_certification_requested": include_solver_certification,
+        "policies": protocols,
+    }
 
 
 class SharedSchedulingProposalCache:
@@ -824,6 +895,7 @@ def run_scheduling_llm_pilot(
         policy_names.insert(insert_at, "Solver-trained MLP + certified pruning")
         extra_policy_factories["Solver-trained MLP + certified pruning"] = lambda episode, idx: SchedulingMLPPolicy(episode.hidden_task, ranker)
         policy_certified_pruning["Solver-trained MLP + certified pruning"] = True
+    q2_methods = _q2_methods_for_level2_policies(policy_names)
     table_rows, per_instance_rows, proposal_cache_rows, proposal_state_rows = _evaluate_level2_transfer(
         episodes,
         ranker,
@@ -886,6 +958,13 @@ def run_scheduling_llm_pilot(
             "source_distribution": "solver-induced semantic search",
             "target_distribution": "real-llm-induced semantic search",
         },
+        "q2_method_alignment": q2_method_contracts(q2_methods),
+        "learned_search_protocol": _learned_search_protocol_manifest(
+            policy_names,
+            include_target_prm=include_target_prm,
+            include_rest_mcts=include_rest_mcts,
+            include_solver_certification=include_solver_certification,
+        ),
         "shared_proposal_replay": proposal_stats,
         "certified_pruning_enabled": False,
     }

@@ -840,6 +840,76 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
             self.assertIn("partial finish coverage: 2/3", audit_rows["Tree of Thoughts"]["result_blockers"])
 
+    def test_readiness_audit_rejects_tot_trace_without_generate_evaluate_select_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            (tot / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": 0.6,
+                        "gap": 0.07,
+                        "llm_calls": 1200,
+                        "tokens": 23000000,
+                        "wall_clock_seconds": 300,
+                        "status": "complete",
+                        "source_policy": "native_tot_bfs",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_trace.jsonl").write_text(
+                json.dumps({"event": "finish", "rendering_id": "r0"}) + "\n",
+                encoding="utf-8",
+            )
+            _write_tot_manifest(tot, test_count=1)
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
+            self.assertIn("missing generate events", audit_rows["Tree of Thoughts"]["result_blockers"])
+            self.assertIn("missing evaluate events", audit_rows["Tree of Thoughts"]["result_blockers"])
+            self.assertIn("missing select events", audit_rows["Tree of Thoughts"]["result_blockers"])
+
+    def test_readiness_audit_accepts_tot_trace_with_generate_evaluate_select_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            (tot / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": 0.6,
+                        "gap": 0.07,
+                        "llm_calls": 1200,
+                        "tokens": 23000000,
+                        "wall_clock_seconds": 300,
+                        "status": "complete",
+                        "source_policy": "native_tot_bfs",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_trace.jsonl").write_text(
+                "\n".join(
+                    [
+                        json.dumps({"event": "generate", "rendering_id": "r0"}),
+                        json.dumps({"event": "evaluate_select", "rendering_id": "r0", "value_samples": [{"sample_index": 0, "scores": [1.0]}]}),
+                        json.dumps({"event": "finish", "rendering_id": "r0"}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            _write_tot_manifest(tot, test_count=1)
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "True")
+
     def test_readiness_audit_rejects_tot_manifest_without_official_entrypoints(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1346,6 +1416,23 @@ def _write_native_manifest(path: Path, methods: list[str], test_count: int) -> N
                 "splits": {"test": test_count},
                 "native_protocol": {"methods": method_protocols},
                 "method_alignment": q2_method_contracts(methods),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_tot_manifest(path: Path, test_count: int) -> None:
+    (path / "scheduling_tot_q2_manifest.json").write_text(
+        json.dumps(
+            {
+                "splits": {"test": test_count},
+                "native_tot_protocol": {
+                    "official_entrypoints": ["method_generate", "method_evaluate", "method_select"],
+                    "oracle_future_labels_exposed": False,
+                    "search": "breadth-first frontier search",
+                },
+                "method_alignment": q2_method_contracts(["Tree of Thoughts"]),
             }
         ),
         encoding="utf-8",

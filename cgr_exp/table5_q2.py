@@ -425,6 +425,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             finish_events = [event for event in trace if str(event.get("event")) == "finish"]
             if not finish_events:
                 invalid.append("scheduling_tot_q2_trace.jsonl missing finish event")
+            invalid.extend(_tot_trace_protocol_blockers(trace))
             expected_count = _expected_count_from_row(row)
             if expected_count is not None:
                 renderings = {str(event.get("rendering_id")) for event in finish_events if event.get("rendering_id") not in (None, "")}
@@ -583,6 +584,23 @@ def _native_sample_count_blockers(
     if method in {"Self-Consistency", "Best-of-N"} and min_count < expected:
         return [f"scheduling_native_q2_samples.jsonl {method} sample coverage per task below declared sample_count: {min_count}/{expected}"]
     return []
+
+
+def _tot_trace_protocol_blockers(trace: List[Mapping[str, object]]) -> List[str]:
+    events = {str(event.get("event")) for event in trace}
+    invalid = []
+    if "generate" not in events:
+        invalid.append("scheduling_tot_q2_trace.jsonl missing generate events")
+    has_evaluate = "evaluate_select" in events or "evaluate" in events
+    has_select = "evaluate_select" in events or "select" in events
+    if not has_evaluate:
+        invalid.append("scheduling_tot_q2_trace.jsonl missing evaluate events")
+    if not has_select:
+        invalid.append("scheduling_tot_q2_trace.jsonl missing select events")
+    evaluate_events = [event for event in trace if str(event.get("event")) in {"evaluate_select", "evaluate"}]
+    if evaluate_events and not any(isinstance(event.get("value_samples"), list) and event.get("value_samples") for event in evaluate_events):
+        invalid.append("scheduling_tot_q2_trace.jsonl missing value sample records")
+    return invalid
 
 
 def _solver_prior_audit_blockers(source_dir: Path) -> List[str]:

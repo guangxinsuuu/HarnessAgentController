@@ -57,7 +57,8 @@ algorithmic primitive rather than a convenient substitute.
   declared number of samples per held-out task.
 - Tree of Thoughts must provide the strict ToT BFS manifest with
   `method_generate`, `method_evaluate`, and `method_select`, plus a trace with
-  one finish event per held-out rendering.
+  generation, evaluation, selection, value-sample records, and one finish event
+  per held-out rendering.
 - Target-PRM and ReST-MCTS-style rows must include target PRM trace records,
   training pairs, a PRM ranker artifact, Q2 method alignment, and no overlap
   between target PRM training task IDs and held-out evaluation task IDs.

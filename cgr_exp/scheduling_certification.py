@@ -74,14 +74,28 @@ def run_scheduling_certification_experiment(
         "validation_ranking_error": ranker.ranking_error(validation_pairs),
         "methods": {row["Policy"]: row for row in table_rows},
         "certification_rule": "prune iff verified lower_bound >= incumbent or verifier proves infeasible",
+        "certification_protocol": {
+            "pruning_authority": "verified lower-bound/feasibility logic only",
+            "learned_score_authority": "ranking only",
+            "learned_score_can_prune": False,
+            "uncertain_constraints_can_prune": False,
+            "verified_pruning_conditions": [
+                "verified lower_bound >= incumbent",
+                "verifier proves infeasible",
+            ],
+            "semantic_false_prune_audit": "each pruned state is checked against the unpruned true descendant subproblem",
+            "oracle_labels_in_inference_features": False,
+        },
         "artifacts": [
             "scheduling_certification_table.csv",
+            "table6_clean_certification.csv",
             "scheduling_certification_per_instance.csv",
             "scheduling_certification_metrics.json",
             "scheduling_certification_ranker.json",
         ],
     }
     _write_csv(out_dir / "scheduling_certification_table.csv", table_rows)
+    _write_csv(out_dir / "table6_clean_certification.csv", table_rows)
     _write_csv(out_dir / "scheduling_certification_per_instance.csv", per_instance_rows)
     (out_dir / "scheduling_certification_ranker.json").write_text(ranker.to_json(), encoding="utf-8")
     (out_dir / "scheduling_certification_metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")

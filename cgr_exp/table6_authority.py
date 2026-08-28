@@ -108,18 +108,30 @@ def run_table6_authority_experiment(
         "train_pair_count": len(train_pairs),
         "validation_pair_count": len(validation_pairs),
         "validation_ranking_error": ranker.ranking_error(validation_pairs),
+        "certification_protocol": {
+            "authority_boundary": "uncertain constraints may affect ranking only; verified constraints may affect irreversible pruning",
+            "pruning_authority": "verified lower-bound/feasibility logic only",
+            "learned_score_authority": "ranking only",
+            "learned_score_can_prune": False,
+            "uncertain_constraints_can_prune": False,
+            "semantic_false_prune_audit": "each pruned/rejected state is audited against the uncorrupted true descendant subproblem",
+            "oracle_labels_in_inference_features": False,
+        },
         "authority_boundary": "uncertain constraints may affect ranking only; verified constraints may affect irreversible pruning",
         "semantic_false_prune_audit": "each pruned/rejected state is audited against the uncorrupted true descendant subproblem",
         "oracle_labels_in_inference_features": False,
+        "table7_robustness_conditions": [row["Condition"] for row in table_rows],
         "wall_clock_seconds": elapsed,
         "artifacts": [
             "table6_authority.csv",
+            "table7_grounding_robustness.csv",
             "table6_authority_per_instance.csv",
             "table6_authority_metrics.json",
             "table6_authority_ranker.json",
         ],
     }
     _write_csv(out_dir / "table6_authority.csv", table_rows)
+    _write_csv(out_dir / "table7_grounding_robustness.csv", table_rows)
     _write_csv(out_dir / "table6_authority_per_instance.csv", per_instance_rows)
     (out_dir / "table6_authority_metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
     (out_dir / "table6_authority_ranker.json").write_text(ranker.to_json(), encoding="utf-8")

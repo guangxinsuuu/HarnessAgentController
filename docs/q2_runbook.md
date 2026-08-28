@@ -409,6 +409,22 @@ For the final Q2 table, prefer an artifact with `on_demand_total_tokens` so
 certification receives compute credit only for proposal calls it actually
 avoids.
 
+### Clean Certification / Grounding Robustness
+
+Clean certification rows for the paper's certification table come from
+`run-scheduling-certification`. The runner writes both the historical
+`scheduling_certification_table.csv` and the table-specific alias
+`table6_clean_certification.csv`. Its manifest records the authority contract:
+learned scores may rank frontier states, but only verified lower-bound or
+feasibility logic may authorize irreversible pruning.
+
+Grounding/pruning robustness rows come from `run-table6-authority`; despite the
+legacy command name, it now also writes `table7_grounding_robustness.csv`. This
+artifact is the corruption sweep over verified false negatives, verified false
+positives, uncertain-only conditions, and the learned-score-pruning stress test.
+It audits each prune/rejection against the uncorrupted descendant subproblem and
+records that uncertain constraints have no pruning authority.
+
 ## Fast Combined Runs
 
 The checked-in helper script mirrors the commands below:

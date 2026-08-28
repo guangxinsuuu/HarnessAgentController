@@ -44,9 +44,15 @@ class Table6AuthorityTest(unittest.TestCase):
             self.assertIn("Bound validity", by_condition["Clean certified"])
             self.assertIn("Audited prune decisions", by_condition["Clean certified"])
             self.assertTrue((root / "table6_authority_per_instance.csv").exists())
+            self.assertTrue((root / "table7_grounding_robustness.csv").exists())
             saved = json.loads((root / "table6_authority_metrics.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["benchmark"], "table6_authority_separation")
             self.assertFalse(saved["oracle_labels_in_inference_features"])
+            protocol = saved["certification_protocol"]
+            self.assertEqual(protocol["learned_score_authority"], "ranking only")
+            self.assertFalse(protocol["learned_score_can_prune"])
+            self.assertFalse(protocol["uncertain_constraints_can_prune"])
+            self.assertIn("Learned-score pruning clean", saved["table7_robustness_conditions"])
             self.assertEqual(metrics["splits"]["test"], 4)
 
 

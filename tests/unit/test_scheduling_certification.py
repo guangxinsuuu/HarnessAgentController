@@ -29,6 +29,7 @@ class SchedulingCertificationTest(unittest.TestCase):
             root = Path(tmp)
             self.assertEqual(metrics["benchmark"], "scheduling_certification")
             self.assertTrue((root / "scheduling_certification_table.csv").exists())
+            self.assertTrue((root / "table6_clean_certification.csv").exists())
             self.assertTrue((root / "scheduling_certification_per_instance.csv").exists())
             self.assertTrue((root / "scheduling_certification_metrics.json").exists())
             saved = json.loads((root / "scheduling_certification_metrics.json").read_text(encoding="utf-8"))
@@ -36,6 +37,12 @@ class SchedulingCertificationTest(unittest.TestCase):
             self.assertIn("learned priority + certified pruning", saved["methods"])
             self.assertEqual(saved["methods"]["learned priority only"]["pruned_nodes"], 0)
             self.assertEqual(saved["methods"]["learned priority + certified pruning"]["wrong_prune_rate"], 0.0)
+            protocol = saved["certification_protocol"]
+            self.assertEqual(protocol["pruning_authority"], "verified lower-bound/feasibility logic only")
+            self.assertEqual(protocol["learned_score_authority"], "ranking only")
+            self.assertFalse(protocol["learned_score_can_prune"])
+            self.assertFalse(protocol["uncertain_constraints_can_prune"])
+            self.assertFalse(protocol["oracle_labels_in_inference_features"])
 
 
 if __name__ == "__main__":

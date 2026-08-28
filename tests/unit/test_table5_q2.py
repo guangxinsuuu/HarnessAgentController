@@ -103,6 +103,14 @@ class Table5Q2Test(unittest.TestCase):
                 "method_generate",
                 saved["method_alignment"]["Tree of Thoughts"]["source_primitives"],
             )
+            self.assertEqual(
+                saved["source_evidence"]["Tree of Thoughts"]["source_files"],
+                ["src/tot/methods/bfs.py"],
+            )
+            self.assertIn(
+                "declared sample_count coverage per held-out task",
+                saved["source_evidence"]["Best-of-N"]["local_promotion_gates"],
+            )
 
     def test_builder_marks_incomplete_checkpoints_as_partial(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1018,6 +1026,9 @@ class Table5Q2Test(unittest.TestCase):
             self.assertIn("zero-shot transfer", audit_rows["Solver-trained priority"]["Required wording"])
             self.assertIn("shared-cache fallback accounting", audit_rows["Solver-trained priority"]["compute_blockers"])
             self.assertTrue((out / "table5_q2_readiness.json").exists())
+            readiness = json.loads((out / "table5_q2_readiness.json").read_text(encoding="utf-8"))
+            self.assertIn("source_evidence", readiness)
+            self.assertIn("Target-PRM priority", readiness["source_evidence"])
 
     def test_readiness_audit_requires_native_trace_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

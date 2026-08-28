@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional
 
 from cgr_exp.q2_method_contracts import q2_method_contract, q2_method_contracts
+from cgr_exp.q2_source_evidence import Q2_SOURCE_EVIDENCE
 
 
 TABLE5_METHODS = [
@@ -103,6 +104,7 @@ def build_table5_q2_results(
         "structured_dir": None if structured_dir is None else str(structured_dir),
         "rows": rows,
         "method_alignment": q2_method_contracts([row["Method"] for row in rows]),
+        "source_evidence": _source_evidence_for_rows(rows),
         "sections": [{"title": title, "methods": [method for method, *_rest in TABLE5_METHODS if method in methods]} for title, methods in TABLE5_SECTIONS],
         "produced_artifacts": [csv_path.name, tex_path.name, manifest_path.name],
     }
@@ -151,6 +153,7 @@ def audit_table5_q2_readiness(
         "pending_or_partial_rows": [row["Method"] for row in audit_rows if not _as_bool(row["result_ready"])],
         "compute_qualified_rows": [row["Method"] for row in audit_rows if not _as_bool(row["compute_ready"])],
         "audit_rows": audit_rows,
+        "source_evidence": _source_evidence_for_rows(rows),
         "produced_artifacts": [*manifest["produced_artifacts"], audit_csv.name, audit_json.name],
     }
     audit_json.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
@@ -698,6 +701,10 @@ def _contract_fields(method: str) -> Dict[str, object]:
         "Official full reproduction": bool(contract.get("official_reproduction", False)),
         "Required wording": str(contract.get("required_table_wording", "")),
     }
+
+
+def _source_evidence_for_rows(rows: Iterable[Mapping[str, object]]) -> Dict[str, Dict[str, object]]:
+    return {str(row["Method"]): dict(Q2_SOURCE_EVIDENCE[str(row["Method"])]) for row in rows if str(row["Method"]) in Q2_SOURCE_EVIDENCE}
 
 
 def _row_from_scheduling_artifacts(

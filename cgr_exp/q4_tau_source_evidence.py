@@ -16,7 +16,7 @@ Q4_TAU_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
         "source_revision_url": "https://github.com/sierra-research/tau-bench/commit/59a200c6d575d595120f1cb70fea53cef0632f6b",
         "source_files": ["README.md", "tau_bench/run.py", "tau_bench/evaluation.py"],
         "official_code_refs": [
-            "raw: https://raw.githubusercontent.com/sierra-research/tau-bench/59a200c6d575d595120f1cb70fea53cef0632f6b/README.md::tau-bench protocol",
+            "raw: https://raw.githubusercontent.com/sierra-research/tau-bench/59a200c6d575d595120f1cb70fea53cef0632f6b/README.md::dynamic conversations between a user",
             "github@59a200c6d575d595120f1cb70fea53cef0632f6b: sierra-research/tau-bench/tau_bench/run.py::run",
             "github@59a200c6d575d595120f1cb70fea53cef0632f6b: sierra-research/tau-bench/tau_bench/evaluation.py::evaluate",
         ],
@@ -45,7 +45,7 @@ Q4_TAU_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
         "source_revision_url": "https://github.com/sierra-research/tau2-bench/commit/a2c024725189473d2d7cea3a5cfdbcc67478e41f",
         "source_files": ["README.md", "tau2/run.py", "tau2/evaluation"],
         "official_code_refs": [
-            "raw: https://raw.githubusercontent.com/sierra-research/tau2-bench/a2c024725189473d2d7cea3a5cfdbcc67478e41f/README.md::tau2/tau3 protocol",
+            "raw: https://raw.githubusercontent.com/sierra-research/tau2-bench/a2c024725189473d2d7cea3a5cfdbcc67478e41f/README.md::Each domain specifies:",
             "github@a2c024725189473d2d7cea3a5cfdbcc67478e41f: sierra-research/tau2-bench/tau2/run.py::run",
             "github@a2c024725189473d2d7cea3a5cfdbcc67478e41f: sierra-research/tau2-bench/tau2/evaluation::evaluate",
         ],

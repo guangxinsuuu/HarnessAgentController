@@ -52,6 +52,9 @@ class Q4TauSourceEvidenceTest(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb):
                 return False
 
+            def read(self) -> bytes:
+                return b"dynamic conversations between a user\nEach domain specifies:\n"
+
         def fake_urlopen(request, timeout=0):
             seen_urls.append(request.full_url)
             return FakeResponse()
@@ -61,6 +64,32 @@ class Q4TauSourceEvidenceTest(unittest.TestCase):
             self.assertTrue(manifest["all_online_refs_ready"])
             self.assertTrue(any("sierra-research/tau-bench/commit" in url for url in seen_urls))
             self.assertTrue(any("raw.githubusercontent.com/sierra-research/tau2-bench" in url for url in seen_urls))
+            by_benchmark = {row["Benchmark"]: row for row in manifest["rows"]}
+            self.assertEqual(by_benchmark["tau-bench"]["raw_anchor_match_count"], 1)
+            self.assertEqual(by_benchmark["tau2-bench"]["raw_anchor_match_count"], 1)
+
+    def test_source_ref_verifier_rejects_online_raw_anchor_mismatch(self) -> None:
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self) -> bytes:
+                return b"reachable page without the pinned benchmark anchor"
+
+        def fake_urlopen(request, timeout=0):
+            del request, timeout
+            return FakeResponse()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = verify_q4_tau_source_refs(Path(tmp), online=True, timeout=3.0, urlopen=fake_urlopen)
+            self.assertFalse(manifest["all_online_refs_ready"])
+            by_benchmark = {row["Benchmark"]: row for row in manifest["rows"]}
+            self.assertIn("missing raw content anchor", by_benchmark["tau-bench"]["online_errors"])
 
 
 if __name__ == "__main__":

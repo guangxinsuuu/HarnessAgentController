@@ -144,9 +144,13 @@ Required local semantics before using the MCTS name:
 - Evaluate leaves with the target PRM.
 - Back up values along the selected path.
 
-If the implementation only computes `PRM score + exploration bonus` for a
-priority queue, the row must be called `Target-PRM priority with exploration`
-instead of `PRM-guided MCTS`.
+Current local status:
+
+- The row uses a frontier-compatible MCTS-style policy with persistent visit
+  counts, value sums, PUCT-style exploration, PRM leaf priors, and selected-node
+  backup.
+- It still does not implement the full ReST-MCTS* iterative self-training loop,
+  so the row must remain `ReST-MCTS-style`.
 
 ## Ours
 

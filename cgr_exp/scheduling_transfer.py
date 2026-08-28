@@ -288,20 +288,64 @@ class RealLLMFrontierRankingPolicy:
 class PRMGuidedMCTSStylePolicy:
     name = "prm_guided_mcts_style"
 
-    def __init__(self, task: SchedulingTask, ranker, exploration: float = 0.15):
+    def __init__(self, task: SchedulingTask, ranker, exploration: float = 1.25, prior_weight: float = 1.0):
         self.task = task
         self.ranker = ranker
         self.exploration = exploration
-        self.cache: Dict[str, float] = {}
+        self.prior_weight = prior_weight
+        self.prior_cache: Dict[str, float] = {}
+        self.visits: Dict[str, int] = {}
+        self.value_sum: Dict[str, float] = {}
+        self.node_cache: Dict[str, SearchNode] = {}
+        self.last_selected: SearchNode | None = None
+        self.total_backups = 0
 
     def score(self, node: SearchNode) -> float:
-        if node.node_id not in self.cache:
-            self.cache[node.node_id] = self.ranker.score(scheduling_feature_vector(self.task, node))
-        prior = self.cache[node.node_id]
-        depth = max(0.0, float(node.depth))
-        branch = max(1.0, float(node.universal_features.get("branch_factor", 1.0)))
-        exploration_bonus = self.exploration * math.sqrt(depth + 1.0) / branch
-        return prior + exploration_bonus
+        return self.score_frontier([node])[0]
+
+    def score_frontier(self, frontier: Sequence[SearchNode]) -> List[float]:
+        if self.last_selected is not None:
+            self._backup(self.last_selected, self._leaf_value(self.last_selected))
+        self.last_selected = None
+        for node in frontier:
+            self.node_cache[node.node_id] = node
+        scores = [self._puct_score(node) for node in frontier]
+        if frontier:
+            selected_index = max(range(len(frontier)), key=lambda idx: (scores[idx], frontier[idx].node_id))
+            self.last_selected = frontier[selected_index]
+        return scores
+
+    def _puct_score(self, node: SearchNode) -> float:
+        prior = self._prior(node)
+        visits = self.visits.get(node.node_id, 0)
+        q_value = self.value_sum.get(node.node_id, 0.0) / visits if visits else 0.0
+        parent_visits = self.visits.get(str(node.parent_id), 0) if node.parent_id else sum(self.visits.values())
+        exploration = self.exploration * prior * math.sqrt(parent_visits + 1.0) / (1.0 + visits)
+        return q_value + self.prior_weight * prior + exploration
+
+    def _prior(self, node: SearchNode) -> float:
+        if node.node_id not in self.prior_cache:
+            raw = self.ranker.score(scheduling_feature_vector(self.task, node))
+            self.prior_cache[node.node_id] = 1.0 / (1.0 + math.exp(-float(raw)))
+        return self.prior_cache[node.node_id]
+
+    def _leaf_value(self, node: SearchNode) -> float:
+        if node.completion_status == CompletionStatus.COMPLETE and node.objective_if_complete is not None:
+            optimum = max(1.0, self.task.exhaustive_oracle())
+            return 1.0 / (1.0 + max(0.0, float(node.objective_if_complete) - optimum) / optimum)
+        lower = float(node.lower_bound) if node.lower_bound is not None else 1e6
+        scale = max(1.0, self.task.exhaustive_oracle())
+        bound_value = 1.0 / (1.0 + max(0.0, lower - scale) / scale)
+        return 0.5 * self._prior(node) + 0.5 * bound_value
+
+    def _backup(self, node: SearchNode, value: float) -> None:
+        current: SearchNode | None = node
+        while current is not None:
+            self.visits[current.node_id] = self.visits.get(current.node_id, 0) + 1
+            self.value_sum[current.node_id] = self.value_sum.get(current.node_id, 0.0) + value
+            self.total_backups += 1
+            parent_id = current.parent_id
+            current = self.node_cache.get(parent_id) if parent_id else None
 
 
 def make_level2_scheduling_episodes(tasks: Sequence[SchedulingTask], seed: int = 0, perturbation: str = "mixed") -> List[Level2SchedulingEpisode]:

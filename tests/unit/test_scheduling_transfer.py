@@ -11,6 +11,7 @@ from cgr_exp.scheduling_micro import generate_scheduling_micro_instances
 from cgr_exp.scheduling_transfer import (
     ORACLE_LABEL_FIELDS,
     SharedSchedulingProposalCache,
+    PRMGuidedMCTSStylePolicy,
     ScriptedSchedulingClient,
     canonical_scheduling_state,
     make_level2_scheduling_episodes,
@@ -534,6 +535,23 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertGreater(metrics["target_prm_trace_record_count"], 0)
             certified = metrics["methods"]["Solver-trained MLP + certified pruning"]
             self.assertGreaterEqual(certified["false_prunes"], 0)
+
+    def test_prm_guided_mcts_policy_tracks_visits_and_backups(self) -> None:
+        class ConstantRanker:
+            def score(self, features):
+                return 0.25 + 0.01 * features[0]
+
+        task = generate_scheduling_micro_instances(train_count=1, validation_count=0, test_count=0, seed=41, job_count=4, machine_count=2)["train"][0]
+        root = task.root_node()
+        children = [task.apply(root, action, idx) for idx, action in enumerate(task.candidate_actions(root, 2))]
+        policy = PRMGuidedMCTSStylePolicy(task, ConstantRanker())
+        first_scores = policy.score_frontier(children)
+        self.assertEqual(len(first_scores), len(children))
+        self.assertEqual(policy.total_backups, 0)
+        second_scores = policy.score_frontier(children)
+        self.assertEqual(len(second_scores), len(children))
+        self.assertGreater(policy.total_backups, 0)
+        self.assertGreater(sum(policy.visits.values()), 0)
 
     def test_fewshot_curve_writes_regime_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

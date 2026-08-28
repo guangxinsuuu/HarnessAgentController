@@ -21,6 +21,25 @@ TABLE5_METHODS = [
     ("Solver-trained priority + certified pruning", "Zero-shot transfer", "Solver-trained MLP + certified pruning", "scheduling"),
 ]
 
+TABLE5_SECTIONS = [
+    (
+        "Task-specific optimization references -- exact structured input",
+        {"CP-SAT", "EST / list scheduling heuristic"},
+    ),
+    (
+        "Frozen and online LLM inference",
+        {"Direct / CoT", "Self-Consistency", "Best-of-N", "Tree of Thoughts"},
+    ),
+    (
+        "Target-domain learned search",
+        {"Target-PRM priority", "PRM-guided MCTS (ReST-MCTS-style)"},
+    ),
+    (
+        "Ours -- solver-to-LLM zero-shot transfer",
+        {"Solver-trained priority", "Solver-trained priority + certified pruning"},
+    ),
+]
+
 
 def build_table5_q2_results(
     out_dir: Path,
@@ -83,6 +102,7 @@ def build_table5_q2_results(
         "structured_dir": None if structured_dir is None else str(structured_dir),
         "rows": rows,
         "method_alignment": q2_method_contracts([row["Method"] for row in rows]),
+        "sections": [{"title": title, "methods": [method for method, *_rest in TABLE5_METHODS if method in methods]} for title, methods in TABLE5_SECTIONS],
         "produced_artifacts": [csv_path.name, tex_path.name, manifest_path.name],
     }
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
@@ -293,10 +313,11 @@ def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:
 
 
 def _latex_table(rows: List[Dict[str, object]]) -> str:
+    row_by_method = {str(row["Method"]): row for row in rows}
     lines = [
         "\\begin{table*}[t]",
         "\\centering",
-        "\\caption{Q2 end-to-end quality--compute comparison on real-LLM Scheduling.}",
+        "\\caption{Q2 end-to-end quality--compute comparison on real-LLM Scheduling. Task-specific optimization methods receive exact structured input and are calibration references. Target-PRM and ReST-MCTS-style rows use target-domain LLM-induced supervision; Solver prior rows use source solver-induced supervision only.}",
         "\\label{tab:q2_results}",
         "\\small",
         "\\begin{tabular}{llrrrrrl}",
@@ -304,23 +325,39 @@ def _latex_table(rows: List[Dict[str, object]]) -> str:
         "Method & Transfer setting & Success $\\uparrow$ & Gap $\\downarrow$ & LLM calls $\\downarrow$ & Tokens $\\downarrow$ & Wall-clock $\\downarrow$ & Status \\\\",
         "\\midrule",
     ]
-    for row in rows:
-        lines.append(
-            " & ".join(
-                [
-                    _latex_escape(str(row["Method"])),
-                    _latex_escape(str(row["Transfer setting"])),
-                    str(row["Success"]),
-                    str(row["Gap"]),
-                    str(row["LLM calls"]),
-                    str(row["Tokens"]),
-                    str(row["Wall-clock"]),
-                    _latex_escape(str(row["Status"])),
-                ]
+    for section_idx, (section_title, methods) in enumerate(TABLE5_SECTIONS):
+        if section_idx:
+            lines.append("\\midrule")
+        lines.append(f"\\multicolumn{{8}}{{l}}{{\\textit{{{_latex_escape(section_title)}}}}} \\\\")
+        for method, *_rest in TABLE5_METHODS:
+            if method not in methods:
+                continue
+            row = row_by_method[method]
+            lines.append(
+                " & ".join(
+                    [
+                        _latex_escape(str(row["Method"])),
+                        _latex_escape(str(row["Transfer setting"])),
+                        str(row["Success"]),
+                        str(row["Gap"]),
+                        str(row["LLM calls"]),
+                        str(row["Tokens"]),
+                        str(row["Wall-clock"]),
+                        _latex_escape(str(row["Status"])),
+                    ]
+                )
+                + " \\\\"
             )
-            + " \\\\"
-        )
-    lines.extend(["\\bottomrule", "\\end{tabular}", "\\end{table*}", ""])
+    lines.extend(
+        [
+            "\\bottomrule",
+            "\\end{tabular}",
+            "\\vspace{1mm}",
+            "\\footnotesize{Best-of-$N$ is verifier-selected; ReST-MCTS-style reuses the PRM-guided MCTS search component rather than the full iterative self-training pipeline. Rows whose notes report shared-cache fallback accounting should not be used as final end-to-end compute claims.}",
+            "\\end{table*}",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 

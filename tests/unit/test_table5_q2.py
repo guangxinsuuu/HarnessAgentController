@@ -303,6 +303,32 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
             self.assertIn("missing method rows", audit_rows["Direct / CoT"]["result_blockers"])
 
+    def test_readiness_audit_reports_malformed_jsonl_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Direct / CoT",
+                        "success": 0.45,
+                        "gap": 0.2,
+                        "llm_calls": 100,
+                        "tokens": 1000,
+                        "wall_clock_seconds": 10,
+                        "status": "complete",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_samples.jsonl").write_text("{bad json\n", encoding="utf-8")
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", direct_dir=native)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
+            self.assertIn("malformed jsonl", audit_rows["Direct / CoT"]["result_blockers"])
+
     def test_builder_reads_structured_reference_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

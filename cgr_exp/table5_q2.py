@@ -244,20 +244,30 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
     if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
         sample_path = source_dir / "scheduling_native_q2_samples.jsonl"
         if sample_path.exists() and sample_path.stat().st_size > 0:
-            samples = _read_jsonl(sample_path)
+            samples, error = _read_jsonl_for_audit(sample_path)
+            if error:
+                invalid.append(f"scheduling_native_q2_samples.jsonl {error}")
+                return invalid
             if not any(str(sample.get("Method")) == method for sample in samples):
                 invalid.append("scheduling_native_q2_samples.jsonl missing method rows")
     if method == "Tree of Thoughts":
         trace_path = source_dir / "scheduling_tot_q2_trace.jsonl"
         if trace_path.exists() and trace_path.stat().st_size > 0:
-            trace = _read_jsonl(trace_path)
+            trace, error = _read_jsonl_for_audit(trace_path)
+            if error:
+                invalid.append(f"scheduling_tot_q2_trace.jsonl {error}")
+                return invalid
             if not any(str(event.get("event")) == "finish" for event in trace):
                 invalid.append("scheduling_tot_q2_trace.jsonl missing finish event")
     if method in {"Target-PRM priority", "PRM-guided MCTS (ReST-MCTS-style)"}:
         for filename in ("target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
             path = source_dir / filename
-            if path.exists() and path.stat().st_size > 0 and not _read_jsonl(path):
-                invalid.append(f"{filename} empty jsonl")
+            if path.exists() and path.stat().st_size > 0:
+                rows, error = _read_jsonl_for_audit(path)
+                if error:
+                    invalid.append(f"{filename} {error}")
+                elif not rows:
+                    invalid.append(f"{filename} empty jsonl")
     return invalid
 
 
@@ -406,6 +416,13 @@ def _read_jsonl(path: Path) -> List[Dict[str, object]]:
                 continue
             rows.append(json.loads(line))
     return rows
+
+
+def _read_jsonl_for_audit(path: Path) -> tuple[List[Dict[str, object]], str]:
+    try:
+        return _read_jsonl(path), ""
+    except json.JSONDecodeError as exc:
+        return [], f"malformed jsonl at line {exc.lineno}"
 
 
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:

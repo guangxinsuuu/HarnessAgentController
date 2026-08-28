@@ -338,6 +338,15 @@ class PRMGuidedMCTSStylePolicy:
             self.last_selected = frontier[selected_index]
         return scores
 
+    def observe_expansion(self, node: SearchNode, children: Sequence[SearchNode]) -> None:
+        self.node_cache[node.node_id] = node
+        for child in children:
+            self.node_cache[child.node_id] = child
+        value = self._expanded_value(node, children)
+        self._backup(node, value)
+        if self.last_selected is not None and self.last_selected.node_id == node.node_id:
+            self.last_selected = None
+
     def _puct_score(self, node: SearchNode) -> float:
         prior = self._prior(node)
         visits = self.visits.get(node.node_id, 0)
@@ -360,6 +369,11 @@ class PRMGuidedMCTSStylePolicy:
         scale = max(1.0, self.task.exhaustive_oracle())
         bound_value = 1.0 / (1.0 + max(0.0, lower - scale) / scale)
         return 0.5 * self._prior(node) + 0.5 * bound_value
+
+    def _expanded_value(self, node: SearchNode, children: Sequence[SearchNode]) -> float:
+        if not children:
+            return self._leaf_value(node)
+        return max(self._leaf_value(child) for child in children)
 
     def _backup(self, node: SearchNode, value: float) -> None:
         current: SearchNode | None = node
@@ -1543,14 +1557,17 @@ def _run_frontier_search_with_ranking_diagnostics(
             value = node.objective_if_complete
             if value is not None and (incumbent is None or value < incumbent):
                 incumbent = value
+            _observe_policy_expansion(policy, node, [])
             continue
 
         if not budget.can_charge_proposal():
             budget_exhausted = True
             trace.append({"event": "budget_exhausted", "reason": "proposal_call_budget"})
+            _observe_policy_expansion(policy, node, [])
             break
         budget.charge_proposal()
         actions = proposer.propose(task, node, proposal_budget, budget)
+        children = []
         for idx, action in enumerate(actions):
             verified = verifier.verify(task, node, action)
             budget.charge_verifier()
@@ -1558,6 +1575,7 @@ def _run_frontier_search_with_ranking_diagnostics(
                 continue
             child = verifier.make_child(task, node.with_updates(incumbent_at_creation=incumbent), action, verified, idx)
             generated += 1
+            children.append(child)
             if child.completion_status == CompletionStatus.COMPLETE:
                 value = child.objective_if_complete
                 if value is not None and (incumbent is None or value < incumbent):
@@ -1565,6 +1583,7 @@ def _run_frontier_search_with_ranking_diagnostics(
             else:
                 frontier.append(child)
                 frontier_peak = max(frontier_peak, len(frontier))
+        _observe_policy_expansion(policy, node, children)
 
     elapsed = time.perf_counter() - start
     budget.cost = budget.cost + CostLedger(wall_clock_seconds=elapsed)
@@ -1582,6 +1601,12 @@ def _run_frontier_search_with_ranking_diagnostics(
         certificate_count,
     )
     return result, _summarize_ranking_records(ranking_records)
+
+
+def _observe_policy_expansion(policy, node: SearchNode, children: Sequence[SearchNode]) -> None:
+    observer = getattr(policy, "observe_expansion", None)
+    if observer is not None:
+        observer(node, children)
 
 
 def _frontier_ranking_record(

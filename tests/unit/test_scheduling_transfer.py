@@ -555,6 +555,23 @@ class SchedulingTransferTest(unittest.TestCase):
         self.assertGreater(policy.total_backups, 0)
         self.assertGreater(sum(policy.visits.values()), 0)
 
+    def test_prm_guided_mcts_policy_backs_up_observed_expansion(self) -> None:
+        class ConstantRanker:
+            def score(self, features):
+                return 0.0
+
+        task = generate_scheduling_micro_instances(train_count=1, validation_count=0, test_count=0, seed=43, job_count=4, machine_count=2)["train"][0]
+        root = task.root_node()
+        children = [task.apply(root, action, idx) for idx, action in enumerate(task.candidate_actions(root, 2))]
+        policy = PRMGuidedMCTSStylePolicy(task, ConstantRanker())
+        policy.score_frontier([root])
+        policy.observe_expansion(root, children)
+        self.assertIsNone(policy.last_selected)
+        self.assertEqual(policy.visits[root.node_id], 1)
+        self.assertGreater(policy.value_sum[root.node_id], 0.0)
+        for child in children:
+            self.assertIn(child.node_id, policy.node_cache)
+
     def test_fewshot_curve_writes_regime_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             metrics = run_scheduling_fewshot_curve(

@@ -159,8 +159,8 @@ Required local semantics before using the MCTS name:
 Current local status:
 
 - The row uses a frontier-compatible MCTS-style policy with persistent visit
-  counts, value sums, PUCT-style exploration, PRM leaf priors, and selected-node
-  backup.
+  counts, value sums, PUCT-style exploration, PRM leaf priors, expansion
+  observation, and backup along the selected path.
 - It still does not implement the full ReST-MCTS* iterative self-training loop,
   so the row must remain `ReST-MCTS-style`.
 - A complete Q2 result should be rerun after MCTS implementation changes; older

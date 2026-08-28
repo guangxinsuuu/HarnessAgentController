@@ -715,6 +715,58 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["CP-SAT"]["result_ready"], "False")
             self.assertIn("structured reference must have llm_calls = 0", audit_rows["CP-SAT"]["result_blockers"])
 
+    def test_readiness_audit_rejects_cpsat_without_runtime_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            structured = root / "structured"
+            structured.mkdir()
+            _write_csv(
+                structured / "scheduling_structured_q2_table.csv",
+                [
+                    {
+                        "Method": "CP-SAT",
+                        "success": "1.0",
+                        "gap": "0.0",
+                        "llm_calls": "0",
+                        "tokens": "0",
+                        "wall_clock_seconds": "0.01",
+                        "status": "complete",
+                    }
+                ],
+            )
+            _write_structured_metrics_without_table_patch(structured, ["CP-SAT"], test_count=1)
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", structured_dir=structured, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["CP-SAT"]["result_ready"], "False")
+            self.assertIn("structured_runtime_solver=ortools_cp_sat", audit_rows["CP-SAT"]["result_blockers"])
+
+    def test_readiness_audit_rejects_est_without_dispatch_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            structured = root / "structured"
+            structured.mkdir()
+            _write_csv(
+                structured / "scheduling_structured_q2_table.csv",
+                [
+                    {
+                        "Method": "EST / list scheduling heuristic",
+                        "success": "0.5",
+                        "gap": "0.2",
+                        "llm_calls": "0",
+                        "tokens": "0",
+                        "wall_clock_seconds": "0.01",
+                        "status": "complete",
+                    }
+                ],
+            )
+            _write_structured_metrics_without_table_patch(structured, ["EST / list scheduling heuristic"], test_count=1)
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", structured_dir=structured, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["EST / list scheduling heuristic"]["result_ready"], "False")
+            self.assertIn("structured_runtime_heuristic=earliest_start_list_scheduling", audit_rows["EST / list scheduling heuristic"]["result_blockers"])
+
     def test_readiness_audit_rejects_mismatched_heldout_task_sets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1632,6 +1684,49 @@ def _write_tot_manifest(path: Path, test_count: int) -> None:
 
 
 def _write_structured_metrics(path: Path, methods: list[str], test_count: int) -> None:
+    table_rows = _read_csv(path / "scheduling_structured_q2_table.csv")
+    patched_rows = []
+    for row in table_rows:
+        if row.get("Method") == "CP-SAT":
+            row = {
+                **row,
+                "structured_runtime_solver": "ortools_cp_sat",
+                "structured_runtime_integer_variables": row.get("structured_runtime_integer_variables", "10"),
+                "structured_runtime_boolean_variables": row.get("structured_runtime_boolean_variables", "4"),
+                "structured_runtime_interval_variables": row.get("structured_runtime_interval_variables", "4"),
+                "structured_runtime_exactly_one_constraints": row.get("structured_runtime_exactly_one_constraints", "2"),
+                "structured_runtime_no_overlap_constraints": row.get("structured_runtime_no_overlap_constraints", "2"),
+                "structured_runtime_precedence_constraints": row.get("structured_runtime_precedence_constraints", "1"),
+                "structured_runtime_release_constraints": row.get("structured_runtime_release_constraints", "2"),
+                "structured_runtime_objective_terms": row.get("structured_runtime_objective_terms", "3"),
+            }
+        if row.get("Method") == "EST / list scheduling heuristic":
+            row = {
+                **row,
+                "structured_runtime_heuristic": "earliest_start_list_scheduling",
+                "structured_runtime_dispatch_steps": row.get("structured_runtime_dispatch_steps", "2"),
+                "structured_runtime_ready_list_selections": row.get("structured_runtime_ready_list_selections", "2"),
+                "structured_runtime_candidate_evaluations": row.get("structured_runtime_candidate_evaluations", "4"),
+                "structured_runtime_tie_break_rule": row.get("structured_runtime_tie_break_rule", "min(start, finish, tardiness, due_date, job_id, machine_id)"),
+            }
+        patched_rows.append(row)
+    if patched_rows:
+        _write_csv(path / "scheduling_structured_q2_table.csv", patched_rows)
+    (path / "scheduling_structured_q2_metrics.json").write_text(
+        json.dumps(
+            {
+                "splits": {"test": test_count},
+                "structured_input": True,
+                "llm_calls": 0,
+                "tokens": 0,
+                "method_alignment": q2_method_contracts(methods),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_structured_metrics_without_table_patch(path: Path, methods: list[str], test_count: int) -> None:
     (path / "scheduling_structured_q2_metrics.json").write_text(
         json.dumps(
             {

@@ -28,6 +28,12 @@ class SchedulingStructuredQ2Test(unittest.TestCase):
             self.assertIn("EST / list scheduling heuristic", by_method)
             self.assertEqual(by_method["EST / list scheduling heuristic"]["llm_calls"], "0")
             self.assertEqual(by_method["EST / list scheduling heuristic"]["tokens"], "0")
+            self.assertEqual(by_method["CP-SAT"]["structured_runtime_solver"], "ortools_cp_sat")
+            self.assertGreater(int(by_method["CP-SAT"]["structured_runtime_interval_variables"]), 0)
+            self.assertGreater(int(by_method["CP-SAT"]["structured_runtime_no_overlap_constraints"]), 0)
+            self.assertEqual(by_method["EST / list scheduling heuristic"]["structured_runtime_heuristic"], "earliest_start_list_scheduling")
+            self.assertGreater(int(by_method["EST / list scheduling heuristic"]["structured_runtime_dispatch_steps"]), 0)
+            self.assertIn("min(start", by_method["EST / list scheduling heuristic"]["structured_runtime_tie_break_rule"])
             self.assertEqual(metrics["llm_calls"], 0)
             self.assertIn("optional interval variables", metrics["method_alignment"]["CP-SAT"]["source_primitives"])
             self.assertIn(

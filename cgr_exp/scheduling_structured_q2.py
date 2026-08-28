@@ -59,6 +59,7 @@ def _cpsat_row(task: SchedulingTask, task_index: int, optimum: float, time_limit
     started = time.perf_counter()
     objective: Optional[float] = None
     status = "dependency_missing"
+    formulation = _cpsat_formulation_stats(task)
     try:
         objective, status = _solve_with_cpsat(task, time_limit_seconds)
     except ImportError:
@@ -66,7 +67,27 @@ def _cpsat_row(task: SchedulingTask, task_index: int, optimum: float, time_limit
     except Exception as exc:
         status = f"error:{exc.__class__.__name__}"
     elapsed = time.perf_counter() - started
-    return _row("CP-SAT", "Structured-input solver", task, task_index, objective, optimum, elapsed, status)
+    row = _row("CP-SAT", "Structured-input solver", task, task_index, objective, optimum, elapsed, status)
+    row.update(formulation)
+    row["structured_runtime_solver"] = "ortools_cp_sat"
+    return row
+
+
+def _cpsat_formulation_stats(task: SchedulingTask) -> Dict[str, object]:
+    assignment_count = sum(len(task.allowed[job]) for job in task.durations)
+    precedence_count = sum(len(preds) for preds in task.predecessors.values())
+    machine_count = sum(1 for machine in task.machines if any(machine in task.allowed[job] for job in task.durations))
+    job_count = len(task.durations)
+    return {
+        "structured_runtime_integer_variables": 2 * job_count + 2 * assignment_count + 1 + job_count,
+        "structured_runtime_boolean_variables": assignment_count,
+        "structured_runtime_interval_variables": assignment_count,
+        "structured_runtime_exactly_one_constraints": job_count,
+        "structured_runtime_no_overlap_constraints": machine_count,
+        "structured_runtime_precedence_constraints": precedence_count,
+        "structured_runtime_release_constraints": job_count,
+        "structured_runtime_objective_terms": 1 + job_count,
+    }
 
 
 def _cpsat_dependency_status() -> Tuple[bool, str]:
@@ -131,28 +152,40 @@ def _solve_with_cpsat(task: SchedulingTask, time_limit_seconds: float) -> Tuple[
 
 def _est_row(task: SchedulingTask, task_index: int, optimum: float) -> Dict[str, object]:
     started = time.perf_counter()
-    scheduled = _earliest_start_list_schedule(task)
+    scheduled, dispatch_stats = _earliest_start_list_schedule(task)
     objective = task.objective(scheduled)
-    return _row("EST / list scheduling heuristic", "Structured-input heuristic", task, task_index, objective, optimum, time.perf_counter() - started, "complete")
+    row = _row("EST / list scheduling heuristic", "Structured-input heuristic", task, task_index, objective, optimum, time.perf_counter() - started, "complete")
+    row.update(dispatch_stats)
+    row["structured_runtime_heuristic"] = "earliest_start_list_scheduling"
+    return row
 
 
-def _earliest_start_list_schedule(task: SchedulingTask) -> Tuple[Dict[str, object], ...]:
+def _earliest_start_list_schedule(task: SchedulingTask) -> Tuple[Tuple[Dict[str, object], ...], Dict[str, object]]:
     scheduled: Tuple[Dict[str, object], ...] = ()
+    dispatch_steps = 0
+    candidate_evaluations = 0
     while len(scheduled) < len(task.durations):
         ready = task.ready_jobs(scheduled)
         if not ready:
             break
+        dispatch_steps += 1
         candidates = []
         for job in ready:
             for machine in task.allowed[job]:
                 row = task._scheduled_row(scheduled, job, machine)
                 tardiness = max(0, int(row["finish"]) - task.due_dates[job])
                 candidates.append((int(row["start"]), int(row["finish"]), tardiness, task.due_dates[job], job, machine, row))
+        candidate_evaluations += len(candidates)
         if not candidates:
             break
         *_, row = min(candidates)
         scheduled = scheduled + (row,)
-    return scheduled
+    return scheduled, {
+        "structured_runtime_dispatch_steps": dispatch_steps,
+        "structured_runtime_ready_list_selections": dispatch_steps,
+        "structured_runtime_candidate_evaluations": candidate_evaluations,
+        "structured_runtime_tie_break_rule": "min(start, finish, tardiness, due_date, job_id, machine_id)",
+    }
 
 
 def _row(
@@ -199,9 +232,34 @@ def _summarize(rows: Sequence[Dict[str, object]], expected_count: int) -> List[D
                 "wall_clock_seconds": sum(float(row["wall_clock_seconds"]) for row in method_rows),
                 "status": "complete" if len(completed) >= expected_count else f"partial: {len(completed)}/{expected_count}",
                 "notes": "structured input calibration reference; no LLM proposal or semantic grounding",
+                **_summarize_structured_evidence(method, method_rows),
             }
         )
     return out
+
+
+def _summarize_structured_evidence(method: str, rows: Sequence[Dict[str, object]]) -> Dict[str, object]:
+    if method == "CP-SAT":
+        return {
+            "structured_runtime_solver": "ortools_cp_sat",
+            "structured_runtime_integer_variables": _sum_numeric(rows, "structured_runtime_integer_variables"),
+            "structured_runtime_boolean_variables": _sum_numeric(rows, "structured_runtime_boolean_variables"),
+            "structured_runtime_interval_variables": _sum_numeric(rows, "structured_runtime_interval_variables"),
+            "structured_runtime_exactly_one_constraints": _sum_numeric(rows, "structured_runtime_exactly_one_constraints"),
+            "structured_runtime_no_overlap_constraints": _sum_numeric(rows, "structured_runtime_no_overlap_constraints"),
+            "structured_runtime_precedence_constraints": _sum_numeric(rows, "structured_runtime_precedence_constraints"),
+            "structured_runtime_release_constraints": _sum_numeric(rows, "structured_runtime_release_constraints"),
+            "structured_runtime_objective_terms": _sum_numeric(rows, "structured_runtime_objective_terms"),
+        }
+    if method == "EST / list scheduling heuristic":
+        return {
+            "structured_runtime_heuristic": "earliest_start_list_scheduling",
+            "structured_runtime_dispatch_steps": _sum_numeric(rows, "structured_runtime_dispatch_steps"),
+            "structured_runtime_ready_list_selections": _sum_numeric(rows, "structured_runtime_ready_list_selections"),
+            "structured_runtime_candidate_evaluations": _sum_numeric(rows, "structured_runtime_candidate_evaluations"),
+            "structured_runtime_tie_break_rule": "min(start, finish, tardiness, due_date, job_id, machine_id)",
+        }
+    return {}
 
 
 def _gap(value: Optional[float], optimum: float) -> float:
@@ -215,6 +273,16 @@ def _mean(values: Iterable[float]) -> float:
     return sum(vals) / len(vals) if vals else 0.0
 
 
+def _sum_numeric(rows: Sequence[Mapping[str, object]], key: str) -> int:
+    total = 0
+    for row in rows:
+        value = row.get(key, 0)
+        if value == "":
+            continue
+        total += int(float(value))
+    return total
+
+
 def _as_bool(value: object) -> bool:
     if isinstance(value, bool):
         return value
@@ -225,7 +293,12 @@ def _write_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
         return
+    fieldnames: List[str] = []
+    for row in rows:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(key)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)

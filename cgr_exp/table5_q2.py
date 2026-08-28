@@ -361,6 +361,9 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 invalid.append(f"scheduling_structured_q2_metrics.json missing Q2 method alignment for {method}")
             else:
                 invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_structured_q2_metrics.json"))
+            table_rows = _read_csv(source_dir / "scheduling_structured_q2_table.csv")
+            structured_row = next((candidate for candidate in table_rows if candidate.get("Method") == method), {})
+            invalid.extend(_structured_runtime_evidence_blockers(method, structured_row))
     if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
         native_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_native_q2_manifest.json")
         if manifest_error:
@@ -578,6 +581,37 @@ def _source_primitive_blockers(alignment: Mapping[str, object], method: str, art
     if missing:
         return [f"{artifact_name} source_primitives incomplete for {method}: " + ", ".join(missing)]
     return []
+
+
+def _structured_runtime_evidence_blockers(method: str, row: Mapping[str, object]) -> List[str]:
+    blockers: List[str] = []
+    if not row:
+        return [f"scheduling_structured_q2_table.csv missing structured runtime row for {method}"]
+    if method == "CP-SAT":
+        if str(row.get("structured_runtime_solver", "")) != "ortools_cp_sat":
+            blockers.append("CP-SAT structured row must declare structured_runtime_solver=ortools_cp_sat")
+        for key in (
+            "structured_runtime_integer_variables",
+            "structured_runtime_interval_variables",
+            "structured_runtime_exactly_one_constraints",
+            "structured_runtime_no_overlap_constraints",
+            "structured_runtime_objective_terms",
+        ):
+            if _as_float(row.get(key)) <= 0:
+                blockers.append(f"CP-SAT structured row missing positive {key}")
+    if method == "EST / list scheduling heuristic":
+        if str(row.get("structured_runtime_heuristic", "")) != "earliest_start_list_scheduling":
+            blockers.append("EST structured row must declare structured_runtime_heuristic=earliest_start_list_scheduling")
+        for key in (
+            "structured_runtime_dispatch_steps",
+            "structured_runtime_ready_list_selections",
+            "structured_runtime_candidate_evaluations",
+        ):
+            if _as_float(row.get(key)) <= 0:
+                blockers.append(f"EST structured row missing positive {key}")
+        if not str(row.get("structured_runtime_tie_break_rule", "")).strip():
+            blockers.append("EST structured row missing structured_runtime_tie_break_rule")
+    return blockers
 
 
 def _native_protocol_blockers(method: str, method_protocol: object) -> List[str]:
@@ -875,7 +909,7 @@ def _row_from_structured_artifacts(method: str, transfer_setting: str, source_di
     data = next((row for row in _read_csv(table_path) if row.get("Method") == method), None)
     if data is None:
         return None
-    return {
+    row = {
         "Method": method,
         "Transfer setting": transfer_setting,
         "Success": "--" if data.get("success", "") == "" else _fmt_float(_as_float(data.get("success")), 4),
@@ -888,6 +922,25 @@ def _row_from_structured_artifacts(method: str, transfer_setting: str, source_di
         "source_policy": "structured",
         "notes": str(data.get("notes", "structured input reference")),
     }
+    for key in (
+        "structured_runtime_solver",
+        "structured_runtime_integer_variables",
+        "structured_runtime_boolean_variables",
+        "structured_runtime_interval_variables",
+        "structured_runtime_exactly_one_constraints",
+        "structured_runtime_no_overlap_constraints",
+        "structured_runtime_precedence_constraints",
+        "structured_runtime_release_constraints",
+        "structured_runtime_objective_terms",
+        "structured_runtime_heuristic",
+        "structured_runtime_dispatch_steps",
+        "structured_runtime_ready_list_selections",
+        "structured_runtime_candidate_evaluations",
+        "structured_runtime_tie_break_rule",
+    ):
+        if key in data:
+            row[key] = data.get(key, "")
+    return row
 
 
 def _wall_clock_seconds(source_dir: Path) -> Optional[float]:

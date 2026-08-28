@@ -15,6 +15,12 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
             "ortools/sat/docs/scheduling.md",
             "ortools/sat/python/cp_model.py",
         ],
+        "official_code_refs": [
+            "github: google/or-tools/ortools/sat/docs/scheduling.md",
+            "github: google/or-tools/ortools/sat/python/cp_model.py::CpModel.NewOptionalIntervalVar",
+            "github: google/or-tools/ortools/sat/python/cp_model.py::CpModel.AddNoOverlap",
+            "github: google/or-tools/ortools/sat/python/cp_model.py::CpModel.Minimize",
+        ],
         "official_source_anchors": [
             "scheduling.md: optional intervals are controlled by presence literals and ignored by NoOverlap when inactive",
             "cp_model API: NewOptionalIntervalVar / AddNoOverlap / Minimize",
@@ -35,6 +41,9 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Direct / CoT": {
         "source_url": "https://arxiv.org/abs/2201.11903",
         "source_files": ["paper"],
+        "official_code_refs": [
+            "paper: Wei et al. 2022 Chain-of-Thought Prompting; one sampled reasoning chain before final answer",
+        ],
         "official_source_anchors": [
             "paper method: sample one chain of intermediate reasoning steps before the final answer",
         ],
@@ -52,6 +61,9 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Self-Consistency": {
         "source_url": "https://arxiv.org/abs/2203.11171",
         "source_files": ["paper"],
+        "official_code_refs": [
+            "paper: Wang et al. 2023 Self-Consistency; sample diverse reasoning paths and marginalize final answers",
+        ],
         "official_source_anchors": [
             "paper method: sample diverse reasoning paths and marginalize/aggregate final answers",
         ],
@@ -69,6 +81,9 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Best-of-N": {
         "source_url": "https://arxiv.org/abs/2408.03314",
         "source_files": ["paper"],
+        "official_code_refs": [
+            "paper: Snell et al. 2024 test-time compute scaling; best-of-N uses independent samples selected by verifier/reward",
+        ],
         "official_source_anchors": [
             "test-time scaling primitive: draw N candidate outputs and select by reward/verifier score",
         ],
@@ -86,6 +101,12 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Tree of Thoughts": {
         "source_url": "https://github.com/princeton-nlp/tree-of-thought-llm",
         "source_files": ["src/tot/methods/bfs.py"],
+        "official_code_refs": [
+            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/master/src/tot/methods/bfs.py::solve",
+            "github: princeton-nlp/tree-of-thought-llm/src/tot/methods/bfs.py::method_generate",
+            "github: princeton-nlp/tree-of-thought-llm/src/tot/methods/bfs.py::method_evaluate",
+            "github: princeton-nlp/tree-of-thought-llm/src/tot/methods/bfs.py::method_select",
+        ],
         "official_source_anchors": [
             "README/run.py: ToT+BFS selected by method_generate/method_evaluate/method_select",
             "src/tot/methods/bfs.py: generation, evaluation, and greedy/sample selection loop",
@@ -108,6 +129,10 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "Target-PRM priority": {
         "source_url": "https://github.com/openai/prm800k",
         "source_files": ["README.md", "data/*.jsonl"],
+        "official_code_refs": [
+            "raw: https://raw.githubusercontent.com/openai/prm800k/main/README.md::process-supervision dataset",
+            "github: openai/prm800k/data/*.jsonl::label.steps[].completions[].rating",
+        ],
         "official_source_anchors": [
             "README: PRM800K is a process-supervision dataset with step-level correctness labels",
             "data schema: per-step completions receive ratings rather than only terminal labels",
@@ -128,6 +153,14 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     "PRM-guided MCTS (ReST-MCTS-style)": {
         "source_url": "https://github.com/THUDM/ReST-MCTS",
         "source_files": ["MCTS/mcts.py", "MCTS/base.py", "README.md"],
+        "official_code_refs": [
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/main/MCTS/mcts.py::MCTS.search",
+            "github: THUDM/ReST-MCTS/MCTS/mcts.py::selection",
+            "github: THUDM/ReST-MCTS/MCTS/mcts.py::expansion",
+            "github: THUDM/ReST-MCTS/MCTS/mcts.py::simulation/evaluation",
+            "github: THUDM/ReST-MCTS/MCTS/mcts.py::backpropagation",
+            "github: THUDM/ReST-MCTS/MCTS/base.py::treeNode",
+        ],
         "official_source_anchors": [
             "README: MCTS mode uses propose_method, value_method, iteration_limit, and branch",
             "MCTS implementation: selection, expansion, simulation/evaluation, and backpropagation",
@@ -202,6 +235,13 @@ def _audit_source_evidence_row(method: str) -> Dict[str, object]:
     source_files = [str(item) for item in evidence.get("source_files", [])] if isinstance(evidence.get("source_files"), list) else []
     if not source_files:
         blockers.append("missing source_files")
+    code_refs = [str(item) for item in evidence.get("official_code_refs", [])] if isinstance(evidence.get("official_code_refs"), list) else []
+    if not code_refs:
+        blockers.append("missing official_code_refs")
+    if source_url.startswith("https://github.com/") and not any("github:" in ref or "raw.githubusercontent.com" in ref for ref in code_refs):
+        blockers.append("github-backed source missing github/raw code refs")
+    if source_url.startswith("https://github.com/") and not any("::" in ref for ref in code_refs):
+        blockers.append("github-backed source missing symbol-level code refs")
     official_primitives = [str(item) for item in evidence.get("official_primitives", [])] if isinstance(evidence.get("official_primitives"), list) else []
     if not official_primitives:
         blockers.append("missing official_primitives")
@@ -219,6 +259,7 @@ def _audit_source_evidence_row(method: str) -> Dict[str, object]:
         "source_url": source_url,
         "contract_source_url": contract_url,
         "source_files": "; ".join(source_files),
+        "official_code_refs": "; ".join(code_refs),
         "official_source_anchors": "; ".join(source_anchors),
         "official_primitives": "; ".join(official_primitives),
         "local_promotion_gates": "; ".join(promotion_gates),

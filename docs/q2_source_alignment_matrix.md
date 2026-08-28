@@ -14,11 +14,16 @@ style baselines that must not be described as full official replications.
   - Official `src/tot/methods/bfs.py` performs generation, evaluation, and
     selection in sequence, with greedy selection implemented by sorting values
     and keeping `n_select_sample`.
+  - Machine-readable evidence now records function-level refs to
+    `src/tot/methods/bfs.py::solve`, `::method_generate`,
+    `::method_evaluate`, and `::method_select`.
 - PRM800K / Let's Verify Step by Step:
   `https://github.com/openai/prm800k`
   - README describes PRM800K as a process supervision dataset with 800,000
     step-level correctness labels.
   - Released examples place labels under `label.steps[].completions[].rating`.
+  - Machine-readable evidence records the released schema anchor
+    `data/*.jsonl::label.steps[].completions[].rating`.
 - Best-of-N / test-time compute scaling: `https://arxiv.org/abs/2408.03314`
   - The Q2 row uses the generic Best-of-N primitive from test-time scaling:
     independently sample multiple complete answers and select the best one
@@ -27,6 +32,9 @@ style baselines that must not be described as full official replications.
 - ReST-MCTS*: `https://github.com/THUDM/ReST-MCTS`
   - README describes process-reward-guided tree search plus self-training.
   - `MCTS/mcts.py` implements MCTS rounds with selection, expansion, simulation, and backpropagation.
+  - Machine-readable evidence records symbol-level refs for
+    `MCTS/mcts.py::selection`, `::expansion`, `::simulation/evaluation`,
+    `::backpropagation`, and `MCTS/base.py::treeNode`.
 
 ## Machine-Checked Source Primitive Contract
 
@@ -34,7 +42,7 @@ Each Q2 artifact must now carry the `source_primitives` field from
 `cgr_exp/q2_method_contracts.py` inside its method-alignment manifest. The
 machine-readable official-source checklist lives in
 `cgr_exp/q2_source_evidence.py`, which records the source URL, source files,
-source anchors, official primitives, and local promotion gates for each
+function/schema-level code refs, source anchors, official primitives, and local promotion gates for each
 external baseline. The Table 4 audit rejects completed rows whose artifact does
 not declare the expected primitives for that method. This is intentionally
 stricter than a row name match: old or ad hoc artifacts cannot populate a
@@ -73,8 +81,9 @@ Examples:
 
 - Run `python3 -m cgr_exp.cli audit-q2-source-evidence --output-dir
   runs/q2_source_evidence_audit --overwrite` before promoting a Q2 table. This
-  checks that external baseline source URLs, source files, official primitives,
-  and local promotion gates remain consistent with the method contracts.
+  checks that external baseline source URLs, source files, symbol/schema-level
+  code refs, official primitives, and local promotion gates remain consistent
+  with the method contracts.
 - A row is result-ready only if `audit-table4-q2` marks `result_ready=True`.
 - A row is compute-ready for Q2 only if `audit-table4-q2` marks
   `compute_ready=True`.

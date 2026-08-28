@@ -113,6 +113,7 @@ class Q2MethodContractsTest(unittest.TestCase):
             contract = q2_method_contract(method)
             self.assertEqual(evidence["source_url"], contract["source_url"], method)
             self.assertTrue(evidence["source_files"], method)
+            self.assertTrue(evidence["official_code_refs"], method)
             self.assertTrue(evidence["official_source_anchors"], method)
             self.assertTrue(evidence["official_primitives"], method)
             self.assertTrue(evidence["local_promotion_gates"], method)
@@ -135,6 +136,10 @@ class Q2MethodContractsTest(unittest.TestCase):
             by_method = {row["Method"]: row for row in saved["rows"]}
             self.assertEqual(by_method["Tree of Thoughts"]["source_url"], "https://github.com/princeton-nlp/tree-of-thought-llm")
             self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["source_files"])
+            self.assertIn("raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm", by_method["Tree of Thoughts"]["official_code_refs"])
+            self.assertIn("::method_select", by_method["Tree of Thoughts"]["official_code_refs"])
+            self.assertIn("THUDM/ReST-MCTS/MCTS/mcts.py::selection", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["official_code_refs"])
+            self.assertIn("openai/prm800k/data/*.jsonl::label.steps", by_method["Target-PRM priority"]["official_code_refs"])
             self.assertIn("method_generate", by_method["Tree of Thoughts"]["official_source_anchors"])
             self.assertIn("process-supervision", by_method["Target-PRM priority"]["official_source_anchors"])
 
@@ -157,6 +162,7 @@ class Q2MethodContractsTest(unittest.TestCase):
             by_method = {row["Method"]: row for row in saved["rows"]}
             self.assertIn("cgr_exp/scheduling_tot_q2.py", by_method["Tree of Thoughts"]["Local code paths"])
             self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["Official source files"])
+            self.assertIn("src/tot/methods/bfs.py::method_select", by_method["Tree of Thoughts"]["Official code refs"])
             self.assertIn("generation, evaluation", by_method["Tree of Thoughts"]["Official source anchors"])
             self.assertIn("method_generate", by_method["Tree of Thoughts"]["Official primitives"])
             self.assertIn("target_prm_ranker.json", by_method["Target-PRM priority"]["Required result artifacts"])

@@ -21,6 +21,10 @@ editable-install metadata are ignored.
 skipped only when the checkpoint already contains every policy requested by the
 current command. If a previous partial run is missing one requested policy row,
 that rendering is rerun instead of being silently promoted.
+When new policies are added incrementally, existing `proposal_cache.jsonl`
+state rows are preloaded so the new policy reuses the frozen candidate actions
+where available; new LLM proposal calls occur only for frontier states that were
+not already in the cache.
 
 Native Direct/Self-Consistency/Best-of-N resume is sample-audit aware: a
 method-task row is skipped only when its expected sample rows are present in

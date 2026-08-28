@@ -15,6 +15,7 @@ from cgr_exp.scheduling_transfer import (
     PRMGuidedMCTSStylePolicy,
     ScriptedSchedulingClient,
     canonical_scheduling_state,
+    canonical_state_hash,
     make_level2_scheduling_episodes,
     preflight_scheduling_llm_pilot,
     run_scheduling_fewshot_curve,
@@ -79,6 +80,33 @@ class SchedulingTransferTest(unittest.TestCase):
         self.assertEqual(stats["invalid_actions"], 2)
         self.assertEqual(stats["duplicate_actions"], 1)
         self.assertEqual(stats["empty_valid_action_rate"], 0.0)
+
+    def test_shared_proposal_cache_can_preload_frozen_state_rows(self) -> None:
+        class FailingAdapter:
+            def propose_with_record(self, task, node, k):
+                raise AssertionError("preloaded cache should avoid adapter calls")
+
+        task = generate_scheduling_micro_instances(train_count=1, validation_count=0, test_count=0, seed=25)["train"][0]
+        episode = make_level2_scheduling_episodes([task], seed=26, perturbation="canonical")[0]
+        node = task.root_node()
+        action = task.candidate_actions(node, 1)[0]
+        key = canonical_state_hash(task, node, 70, "mock", "scheduling-level2-v1", 4, 0.0)
+        cache = SharedSchedulingProposalCache(episode, seed=27, proposal_k=4, node_budget=70, useful_action_recall=0.9, model="mock", adapter=FailingAdapter())
+        cache.load_state_rows(
+            [
+                {
+                    "cache_key": key,
+                    "instance_id": task.task_id,
+                    "actions": [action.to_dict()],
+                    "input_tokens": 11,
+                    "output_tokens": 7,
+                    "latency": 0.0,
+                }
+            ]
+        )
+        self.assertEqual(cache.propose(task, node, 4), [action])
+        self.assertEqual(cache.stats()["proposal_calls"], 1)
+        self.assertEqual(cache.stats()["total_tokens"], 18)
 
     def test_zero_shot_transfer_writes_required_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

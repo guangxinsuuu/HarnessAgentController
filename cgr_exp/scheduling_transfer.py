@@ -252,6 +252,25 @@ class SharedSchedulingProposalCache:
     def state_rows(self) -> List[Dict[str, object]]:
         return [dict(row) for row in self.meta.values()]
 
+    def load_state_rows(self, rows: Sequence[Dict[str, object]]) -> None:
+        for row in rows:
+            key = str(row.get("cache_key", ""))
+            if not key or key in self.cache:
+                continue
+            actions = []
+            for item in row.get("actions", []):
+                if isinstance(item, dict):
+                    actions.append(ScheduleAction(job=str(item.get("job", "")), machine=str(item.get("machine", ""))))
+            self.cache[key] = actions
+            self.meta[key] = dict(row)
+            self.cost = self.cost + CostLedger(
+                proposal_calls=1,
+                input_tokens=int(row.get("input_tokens", 0)),
+                output_tokens=int(row.get("output_tokens", 0)),
+                wall_clock_seconds=float(row.get("latency", 0.0)),
+            )
+        self.request_count = max(self.request_count, len(self.cache))
+
 
 class PolicyAccountingProposer:
     def __init__(self, shared_cache: SharedSchedulingProposalCache):
@@ -1384,11 +1403,13 @@ def _evaluate_level2_transfer(
     per_instance_rows = []
     proposal_cache_rows = []
     proposal_state_rows = []
+    preload_proposal_state_rows = []
     completed_renderings = set()
     if checkpoint_dir is not None and output_prefix is not None and resume:
         existing_per_instance_rows = _read_csv_rows(checkpoint_dir / f"{output_prefix}_per_instance.csv")
         proposal_cache_rows = _read_csv_rows(checkpoint_dir / f"{output_prefix}_proposal_cache.csv")
         proposal_state_rows = _read_jsonl_rows(checkpoint_dir / "proposal_cache.jsonl")
+        preload_proposal_state_rows = list(proposal_state_rows)
         requested_policy_names = set(policies)
         rows_by_rendering: Dict[str, Dict[str, Dict[str, object]]] = {}
         for row in existing_per_instance_rows:
@@ -1435,6 +1456,7 @@ def _evaluate_level2_transfer(
     flush_every = max(1, int(batch_size))
     parallel = max(1, int(parallel_episodes))
     pending = [(idx, episode) for idx, episode in enumerate(episodes) if episode.rendering_id not in completed_renderings]
+    preload_state_rows_by_rendering = _proposal_state_rows_by_rendering_or_task(preload_proposal_state_rows, episodes)
     completed_since_flush = 0
     for start in range(0, len(pending), parallel):
         window = pending[start : start + parallel]
@@ -1452,6 +1474,7 @@ def _evaluate_level2_transfer(
                 proposal_model=proposal_model,
                 proposal_adapter_factory=proposal_adapter_factory,
                 policy_certified_pruning=certified_by_policy,
+                preload_state_rows=preload_state_rows_by_rendering.get(episode.rendering_id, []),
             )
         else:
             with ThreadPoolExecutor(max_workers=min(parallel, len(window))) as executor:
@@ -1468,6 +1491,7 @@ def _evaluate_level2_transfer(
                         proposal_model=proposal_model,
                         proposal_adapter_factory=proposal_adapter_factory,
                         policy_certified_pruning=certified_by_policy,
+                        preload_state_rows=preload_state_rows_by_rendering.get(episode.rendering_id, []),
                     ): idx
                     for idx, episode in window
                 }
@@ -1501,6 +1525,22 @@ def _evaluate_level2_transfer(
     return table_rows, per_instance_rows, proposal_cache_rows, proposal_state_rows
 
 
+def _proposal_state_rows_by_rendering_or_task(
+    rows: Sequence[Dict[str, object]],
+    episodes: Sequence[Level2SchedulingEpisode],
+) -> Dict[str, List[Dict[str, object]]]:
+    task_to_rendering = {episode.hidden_task_id: episode.rendering_id for episode in episodes}
+    grouped: Dict[str, List[Dict[str, object]]] = {}
+    for row in rows:
+        rendering_id = str(row.get("rendering_id", ""))
+        if not rendering_id:
+            task_id = str(row.get("task_id", row.get("instance_id", "")))
+            rendering_id = task_to_rendering.get(task_id, "")
+        if rendering_id:
+            grouped.setdefault(rendering_id, []).append(row)
+    return grouped
+
+
 def _evaluate_one_level2_episode(
     idx: int,
     episode: Level2SchedulingEpisode,
@@ -1512,6 +1552,7 @@ def _evaluate_one_level2_episode(
     proposal_model: str,
     proposal_adapter_factory=None,
     policy_certified_pruning: Dict[str, bool] | None = None,
+    preload_state_rows: Sequence[Dict[str, object]] = (),
 ) -> tuple[List[Dict[str, object]], Dict[str, object], List[Dict[str, object]]]:
     shared_cache = SharedSchedulingProposalCache(
         episode,
@@ -1522,6 +1563,7 @@ def _evaluate_one_level2_episode(
         model=proposal_model,
         adapter=proposal_adapter_factory() if proposal_adapter_factory is not None else None,
     )
+    shared_cache.load_state_rows(preload_state_rows)
     oracle_success = None
     episode_rows = []
     for name, factory in policies.items():

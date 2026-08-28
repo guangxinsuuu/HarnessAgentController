@@ -332,12 +332,13 @@ class Table5Q2Test(unittest.TestCase):
                         "native_runtime_selection_events": 1,
                         "native_runtime_valid_samples": 1,
                         "native_runtime_parse_failures": 0,
+                        "native_runtime_reasoning_samples": 1,
                     }
                 ),
                 encoding="utf-8",
             )
             (native / "scheduling_native_q2_samples.jsonl").write_text(
-                json.dumps({"Method": "Direct / CoT", "task_id": "t0"}) + "\n",
+                json.dumps({"Method": "Direct / CoT", "task_id": "t0", "reasoning_present": True, "reasoning_step_count": 1}) + "\n",
                 encoding="utf-8",
             )
             _write_native_manifest(native, ["Direct / CoT"], test_count=1)
@@ -2038,6 +2039,8 @@ def _write_native_manifest(path: Path, methods: list[str], test_count: int) -> N
                 else "validate complete schedules for metrics"
             ),
             "oracle_future_labels_exposed": False,
+            "intermediate_reasoning_requested": True,
+            "reasoning_location": "JSON field: reasoning",
         }
     (path / "scheduling_native_q2_manifest.json").write_text(
         json.dumps(

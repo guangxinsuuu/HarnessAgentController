@@ -764,6 +764,10 @@ def _native_protocol_blockers(method: str, method_protocol: object) -> List[str]
             invalid.append("Best-of-N manifest does not disclose verifier objective selection")
     if method_protocol.get("oracle_future_labels_exposed") is not False:
         invalid.append(f"{method} manifest must exclude oracle future labels")
+    if method_protocol.get("intermediate_reasoning_requested") is not True:
+        invalid.append(f"{method} manifest must declare intermediate reasoning requested")
+    if "reasoning" not in str(method_protocol.get("reasoning_location", "")):
+        invalid.append(f"{method} manifest must declare reasoning audit location")
     return invalid
 
 
@@ -792,6 +796,13 @@ def _native_sample_count_blockers(
         return [f"scheduling_native_q2_samples.jsonl Direct / CoT must have exactly one sample per task; observed range {min_count}-{max_count}"]
     if method in {"Self-Consistency", "Best-of-N"} and min_count < expected:
         return [f"scheduling_native_q2_samples.jsonl {method} sample coverage per task below declared sample_count: {min_count}/{expected}"]
+    missing_reasoning_audit = [
+        sample
+        for sample in method_samples
+        if "reasoning_present" not in sample or "reasoning_step_count" not in sample
+    ]
+    if missing_reasoning_audit:
+        return [f"scheduling_native_q2_samples.jsonl {method} missing reasoning audit fields"]
     return []
 
 
@@ -815,6 +826,8 @@ def _native_runtime_count_blockers(
         invalid.append(f"{method} table row must record native runtime samples: {observed_samples}/{expected_samples}")
     if observed_selections < expected_tasks:
         invalid.append(f"{method} table row must record one native selection event per task: {observed_selections}/{expected_tasks}")
+    if "native_runtime_reasoning_samples" not in table_row:
+        invalid.append(f"{method} table row must record native reasoning sample audit count")
     if method == "Best-of-N":
         valid_samples = int(max(0, _as_float(table_row.get("native_runtime_valid_samples", table_row.get("valid_samples")))))
         if valid_samples <= 0:
@@ -1039,7 +1052,15 @@ def _row_from_native_artifacts(method: str, transfer_setting: str, source_dir: P
         for key in ("tot_generate_events", "tot_evaluate_events", "tot_select_events", "tot_value_sample_count"):
             row[key] = data.get(key, "")
     if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
-        for key in ("native_runtime_sample_count", "native_runtime_selection_events", "native_runtime_valid_samples", "native_runtime_parse_failures", "total_samples", "valid_samples"):
+        for key in (
+            "native_runtime_sample_count",
+            "native_runtime_selection_events",
+            "native_runtime_valid_samples",
+            "native_runtime_parse_failures",
+            "native_runtime_reasoning_samples",
+            "total_samples",
+            "valid_samples",
+        ):
             row[key] = data.get(key, "")
     return row
 

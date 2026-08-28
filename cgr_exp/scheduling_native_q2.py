@@ -227,6 +227,8 @@ def _native_protocol_manifest(method_keys: Sequence[str], sample_count: int) -> 
             "sample_count": effective_sample_count,
             "temperature": spec["temperature"],
             "selection_rule": spec["selection"],
+            "intermediate_reasoning_requested": True,
+            "reasoning_location": "JSON field: reasoning",
             "verifier_role": (
                 "validate complete schedules for metrics"
                 if method_key != "best_of_n"
@@ -293,6 +295,7 @@ def _run_one_method_task(client, model: str, method_key: str, task_index: int, t
 def _evaluate_sample(task: SchedulingTask, response: Dict[str, object], sample_idx: int) -> Dict[str, object]:
     raw_output = str(response.get("raw_output", ""))
     actions, parse_failures = _parse_actions(raw_output)
+    reasoning_present, reasoning_step_count = _reasoning_audit(raw_output)
     node = task.root_node()
     verifier = Level1SchedulingVerifier()
     valid_prefix = True
@@ -314,6 +317,8 @@ def _evaluate_sample(task: SchedulingTask, response: Dict[str, object], sample_i
         "job_order": job_order,
         "parse_failures": parse_failures,
         "parsed_action_count": len(actions),
+        "reasoning_present": reasoning_present,
+        "reasoning_step_count": reasoning_step_count,
         "violations": violations,
         "raw_output": raw_output,
         "input_tokens": int(response.get("input_tokens", 0)),
@@ -335,6 +340,8 @@ def _sample_audit_row(task: SchedulingTask, task_index: int, method_key: str, me
         "job_order": list(sample["job_order"]),
         "parse_failures": sample["parse_failures"],
         "parsed_action_count": sample["parsed_action_count"],
+        "reasoning_present": sample["reasoning_present"],
+        "reasoning_step_count": sample["reasoning_step_count"],
         "violations": sample["violations"],
         "input_tokens": sample["input_tokens"],
         "output_tokens": sample["output_tokens"],
@@ -364,6 +371,21 @@ def _parse_actions(raw: str) -> tuple[List[ScheduleAction], int]:
     except Exception:
         parse_failures += 1
     return actions, parse_failures
+
+
+def _reasoning_audit(raw: str) -> tuple[bool, int]:
+    try:
+        parsed = json.loads(_extract_json_payload(raw))
+    except Exception:
+        return False, 0
+    if not isinstance(parsed, dict):
+        return False, 0
+    reasoning = parsed.get("reasoning")
+    if isinstance(reasoning, list):
+        return len(reasoning) > 0, len(reasoning)
+    if isinstance(reasoning, str):
+        return bool(reasoning.strip()), 1 if reasoning.strip() else 0
+    return False, 0
 
 
 def _extract_json_payload(raw: str) -> str:
@@ -417,6 +439,7 @@ def _summarize_rows(rows: Sequence[Dict[str, object]], method_keys: Sequence[str
                 "native_runtime_selection_events": len(method_rows),
                 "native_runtime_valid_samples": sum(int(row["valid_samples"]) for row in method_rows),
                 "native_runtime_parse_failures": sum(int(row.get("parse_failures", 0)) for row in method_rows),
+                "native_runtime_reasoning_samples": sum(1 for row in rows if row["method_key"] == method_key and int(row.get("reasoning_present", 0)) > 0),
                 "status": "complete" if complete else f"partial: {len(method_rows)}/{expected_count}",
                 "source_policy": "native",
                 "notes": f"{spec['selection']}; {len(method_rows)}/{expected_count} completed",

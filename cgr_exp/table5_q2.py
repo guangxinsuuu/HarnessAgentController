@@ -133,14 +133,19 @@ def _row_from_scheduling_artifacts(
 
 def _row_from_native_artifacts(method: str, training_states: str, source_dir: Path) -> Optional[Dict[str, object]]:
     table_path = source_dir / "table5_native_row.json"
-    if not table_path.exists():
-        return None
-    data = json.loads(table_path.read_text(encoding="utf-8"))
+    if table_path.exists():
+        data = json.loads(table_path.read_text(encoding="utf-8"))
+    else:
+        native_rows = _read_csv(source_dir / "scheduling_native_q2_table.csv")
+        data = next((row for row in native_rows if row.get("Method") == method), None)
+        if data is None:
+            return None
+        table_path = source_dir / "scheduling_native_q2_table.csv"
     return {
         "Method": method,
         "Training states": training_states,
-        "Success": _fmt_float(_as_float(data.get("success")), 4),
-        "Gap": _fmt_float(_as_float(data.get("gap")), 5),
+        "Success": _fmt_float(_as_float(data.get("success", data.get("Success"))), 4),
+        "Gap": _fmt_float(_as_float(data.get("gap", data.get("Gap"))), 5),
         "LLM calls": _fmt_count(_as_float(data.get("llm_calls"))),
         "Tokens": _fmt_tokens(_as_float(data.get("tokens"))),
         "Wall-clock": _fmt_seconds(_as_float(data.get("wall_clock_seconds"))),

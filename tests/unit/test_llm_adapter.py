@@ -305,6 +305,43 @@ class LLMAdapterTest(unittest.TestCase):
         self.assertEqual(len(prompt["candidates"]), 2)
         self.assertNotIn("best_descendant_objective", prompt)
 
+    def test_openai_compatible_http_client_generates_complete_scheduling_solution(self) -> None:
+        requests = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "choices": [{"message": {"content": '{"actions":[{"action_type":"schedule","job":"J0","machine":"M0"}]}'}}],
+                        "usage": {"prompt_tokens": 41, "completion_tokens": 9},
+                    }
+                ).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            requests.append((request, timeout))
+            return FakeResponse()
+
+        task = generate_scheduling_fixture(random.Random(28), "sched-native", job_count=4, machine_count=2)
+        client = OpenAICompatibleHTTPClient(
+            base_url="https://llm.example/v1",
+            api_key="secret-key",
+            model="test-model",
+            urlopen=fake_urlopen,
+        )
+        response = client.generate_scheduling_solution(task=task, model="test-model", method="direct", sample_index=0)
+        self.assertEqual(response["input_tokens"], 41)
+        body = json.loads(requests[0][0].data.decode("utf-8"))
+        prompt = json.loads(body["messages"][1]["content"])
+        self.assertEqual(prompt["task"], "precedence_constrained_scheduling_complete_solution")
+        self.assertEqual(prompt["objective"], "minimize makespan + total tardiness")
+        self.assertNotIn("best_descendant_objective", prompt)
+
     def test_openai_compatible_http_client_retries_timeout(self) -> None:
         calls = {"count": 0}
 

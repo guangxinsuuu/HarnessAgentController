@@ -13,6 +13,7 @@ from cgr_exp.run_experiment import main as run_experiment_main
 from cgr_exp.scheduling_certification import run_scheduling_certification_experiment
 from cgr_exp.scheduling_diagnosis import run_scheduling_transfer_diagnosis
 from cgr_exp.scheduling_micro import run_scheduling_micro_experiment
+from cgr_exp.scheduling_native_q2 import run_scheduling_native_q2, run_scheduling_native_q2_from_env
 from cgr_exp.scheduling_representation import run_scheduling_representation_ablation
 from cgr_exp.scheduling_transfer import (
     ScriptedSchedulingClient,
@@ -34,6 +35,7 @@ COMMANDS = [
     "run-scheduling-certification",
     "preflight-scheduling-llm-pilot",
     "run-scheduling-llm-pilot",
+    "run-scheduling-native-q2",
     "run-scheduling-diagnosis",
     "generate-level1",
     "generate-level2",
@@ -153,6 +155,19 @@ def main() -> None:
             p.add_argument("--include-gpt-frontier-ranking", action="store_true", default=False)
             p.add_argument("--include-target-prm", action="store_true", default=False)
             p.add_argument("--target-prm-train-count", type=int, default=100)
+        if name == "run-scheduling-native-q2":
+            p.add_argument("--model", default=None)
+            p.add_argument("--train-count", type=int, default=200)
+            p.add_argument("--validation-count", type=int, default=50)
+            p.add_argument("--test-count", type=int, default=100)
+            p.add_argument("--job-count", type=int, default=6)
+            p.add_argument("--machine-count", type=int, default=3)
+            p.add_argument("--timeout", type=float, default=120.0)
+            p.add_argument("--methods", default="direct,self_consistency,best_of_n")
+            p.add_argument("--sample-count", type=int, default=8)
+            p.add_argument("--parallel-episodes", type=int, default=1)
+            p.add_argument("--resume", action="store_true", default=False)
+            p.add_argument("--mock", action="store_true", default=False)
         if name == "run-scheduling-diagnosis":
             p.add_argument("--source-count", type=int, default=200)
             p.add_argument("--source-validation-count", type=int, default=50)
@@ -518,6 +533,59 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'scheduling_llm_pilot_table.csv'}")
+            return
+        if args.command == "run-scheduling-native-q2":
+            methods = tuple(part.strip() for part in args.methods.split(",") if part.strip())
+            if args.mock:
+                metrics = run_scheduling_native_q2(
+                    args.output_dir,
+                    client=ScriptedSchedulingClient(model=args.model or "mock-scheduling"),
+                    model=args.model or "mock-scheduling",
+                    seed=args.seed,
+                    train_count=args.train_count,
+                    validation_count=args.validation_count,
+                    test_count=args.test_count,
+                    job_count=args.job_count,
+                    machine_count=args.machine_count,
+                    methods=methods,
+                    sample_count=args.sample_count,
+                    parallel_episodes=args.parallel_episodes,
+                    resume=args.resume,
+                )
+            else:
+                metrics = run_scheduling_native_q2_from_env(
+                    args.output_dir,
+                    model=args.model,
+                    seed=args.seed,
+                    train_count=args.train_count,
+                    validation_count=args.validation_count,
+                    test_count=args.test_count,
+                    job_count=args.job_count,
+                    machine_count=args.machine_count,
+                    timeout=args.timeout,
+                    methods=methods,
+                    sample_count=args.sample_count,
+                    parallel_episodes=args.parallel_episodes,
+                    resume=args.resume,
+                )
+            manifest = {
+                "command": args.command,
+                "seed": args.seed,
+                "model": metrics["model"],
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "methods": list(methods),
+                "sample_count": args.sample_count,
+                "parallel_episodes": args.parallel_episodes,
+                "resume": args.resume,
+                "mock": args.mock,
+                "live_network_required": metrics["live_network_required"],
+                "oracle_labels_in_inference_features": False,
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'scheduling_native_q2_table.csv'}")
             return
         if args.command == "preflight-scheduling-llm-pilot":
             preflight = preflight_scheduling_llm_pilot(

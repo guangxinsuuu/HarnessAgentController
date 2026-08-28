@@ -133,6 +133,45 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(by_method["Direct / CoT"]["Status"], "complete")
             self.assertEqual(by_method["Direct / CoT"]["Tokens"], "1.20M")
 
+    def test_builder_reads_native_method_from_aggregate_table(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_csv(
+                native / "scheduling_native_q2_table.csv",
+                [
+                    {
+                        "Method": "Direct / CoT",
+                        "success": "0.4",
+                        "gap": "0.2",
+                        "llm_calls": "100",
+                        "tokens": "1000",
+                        "wall_clock_seconds": "10",
+                        "status": "complete",
+                        "source_policy": "native",
+                        "notes": "direct",
+                    },
+                    {
+                        "Method": "Best-of-N",
+                        "success": "0.7",
+                        "gap": "0.05",
+                        "llm_calls": "800",
+                        "tokens": "9000",
+                        "wall_clock_seconds": "12",
+                        "status": "complete",
+                        "source_policy": "native",
+                        "notes": "best",
+                    },
+                ],
+            )
+            out = root / "out"
+            build_table5_q2_results(out, solver_prior_dir=root / "missing", direct_dir=native, best_of_n_dir=native)
+            by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
+            self.assertEqual(by_method["Direct / CoT"]["Success"], "0.4000")
+            self.assertEqual(by_method["Best-of-N"]["Success"], "0.7000")
+            self.assertEqual(by_method["Best-of-N"]["LLM calls"], "800")
+
 
 def _write_csv(path: Path, rows) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:

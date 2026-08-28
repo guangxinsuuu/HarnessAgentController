@@ -18,6 +18,9 @@ class LLMClient(Protocol):
     def generate_typed_actions(self, *args, **kwargs):
         ...
 
+    def generate_scheduling_solution(self, *args, **kwargs):
+        ...
+
     def score_state(self, *args, **kwargs):
         ...
 
@@ -40,6 +43,9 @@ class MockLLMClient:
             "output_tokens": self.output_tokens,
             "latency": self.latency,
         }
+
+    def generate_scheduling_solution(self, *args, **kwargs):
+        return self.generate_typed_actions(*args, **kwargs)
 
     def score_state(self, *args, **kwargs):
         del args, kwargs
@@ -76,6 +82,10 @@ class EnvConfiguredLLMClient:
         }
 
     def generate_typed_actions(self, *args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("EnvConfiguredLLMClient is a provider-neutral configuration stub; use a concrete network client outside smoke/CI")
+
+    def generate_scheduling_solution(self, *args, **kwargs):
         del args, kwargs
         raise RuntimeError("EnvConfiguredLLMClient is a provider-neutral configuration stub; use a concrete network client outside smoke/CI")
 
@@ -139,6 +149,45 @@ class OpenAICompatibleHTTPClient:
             "model": model,
             "messages": [
                 {"role": "system", "content": "Return only JSON actions following the provided typed action schema."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": temperature,
+            "top_p": top_p,
+            "response_format": {"type": "json_object"},
+        }
+        req = request.Request(
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(payload, sort_keys=True).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        body = self._post_json(req)
+        content = body["choices"][0]["message"]["content"]
+        usage = body.get("usage", {})
+        return {
+            "raw_output": content,
+            "input_tokens": int(usage.get("prompt_tokens", 0)),
+            "output_tokens": int(usage.get("completion_tokens", 0)),
+            "latency": time.perf_counter() - started,
+        }
+
+    def generate_scheduling_solution(self, *args, **kwargs):
+        task = kwargs.get("task")
+        model = kwargs.get("model") or self.model
+        temperature = float(kwargs.get("temperature", 0.0))
+        top_p = float(kwargs.get("top_p", 1.0))
+        prompt_template_version = kwargs.get("prompt_template_version", "scheduling-native-v1")
+        method = kwargs.get("method", "direct")
+        sample_index = int(kwargs.get("sample_index", 0))
+        prompt = self._prompt_for_scheduling_solution(task, prompt_template_version, method, sample_index)
+        started = time.perf_counter()
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "Return only JSON for a complete verified scheduling plan. Do not include prose."},
                 {"role": "user", "content": prompt},
             ],
             "temperature": temperature,
@@ -341,12 +390,58 @@ class OpenAICompatibleHTTPClient:
             try:
                 with self.urlopen(req, timeout=self.timeout) as response:
                     return json.loads(response.read().decode("utf-8"))
-            except (TimeoutError, error.URLError, http.client.RemoteDisconnected) as exc:
+            except (TimeoutError, error.URLError, http.client.RemoteDisconnected, http.client.IncompleteRead) as exc:
                 last_error = exc
                 if attempt >= self.max_retries:
                     break
                 time.sleep(self.retry_sleep_seconds * (attempt + 1))
         raise RuntimeError(f"LLM request failed after {self.max_retries + 1} attempts: {last_error}") from last_error
+
+    def _prompt_for_scheduling_solution(self, task, prompt_template_version: str, method: str, sample_index: int) -> str:
+        if isinstance(task, SchedulingTask):
+            return json.dumps(
+                {
+                    "prompt_template_version": prompt_template_version,
+                    "task": "precedence_constrained_scheduling_complete_solution",
+                    "task_id": task.task_id,
+                    "method": method,
+                    "sample_index": sample_index,
+                    "instruction": (
+                        "Produce one complete feasible schedule. Return only a JSON object with an actions array. "
+                        "Each action must schedule one currently eligible unscheduled job on an allowed machine. "
+                        "The action order must respect all predecessor constraints. Try to minimize makespan plus total tardiness."
+                    ),
+                    "objective": "minimize makespan + total tardiness",
+                    "jobs": {
+                        job: {
+                            "duration": task.durations[job],
+                            "release_time": task.release_times[job],
+                            "due_date": task.due_dates[job],
+                            "allowed_machines": list(task.allowed[job]),
+                            "predecessors": list(task.predecessors.get(job, ())),
+                        }
+                        for job in task.durations
+                    },
+                    "machines": list(task.machines),
+                    "response_schema": {"actions": [{"action_type": "schedule", "job": "job id", "machine": "allowed machine id"}]},
+                    "constraints": [
+                        "schedule every job exactly once",
+                        "choose only allowed machines",
+                        "respect predecessor order in the returned action sequence",
+                        "do not include starts or finishes; the verifier computes them deterministically",
+                    ],
+                },
+                sort_keys=True,
+            )
+        return json.dumps(
+            {
+                "prompt_template_version": prompt_template_version,
+                "task": _safe_jsonable(task),
+                "instruction": "Return only JSON with an actions array representing one complete solution.",
+                "response_schema": {"actions": [{"action_type": "schedule", "job": "job id", "machine": "machine id"}]},
+            },
+            sort_keys=True,
+        )
 
     def _prompt_for_actions(self, task, node, k, prompt_template_version: str) -> str:
         if getattr(task, "task_id", "").startswith("game24-") and hasattr(node, "structured_state"):

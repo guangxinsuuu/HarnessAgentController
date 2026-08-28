@@ -807,6 +807,25 @@ class ScriptedSchedulingClient:
             "latency": 0.0,
         }
 
+    def generate_scheduling_solution(self, *args, **kwargs):
+        del args
+        task = kwargs["task"]
+        node = task.root_node()
+        actions = []
+        while len(actions) < len(task.durations):
+            candidates = task.candidate_actions(node, k=1)
+            if not candidates:
+                break
+            action = candidates[0]
+            actions.append(action.to_dict())
+            node = task.apply(node, action, child_index=len(actions) - 1)
+        return {
+            "raw_output": json.dumps({"actions": actions}),
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "latency": 0.0,
+        }
+
     def score_state(self, *args, **kwargs):
         del args
         task = kwargs["task"]

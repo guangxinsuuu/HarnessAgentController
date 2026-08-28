@@ -181,6 +181,8 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
         compute_blockers.append("result not complete")
     return {
         "Method": row["Method"],
+        "Reference": row.get("Reference", ""),
+        "Source URL": row.get("Source URL", ""),
         "Claim scope": row.get("Claim scope", ""),
         "Required wording": row.get("Required wording", ""),
         "Status": status,
@@ -610,6 +612,8 @@ def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path])
 def _contract_fields(method: str) -> Dict[str, object]:
     contract = q2_method_contract(method)
     return {
+        "Reference": str(contract.get("reference", "")),
+        "Source URL": str(contract.get("source_url", "")),
         "Claim scope": str(contract.get("claim_scope", "")),
         "Official full reproduction": bool(contract.get("official_reproduction", False)),
         "Required wording": str(contract.get("required_table_wording", "")),

@@ -25,7 +25,7 @@ TOT_BREADTH="${TOT_BREADTH:-5}"
 TOT_VALUE_SAMPLES="${TOT_VALUE_SAMPLES:-3}"
 PERTURBATION="${PERTURBATION:-mixed}"
 
-STRUCTURED_DIR="${STRUCTURED_DIR:-runs/q2_structured_100_seed0}"
+STRUCTURED_DIR="${STRUCTURED_DIR:-runs/q2_structured_100_seed0_runtime_v2}"
 NATIVE_DIR="${NATIVE_DIR:-runs/q2_native_llm_baselines_100_seed0_sc_v2}"
 LEARNED_DIR="${LEARNED_DIR:-runs/q2_learned_search_100_seed0_rest_gate_v2}"
 TOT_DIR="${TOT_DIR:-runs/q2_tot_bfs_100_seed0_tot_gate_v2}"
@@ -54,7 +54,15 @@ require_llm_key() {
   fi
 }
 
+require_cpsat() {
+  if ! "${PYTHON_BIN}" -c "from ortools.sat.python import cp_model" >/dev/null 2>&1; then
+    print -u2 "missing OR-Tools CP-SAT in ${PYTHON_BIN}; set PYTHON_BIN=.venv/bin/python or install ortools before running structured/Q2-all"
+    exit 2
+  fi
+}
+
 run_structured() {
+  require_cpsat
   "${PYTHON_BIN}" -m cgr_exp.cli run-scheduling-structured-q2 \
     --output-dir "${STRUCTURED_DIR}" \
     --seed "${SEED}" \
@@ -180,7 +188,13 @@ preflight() {
   "${PYTHON_BIN}" -m cgr_exp.cli audit-table4-q2 --help >/dev/null
   "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-source-evidence --help >/dev/null
   "${PYTHON_BIN}" -m cgr_exp.cli build-q2-implementation-matrix --help >/dev/null
+  if "${PYTHON_BIN}" -c "from ortools.sat.python import cp_model" >/dev/null 2>&1; then
+    cpsat_status="present"
+  else
+    cpsat_status="missing"
+  fi
   print "python: ${PYTHON_BIN}"
+  print "ortools_cp_sat: ${cpsat_status}"
   print "model: ${MODEL}"
   print "seed/test_count: ${SEED}/${TEST_COUNT}"
   print "structured_dir: ${STRUCTURED_DIR}"

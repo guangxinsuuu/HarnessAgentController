@@ -12,8 +12,8 @@ checklist.
 
 | Row | Implementation evidence | Test evidence | Run evidence | Claim status |
 | --- | --- | --- | --- | --- |
-| CP-SAT | `cgr_exp/scheduling_structured_q2.py::_solve_with_cpsat` uses OR-Tools optional intervals, `NoOverlap`, release times, precedences, and `makespan + tardiness` objective. | `tests/unit/test_scheduling_structured_q2.py` covers row generation. | `.venv` run with OR-Tools 9.15.6755 wrote `runs/q2_structured_100_seed0/scheduling_structured_q2_table.csv`: success 1.0000, gap 0.00000, tokens 0. | Result-ready as a structured-input calibration reference. |
-| EST / list scheduling heuristic | `cgr_exp/scheduling_structured_q2.py::_earliest_start_list_schedule` schedules ready jobs by earliest start/finish/tardiness/due-date tie breaks. | `tests/unit/test_scheduling_structured_q2.py`. | `runs/q2_structured_100_seed0/scheduling_structured_q2_table.csv`: success 0.4200, gap 0.16829, tokens 0. | Result-ready as a structured-input heuristic reference. |
+| CP-SAT | `cgr_exp/scheduling_structured_q2.py::_solve_with_cpsat` uses OR-Tools optional intervals, `NoOverlap`, release times, precedences, and `makespan + tardiness` objective. | `tests/unit/test_scheduling_structured_q2.py` covers row generation. | `.venv` run with OR-Tools 9.15.6755 wrote `runs/q2_structured_100_seed0_runtime_v2/scheduling_structured_q2_table.csv`: success 1.0000, gap 0.00000, tokens 0. | Result-ready as a structured-input calibration reference. |
+| EST / list scheduling heuristic | `cgr_exp/scheduling_structured_q2.py::_earliest_start_list_schedule` schedules ready jobs by earliest start/finish/tardiness/due-date tie breaks. | `tests/unit/test_scheduling_structured_q2.py`. | `runs/q2_structured_100_seed0_runtime_v2/scheduling_structured_q2_table.csv`: success 0.4200, gap 0.16829, tokens 0. | Result-ready as a structured-input heuristic reference. |
 | Direct / CoT | `cgr_exp/scheduling_native_q2.py` uses one complete-schedule LLM sample and verifier validation; raw outputs, parse failures, valid sample rate, and token usage are audited. | `tests/unit/test_scheduling_native_q2.py`. | No complete 100-instance native run found locally. | Method-ready; result pending. |
 | Self-Consistency | `cgr_exp/scheduling_native_q2.py` samples N complete schedules and selects the majority canonical job order with earliest-valid tie-break; raw outputs, parse failures, valid sample rate, and token usage are audited. | `tests/unit/test_scheduling_native_q2.py`. | No complete 100-instance native run found locally. | Method-ready as a SC adaptation distinct from Best-of-N; result pending. |
 | Best-of-N | `cgr_exp/scheduling_native_q2.py` samples N complete schedules, filters with the verifier, and selects minimum objective; raw outputs, parse failures, valid sample rate, and token usage are audited. | `tests/unit/test_scheduling_native_q2.py`. | No complete 100-instance native run found locally. | Method-ready as verifier-selected Best-of-N; result pending. |
@@ -57,7 +57,7 @@ To make the Q2 table result-complete without ToT:
 
 1. Run `run-scheduling-native-q2` for Direct / Self-Consistency / Best-of-N.
 2. Rerun `run-scheduling-llm-pilot` with `--include-target-prm --include-rest-mcts --include-solver-certification` so the upgraded MCTS row and on-demand token accounting replace the older result.
-3. Build the table with `build-table4-q2 --structured-dir runs/q2_structured_100_seed0 ...`.
+3. Build the table with `build-table4-q2 --structured-dir runs/q2_structured_100_seed0_runtime_v2 ...`.
 
 To add the strict ToT row, run `run-scheduling-tot-q2`; older
 `GPT-frontier-rank / ToT-style` runs should remain diagnostic.

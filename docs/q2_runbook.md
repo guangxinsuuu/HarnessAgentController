@@ -20,6 +20,17 @@ export CGR_LLM_MODEL="gpt-4o-mini"
 Do not commit API keys or run outputs. `runs/*`, `.env*`, `.venv/`, and
 editable-install metadata are ignored.
 
+Structured CP-SAT rows require OR-Tools in the Python interpreter used by the
+runner. On this machine, use:
+
+```bash
+export PYTHON_BIN=.venv/bin/python
+```
+
+The Q2 run script refuses to run `structured` or `all` if
+`${PYTHON_BIN}` cannot import `ortools.sat.python.cp_model`, because that would
+otherwise produce a partial CP-SAT artifact.
+
 `--resume` is policy-set aware for Scheduling transfer runs: an episode is
 skipped only when the checkpoint already contains every policy requested by the
 current command. If a previous partial run is missing one requested policy row,
@@ -58,7 +69,7 @@ Command:
 
 ```bash
 .venv/bin/python -m cgr_exp.cli run-scheduling-structured-q2 \
-  --output-dir runs/q2_structured_100_seed0 \
+  --output-dir runs/q2_structured_100_seed0_runtime_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -390,11 +401,12 @@ separate background jobs, while each runner still uses its own
 Before spending API tokens, run:
 
 ```bash
-scripts/run_q2_table4.sh preflight
+PYTHON_BIN=.venv/bin/python scripts/run_q2_table4.sh preflight
 ```
 
 This checks the local CLI, reports whether an LLM key is present without
-printing it, and writes the current `audit-table4-q2` readiness report.
+printing it, reports OR-Tools CP-SAT availability, and writes the current
+`audit-table4-q2` readiness report.
 
 Native frozen baselines can run together:
 
@@ -471,7 +483,7 @@ python3 -m cgr_exp.cli run-scheduling-tot-q2 \
 python3 -m cgr_exp.cli build-table4-q2 \
   --output-dir runs/q2_table_current_seed0_protocol_v2 \
   --expected-test-count 100 \
-  --structured-dir runs/q2_structured_100_seed0 \
+  --structured-dir runs/q2_structured_100_seed0_runtime_v2 \
   --direct-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
   --self-consistency-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
   --best-of-n-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
@@ -492,7 +504,7 @@ same inputs:
 python3 -m cgr_exp.cli audit-table4-q2 \
   --output-dir runs/q2_table_current_seed0_protocol_v2_audit \
   --expected-test-count 100 \
-  --structured-dir runs/q2_structured_100_seed0 \
+  --structured-dir runs/q2_structured_100_seed0_runtime_v2 \
   --direct-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
   --self-consistency-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
   --best-of-n-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \

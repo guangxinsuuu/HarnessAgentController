@@ -194,6 +194,9 @@ class Q2MethodContractsTest(unittest.TestCase):
             def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
                 return None
 
+            def read(self) -> bytes:
+                return b"def solve\nstep-level correctness labels\ndef MCTS_search\n"
+
         seen_urls = []
 
         def fake_urlopen(request: object, timeout: float = 0.0) -> FakeResponse:
@@ -207,6 +210,33 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertTrue(manifest["all_online_refs_ready"])
             self.assertTrue(any("raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm" in url for url in seen_urls))
             self.assertTrue(any("github.com/THUDM/ReST-MCTS/commit" in url for url in seen_urls))
+            by_method = {row["Method"]: row for row in manifest["rows"]}
+            self.assertEqual(by_method["Tree of Thoughts"]["raw_anchor_match_count"], 1)
+            self.assertEqual(by_method["Target-PRM priority"]["raw_anchor_match_count"], 1)
+            self.assertEqual(by_method["PRM-guided MCTS (ReST-MCTS-style)"]["raw_anchor_match_count"], 1)
+
+    def test_source_ref_verifier_rejects_online_raw_anchor_mismatch(self) -> None:
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b"reachable page without the pinned symbol"
+
+        def fake_urlopen(request: object, timeout: float = 0.0) -> FakeResponse:
+            del request, timeout
+            return FakeResponse()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = verify_q2_source_refs(Path(tmp), online=True, timeout=3.0, urlopen=fake_urlopen)
+            self.assertFalse(manifest["all_online_refs_ready"])
+            by_method = {row["Method"]: row for row in manifest["rows"]}
+            self.assertIn("missing raw content anchor", by_method["Tree of Thoughts"]["online_errors"])
 
     def test_implementation_matrix_covers_table_rows_with_local_code_and_artifacts(self) -> None:
         table_methods = {method for method, _setting, _source, _kind in TABLE5_METHODS}

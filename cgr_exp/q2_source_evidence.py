@@ -112,7 +112,7 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
         "source_revision_url": "https://github.com/princeton-nlp/tree-of-thought-llm/commit/8050e67d0e3a0fddc424d7fa5801538722a4c4cc",
         "source_files": ["src/tot/methods/bfs.py"],
         "official_code_refs": [
-            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::solve",
+            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::def solve",
             "github@8050e67d0e3a0fddc424d7fa5801538722a4c4cc: princeton-nlp/tree-of-thought-llm/src/tot/methods/bfs.py::method_generate",
             "github@8050e67d0e3a0fddc424d7fa5801538722a4c4cc: princeton-nlp/tree-of-thought-llm/src/tot/methods/bfs.py::method_evaluate",
             "github@8050e67d0e3a0fddc424d7fa5801538722a4c4cc: princeton-nlp/tree-of-thought-llm/src/tot/methods/bfs.py::method_select",
@@ -142,7 +142,7 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
         "source_revision_url": "https://github.com/openai/prm800k/commit/7ecc794703b2877f63226f2477a49b34f9b25163",
         "source_files": ["README.md", "data/*.jsonl"],
         "official_code_refs": [
-            "raw: https://raw.githubusercontent.com/openai/prm800k/7ecc794703b2877f63226f2477a49b34f9b25163/README.md::process-supervision dataset",
+            "raw: https://raw.githubusercontent.com/openai/prm800k/7ecc794703b2877f63226f2477a49b34f9b25163/README.md::step-level correctness labels",
             "github@7ecc794703b2877f63226f2477a49b34f9b25163: openai/prm800k/data/*.jsonl::label.steps[].completions[].rating",
         ],
         "official_source_anchors": [
@@ -168,7 +168,7 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
         "source_revision_url": "https://github.com/THUDM/ReST-MCTS/commit/2d5f488c3d6e24f99d50a9860e818383b1bb5883",
         "source_files": ["MCTS/mcts.py", "MCTS/base.py", "README.md"],
         "official_code_refs": [
-            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::MCTS.search",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def MCTS_search",
             "github@2d5f488c3d6e24f99d50a9860e818383b1bb5883: THUDM/ReST-MCTS/MCTS/mcts.py::selection",
             "github@2d5f488c3d6e24f99d50a9860e818383b1bb5883: THUDM/ReST-MCTS/MCTS/mcts.py::expansion",
             "github@2d5f488c3d6e24f99d50a9860e818383b1bb5883: THUDM/ReST-MCTS/MCTS/mcts.py::simulation/evaluation",

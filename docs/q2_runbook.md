@@ -25,6 +25,10 @@ When new policies are added incrementally, existing `proposal_cache.jsonl`
 state rows are preloaded so the new policy reuses the frozen candidate actions
 where available; new LLM proposal calls occur only for frontier states that were
 not already in the cache.
+In `scheduling_llm_pilot_proposal_cache.csv`, `total_tokens` is the frozen-cache
+equivalent proposal cost for that rendering, while `new_proposal_tokens` and
+`new_proposal_calls` record the additional API work caused by the current
+resume command.
 
 Native Direct/Self-Consistency/Best-of-N resume is sample-audit aware: a
 method-task row is skipped only when its expected sample rows are present in

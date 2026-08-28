@@ -172,6 +172,12 @@ class SharedSchedulingProposalCache:
         self.support_total = 0
         self.invalid_actions = 0
         self.duplicate_actions = 0
+        self.preloaded_state_count = 0
+        self.preloaded_input_tokens = 0
+        self.preloaded_output_tokens = 0
+        self.new_proposal_calls = 0
+        self.new_input_tokens = 0
+        self.new_output_tokens = 0
 
     def propose(self, task: SchedulingTask, node: SearchNode, k: int, budget_state=None) -> List[ScheduleAction]:
         del budget_state
@@ -190,6 +196,9 @@ class SharedSchedulingProposalCache:
             output_tokens=int(record.get("output_tokens", 0)),
             wall_clock_seconds=float(record.get("latency", 0.0)),
         )
+        self.new_proposal_calls += 1
+        self.new_input_tokens += int(record.get("input_tokens", 0))
+        self.new_output_tokens += int(record.get("output_tokens", 0))
         if not valid_actions:
             self.empty_valid_actions += 1
         if _proposal_contains_oracle_child(task, node, valid_actions):
@@ -241,6 +250,10 @@ class SharedSchedulingProposalCache:
             "input_tokens": self.cost.input_tokens,
             "output_tokens": self.cost.output_tokens,
             "total_tokens": self.cost.input_tokens + self.cost.output_tokens,
+            "preloaded_state_count": self.preloaded_state_count,
+            "preloaded_tokens": self.preloaded_input_tokens + self.preloaded_output_tokens,
+            "new_proposal_calls": self.new_proposal_calls,
+            "new_proposal_tokens": self.new_input_tokens + self.new_output_tokens,
             "latency": self.cost.wall_clock_seconds,
             "parse_failures": sum(int(row.get("parse_failures", 0)) for row in self.meta.values()),
             "invalid_actions": self.invalid_actions,
@@ -269,6 +282,9 @@ class SharedSchedulingProposalCache:
                 output_tokens=int(row.get("output_tokens", 0)),
                 wall_clock_seconds=float(row.get("latency", 0.0)),
             )
+            self.preloaded_state_count += 1
+            self.preloaded_input_tokens += int(row.get("input_tokens", 0))
+            self.preloaded_output_tokens += int(row.get("output_tokens", 0))
         self.request_count = max(self.request_count, len(self.cache))
 
 

@@ -107,6 +107,10 @@ class SchedulingTransferTest(unittest.TestCase):
         self.assertEqual(cache.propose(task, node, 4), [action])
         self.assertEqual(cache.stats()["proposal_calls"], 1)
         self.assertEqual(cache.stats()["total_tokens"], 18)
+        self.assertEqual(cache.stats()["preloaded_state_count"], 1)
+        self.assertEqual(cache.stats()["preloaded_tokens"], 18)
+        self.assertEqual(cache.stats()["new_proposal_calls"], 0)
+        self.assertEqual(cache.stats()["new_proposal_tokens"], 0)
 
     def test_zero_shot_transfer_writes_required_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

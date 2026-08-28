@@ -211,6 +211,15 @@ def _source_evidence_blockers_for_row(row: Mapping[str, object]) -> List[str]:
         blockers.append("missing source_url")
     if source_url != str(row.get("Source URL", "")):
         blockers.append("source_url mismatch")
+    source_revision = str(evidence.get("source_revision", ""))
+    source_revision_url = str(evidence.get("source_revision_url", ""))
+    if source_url.startswith("https://github.com/"):
+        if not source_revision:
+            blockers.append("missing source_revision")
+        if source_revision and len(source_revision) != 40:
+            blockers.append("source_revision must be a full 40-character git SHA")
+        if source_revision and source_revision not in source_revision_url:
+            blockers.append("source_revision_url missing source_revision")
     source_files = evidence.get("source_files")
     if not isinstance(source_files, list) or not source_files:
         blockers.append("missing source_files")
@@ -222,10 +231,12 @@ def _source_evidence_blockers_for_row(row: Mapping[str, object]) -> List[str]:
         blockers.append("missing official_code_refs")
     else:
         refs = [str(ref) for ref in official_code_refs]
-        if source_url.startswith("https://github.com/") and not any("github:" in ref or "raw.githubusercontent.com" in ref for ref in refs):
+        if source_url.startswith("https://github.com/") and not any("github:" in ref or "github@" in ref or "raw.githubusercontent.com" in ref for ref in refs):
             blockers.append("github-backed source missing github/raw code refs")
         if source_url.startswith("https://github.com/") and not any("::" in ref for ref in refs):
             blockers.append("github-backed source missing symbol-level code refs")
+        if source_url.startswith("https://github.com/") and source_revision and not any(source_revision in ref for ref in refs):
+            blockers.append("github-backed source code refs are not pinned to source_revision")
     anchors = evidence.get("official_source_anchors")
     if not isinstance(anchors, list) or not anchors:
         blockers.append("missing official_source_anchors")

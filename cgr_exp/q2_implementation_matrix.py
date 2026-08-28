@@ -94,6 +94,8 @@ def _matrix_row(method: str, transfer_setting: str) -> Dict[str, object]:
         "Claim scope": str(contract.get("claim_scope", "")),
         "Official full reproduction": bool(contract.get("official_reproduction", False)),
         "Source URL": str(contract.get("source_url", "")),
+        "Source revision": str(evidence.get("source_revision", "")),
+        "Source revision URL": str(evidence.get("source_revision_url", "")),
         "Official source files": _join(evidence.get("source_files", [])),
         "Official code refs": _join(evidence.get("official_code_refs", [])),
         "Official source anchors": _join(evidence.get("official_source_anchors", [])),

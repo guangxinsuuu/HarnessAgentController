@@ -1302,6 +1302,52 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
             self.assertIn("source evidence: missing official_code_refs", audit_rows["Direct / CoT"]["result_blockers"])
 
+    def test_readiness_audit_rejects_github_external_row_without_pinned_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            _write_csv(
+                tot / "scheduling_tot_q2_table.csv",
+                [
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": "1.0",
+                        "gap": "0.0",
+                        "llm_calls": "4",
+                        "tokens": "40",
+                        "wall_clock_seconds": "1",
+                        "status": "complete",
+                        "source_policy": "native_tot_bfs",
+                        "tot_generate_events": "1",
+                        "tot_evaluate_events": "1",
+                        "tot_select_events": "1",
+                        "tot_value_sample_count": "1",
+                    }
+                ],
+            )
+            _write_csv(tot / "scheduling_tot_q2_per_instance.csv", [{"task_id": "t0", "rendering_id": "r0"}])
+            _write_tot_manifest(tot, test_count=1)
+            (tot / "scheduling_tot_q2_trace.jsonl").write_text(
+                "\n".join(
+                    [
+                        json.dumps({"event": "generate", "rendering_id": "r0"}),
+                        json.dumps({"event": "evaluate_select", "rendering_id": "r0", "value_samples": [{"scores": [1.0]}]}),
+                        json.dumps({"event": "finish", "rendering_id": "r0"}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            weakened_evidence = {method: dict(evidence) for method, evidence in Q2_SOURCE_EVIDENCE.items()}
+            weakened_evidence["Tree of Thoughts"]["source_revision"] = ""
+            out = root / "out"
+            with patch("cgr_exp.table5_q2.Q2_SOURCE_EVIDENCE", weakened_evidence):
+                audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", expected_test_count=1, gpt_frontier_rank_dir=tot)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
+            self.assertIn("source evidence: missing source_revision", audit_rows["Tree of Thoughts"]["result_blockers"])
+
     def test_readiness_audit_requires_target_prm_training_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

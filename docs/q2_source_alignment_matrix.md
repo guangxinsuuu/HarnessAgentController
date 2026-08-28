@@ -8,7 +8,11 @@ style baselines that must not be described as full official replications.
 ## Source Evidence
 
 - OR-Tools CP-SAT: `https://github.com/google/or-tools`
+  - Source revision pinned for Q2 evidence:
+    `98c165af62df62b3056c2ee0fca66b24e79097cb`.
 - Tree of Thoughts: `https://github.com/princeton-nlp/tree-of-thought-llm`
+  - Source revision pinned for Q2 evidence:
+    `8050e67d0e3a0fddc424d7fa5801538722a4c4cc`.
   - Official README describes `run.py` as implementing ToT+BFS and exposes
     `method_generate`, `method_evaluate`, and `method_select`.
   - Official `src/tot/methods/bfs.py` performs generation, evaluation, and
@@ -19,6 +23,8 @@ style baselines that must not be described as full official replications.
     `::method_evaluate`, and `::method_select`.
 - PRM800K / Let's Verify Step by Step:
   `https://github.com/openai/prm800k`
+  - Source revision pinned for Q2 evidence:
+    `7ecc794703b2877f63226f2477a49b34f9b25163`.
   - README describes PRM800K as a process supervision dataset with 800,000
     step-level correctness labels.
   - Released examples place labels under `label.steps[].completions[].rating`.
@@ -30,6 +36,8 @@ style baselines that must not be described as full official replications.
     under a verifier/reward. Because the local verifier sees the structured
     Scheduling objective, the row must be disclosed as `Best-of-N + verifier`.
 - ReST-MCTS*: `https://github.com/THUDM/ReST-MCTS`
+  - Source revision pinned for Q2 evidence:
+    `2d5f488c3d6e24f99d50a9860e818383b1bb5883`.
   - README describes process-reward-guided tree search plus self-training.
   - `MCTS/mcts.py` implements MCTS rounds with selection, expansion, simulation, and backpropagation.
   - Machine-readable evidence records symbol-level refs for
@@ -41,8 +49,9 @@ style baselines that must not be described as full official replications.
 Each Q2 artifact must now carry the `source_primitives` field from
 `cgr_exp/q2_method_contracts.py` inside its method-alignment manifest. The
 machine-readable official-source checklist lives in
-`cgr_exp/q2_source_evidence.py`, which records the source URL, source files,
-function/schema-level code refs, source anchors, official primitives, and local promotion gates for each
+`cgr_exp/q2_source_evidence.py`, which records the source URL, pinned source
+revision, source files, function/schema-level code refs, source anchors,
+official primitives, and local promotion gates for each
 external baseline. The Table 4 audit rejects completed rows whose artifact does
 not declare the expected primitives for that method. This is intentionally
 stricter than a row name match: old or ad hoc artifacts cannot populate a
@@ -81,9 +90,11 @@ Examples:
 
 - Run `python3 -m cgr_exp.cli audit-q2-source-evidence --output-dir
   runs/q2_source_evidence_audit --overwrite` before promoting a Q2 table. This
-  checks that external baseline source URLs, source files, symbol/schema-level
-  code refs, official primitives, and local promotion gates remain consistent
-  with the method contracts.
+  checks that external baseline source URLs, pinned source revisions, source
+  files, symbol/schema-level code refs, official primitives, and local
+  promotion gates remain consistent with the method contracts. For GitHub
+  sources, code refs must include the pinned revision rather than a floating
+  branch name.
 - A row is result-ready only if `audit-table4-q2` marks `result_ready=True`.
 - A row is compute-ready for Q2 only if `audit-table4-q2` marks
   `compute_ready=True`.

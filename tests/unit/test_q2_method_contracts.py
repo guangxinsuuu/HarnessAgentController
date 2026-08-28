@@ -120,6 +120,10 @@ class Q2MethodContractsTest(unittest.TestCase):
             declared = {str(item) for item in evidence["official_primitives"]}
             required = {str(item) for item in contract["source_primitives"]}
             self.assertTrue(required & declared, method)
+            if str(evidence["source_url"]).startswith("https://github.com/"):
+                self.assertEqual(len(str(evidence["source_revision"])), 40, method)
+                self.assertIn(str(evidence["source_revision"]), str(evidence["source_revision_url"]), method)
+                self.assertTrue(any(str(evidence["source_revision"]) in str(ref) for ref in evidence["official_code_refs"]), method)
 
     def test_source_alignment_matrix_points_to_machine_readable_evidence(self) -> None:
         text = Path("docs/q2_source_alignment_matrix.md").read_text(encoding="utf-8")
@@ -135,6 +139,8 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertTrue(saved["all_external_sources_ready"])
             by_method = {row["Method"]: row for row in saved["rows"]}
             self.assertEqual(by_method["Tree of Thoughts"]["source_url"], "https://github.com/princeton-nlp/tree-of-thought-llm")
+            self.assertEqual(by_method["Tree of Thoughts"]["source_revision"], "8050e67d0e3a0fddc424d7fa5801538722a4c4cc")
+            self.assertIn("8050e67d0e3a0fddc424d7fa5801538722a4c4cc", by_method["Tree of Thoughts"]["source_revision_url"])
             self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["source_files"])
             self.assertIn("raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm", by_method["Tree of Thoughts"]["official_code_refs"])
             self.assertIn("::method_select", by_method["Tree of Thoughts"]["official_code_refs"])
@@ -161,6 +167,7 @@ class Q2MethodContractsTest(unittest.TestCase):
             saved = json.loads((out / "q2_implementation_matrix.json").read_text(encoding="utf-8"))
             by_method = {row["Method"]: row for row in saved["rows"]}
             self.assertIn("cgr_exp/scheduling_tot_q2.py", by_method["Tree of Thoughts"]["Local code paths"])
+            self.assertEqual(by_method["Tree of Thoughts"]["Source revision"], "8050e67d0e3a0fddc424d7fa5801538722a4c4cc")
             self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["Official source files"])
             self.assertIn("src/tot/methods/bfs.py::method_select", by_method["Tree of Thoughts"]["Official code refs"])
             self.assertIn("generation, evaluation", by_method["Tree of Thoughts"]["Official source anchors"])

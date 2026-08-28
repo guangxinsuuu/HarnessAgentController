@@ -70,6 +70,9 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(by_method["Solver-trained priority"]["LLM calls"], "8000")
             self.assertEqual(by_method["Solver-trained priority"]["Tokens"], "5.0K")
             self.assertEqual(by_method["Solver-trained priority"]["Wall-clock"], "1.00h")
+            self.assertEqual(by_method["Solver-trained priority"]["Claim scope"], "ours")
+            self.assertEqual(by_method["Tree of Thoughts"]["Claim scope"], "native_adaptation")
+            self.assertEqual(by_method["Best-of-N"]["Required wording"], "Best-of-N + verifier")
             self.assertIn("on-demand per-policy accounting", by_method["Solver-trained priority"]["notes"])
             self.assertEqual(by_method["Tree of Thoughts"]["Status"], "pending")
             self.assertIn("native runner pending", by_method["Tree of Thoughts"]["notes"])
@@ -548,6 +551,8 @@ class Table5Q2Test(unittest.TestCase):
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
             self.assertEqual(audit_rows["Solver-trained priority"]["result_ready"], "True")
             self.assertEqual(audit_rows["Solver-trained priority"]["compute_ready"], "False")
+            self.assertEqual(audit_rows["Solver-trained priority"]["Claim scope"], "ours")
+            self.assertIn("zero-shot transfer", audit_rows["Solver-trained priority"]["Required wording"])
             self.assertIn("shared-cache fallback accounting", audit_rows["Solver-trained priority"]["compute_blockers"])
             self.assertTrue((out / "table5_q2_readiness.json").exists())
 

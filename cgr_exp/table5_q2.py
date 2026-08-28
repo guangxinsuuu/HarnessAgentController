@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional
 
-from cgr_exp.q2_method_contracts import q2_method_contracts
+from cgr_exp.q2_method_contracts import q2_method_contract, q2_method_contracts
 
 
 TABLE5_METHODS = [
@@ -86,6 +86,7 @@ def build_table5_q2_results(
             if loaded is not None:
                 row = loaded
         row["expected_test_count"] = expected_test_count
+        row.update(_contract_fields(method))
         rows.append(row)
     csv_path = out_dir / "table5_q2_results.csv"
     tex_path = out_dir / "table5_q2_results.tex"
@@ -181,6 +182,8 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
         compute_blockers.append("result not complete")
     return {
         "Method": row["Method"],
+        "Claim scope": row.get("Claim scope", ""),
+        "Required wording": row.get("Required wording", ""),
         "Status": status,
         "result_ready": not result_blockers,
         "compute_ready": not compute_blockers,
@@ -326,6 +329,15 @@ def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path])
         "source_artifact": "" if source_dir is None else str(source_dir),
         "source_policy": "",
         "notes": "artifact missing or native runner pending",
+    }
+
+
+def _contract_fields(method: str) -> Dict[str, object]:
+    contract = q2_method_contract(method)
+    return {
+        "Claim scope": str(contract.get("claim_scope", "")),
+        "Official full reproduction": bool(contract.get("official_reproduction", False)),
+        "Required wording": str(contract.get("required_table_wording", "")),
     }
 
 

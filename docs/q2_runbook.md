@@ -446,7 +446,7 @@ python3 -m cgr_exp.cli run-scheduling-tot-q2 \
 ## Build the Current Q2 Table
 
 ```bash
-python3 -m cgr_exp.cli build-table5-q2 \
+python3 -m cgr_exp.cli build-table4-q2 \
   --output-dir runs/q2_table_current_seed0 \
   --expected-test-count 100 \
   --structured-dir runs/q2_structured_100_seed0 \
@@ -467,7 +467,7 @@ After building or updating any run directory, run the readiness audit with the
 same inputs:
 
 ```bash
-python3 -m cgr_exp.cli audit-table5-q2 \
+python3 -m cgr_exp.cli audit-table4-q2 \
   --output-dir runs/q2_table_current_seed0_audit \
   --expected-test-count 100 \
   --structured-dir runs/q2_structured_100_seed0 \
@@ -482,7 +482,7 @@ python3 -m cgr_exp.cli audit-table5-q2 \
   --overwrite
 ```
 
-The audit writes:
+The audit writes the legacy-prefixed artifact files:
 
 - `table5_q2_results.csv`
 - `table5_q2_results.tex`
@@ -499,9 +499,12 @@ partial summary CSV from being promoted as a source-aligned Q2 result.
 Use `table5_q2_readiness.csv` to check row-level blockers before promoting a
 number into the paper.
 
-`--gpt-frontier-rank-dir` remains a backwards-compatible alias for `--tot-dir`,
-but new commands should use `--tot-dir` because this row requires native ToT
-BFS artifacts, not older controller-isolation GPT-frontier-rank diagnostics.
+`build-table5-q2` and `audit-table5-q2` remain backwards-compatible aliases for
+the same Q2 Table 4 builder. New commands should use `build-table4-q2` and
+`audit-table4-q2`. `--gpt-frontier-rank-dir` remains a backwards-compatible
+alias for `--tot-dir`, but new commands should use `--tot-dir` because this row
+requires native ToT BFS artifacts, not older controller-isolation
+GPT-frontier-rank diagnostics.
 
 Final acceptance checks:
 

@@ -25,14 +25,14 @@ checklist.
 
 ## Token Accounting Rule
 
-`build-table5-q2` prefers `on_demand_total_tokens` when a Scheduling LLM pilot
+`build-table4-q2` prefers `on_demand_total_tokens` when a Scheduling LLM pilot
 artifact contains per-policy proposal accounting. If the artifact predates that
 field, the builder falls back to shared-cache `total_tokens` and writes
 `tokens use shared-cache fallback accounting` in the row notes. Rows with this
 fallback are acceptable for controller-isolation comparisons but should not be
 used as final Q2 end-to-end compute claims.
 
-Use `audit-table5-q2` with the same input directories as `build-table5-q2` to
+Use `audit-table4-q2` with the same input directories as `build-table4-q2` to
 write `table5_q2_readiness.csv` and `table5_q2_readiness.json`. The readiness
 audit marks each row's `result_ready` and `compute_ready` status and lists
 blockers such as missing artifacts, partial checkpoints, missing token
@@ -53,7 +53,7 @@ To make the Q2 table result-complete without ToT:
 
 1. Run `run-scheduling-native-q2` for Direct / Self-Consistency / Best-of-N.
 2. Rerun `run-scheduling-llm-pilot` with `--include-target-prm --include-rest-mcts --include-solver-certification` so the upgraded MCTS row and on-demand token accounting replace the older result.
-3. Build the table with `build-table5-q2 --structured-dir runs/q2_structured_100_seed0 ...`.
+3. Build the table with `build-table4-q2 --structured-dir runs/q2_structured_100_seed0 ...`.
 
 To add the strict ToT row, run `run-scheduling-tot-q2`; older
 `GPT-frontier-rank / ToT-style` runs should remain diagnostic.

@@ -41,9 +41,11 @@ style baselines that must not be described as full official replications.
 
 ## Promotion Rules
 
-- A row is result-ready only if `audit-table5-q2` marks `result_ready=True`.
-- A row is compute-ready for Q2 only if `audit-table5-q2` marks
+- A row is result-ready only if `audit-table4-q2` marks `result_ready=True`.
+- A row is compute-ready for Q2 only if `audit-table4-q2` marks
   `compute_ready=True`.
+- `audit-table5-q2` remains a backwards-compatible alias, but new Table 4/Q2
+  commands should use `audit-table4-q2`.
 - `shared-cache fallback accounting` rows can support controller isolation but
   need a qualification before use in an end-to-end quality-compute table.
 - ReST-MCTS-style rows must be rerun after changes to

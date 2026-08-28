@@ -55,7 +55,9 @@ COMMANDS = [
     "run-transfer-matrix",
     "analyze-domain-shift",
     "build-tables",
+    "build-table4-q2",
     "build-table5-q2",
+    "audit-table4-q2",
     "audit-table5-q2",
     "run-table6-authority",
 ]
@@ -235,7 +237,7 @@ def main() -> None:
             p.add_argument("--rank-epochs", type=int, default=25)
             p.add_argument("--useful-action-recall", type=float, default=0.88)
             p.add_argument("--perturbation", default="mixed")
-        if name in ("build-table5-q2", "audit-table5-q2"):
+        if name in ("build-table4-q2", "build-table5-q2", "audit-table4-q2", "audit-table5-q2"):
             p.add_argument("--solver-prior-dir", type=Path, default=Path("runs/scheduling_llm_pilot_real_100_seed0"))
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--tot-dir", "--gpt-frontier-rank-dir", dest="gpt_frontier_rank_dir", type=Path, default=None)
@@ -861,7 +863,7 @@ def main() -> None:
             (args.output_dir / "command_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'scheduling_transfer_diagnosis_metrics.json'}")
             return
-        if args.command == "build-table5-q2":
+        if args.command in ("build-table4-q2", "build-table5-q2"):
             manifest = build_table5_q2_results(
                 args.output_dir,
                 solver_prior_dir=args.solver_prior_dir,
@@ -885,7 +887,7 @@ def main() -> None:
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table5_q2_results.csv'}")
             return
-        if args.command == "audit-table5-q2":
+        if args.command in ("audit-table4-q2", "audit-table5-q2"):
             manifest = audit_table5_q2_readiness(
                 args.output_dir,
                 solver_prior_dir=args.solver_prior_dir,

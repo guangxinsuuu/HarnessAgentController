@@ -352,6 +352,8 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             alignment = structured_manifest.get("method_alignment")
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_structured_q2_metrics.json missing Q2 method alignment for {method}")
+            else:
+                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_structured_q2_metrics.json"))
     if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
         native_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_native_q2_manifest.json")
         if manifest_error:
@@ -368,6 +370,11 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                     verifier_role = str(methods[method].get("verifier_role", ""))
                     if "select minimum verified objective" not in verifier_role:
                         invalid.append("Best-of-N manifest does not disclose verifier objective selection")
+            alignment = native_manifest.get("method_alignment")
+            if not isinstance(alignment, Mapping) or method not in alignment:
+                invalid.append(f"scheduling_native_q2_manifest.json missing Q2 method alignment for {method}")
+            else:
+                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_native_q2_manifest.json"))
         sample_path = source_dir / "scheduling_native_q2_samples.jsonl"
         if sample_path.exists() and sample_path.stat().st_size > 0:
             samples, error = _read_jsonl_for_audit(sample_path)
@@ -399,6 +406,11 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                     invalid.append("Tree of Thoughts manifest must exclude oracle future labels")
                 if str(protocol.get("search")) != "breadth-first frontier search":
                     invalid.append("Tree of Thoughts manifest must declare breadth-first frontier search")
+            alignment = tot_manifest.get("method_alignment")
+            if not isinstance(alignment, Mapping) or method not in alignment:
+                invalid.append(f"scheduling_tot_q2_manifest.json missing Q2 method alignment for {method}")
+            else:
+                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_tot_q2_manifest.json"))
         trace_path = source_dir / "scheduling_tot_q2_trace.jsonl"
         if trace_path.exists() and trace_path.stat().st_size > 0:
             trace, error = _read_jsonl_for_audit(trace_path)
@@ -421,6 +433,8 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             alignment = learned_manifest.get("q2_method_alignment")
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_llm_pilot_metrics.json missing Q2 method alignment for {method}")
+            else:
+                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_llm_pilot_metrics.json"))
             protocols = learned_manifest.get("learned_search_protocol")
             protocol_by_policy = protocols.get("policies") if isinstance(protocols, Mapping) else None
             source_policy = str(row.get("source_policy", ""))
@@ -458,6 +472,8 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             alignment = learned_manifest.get("q2_method_alignment")
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_llm_pilot_metrics.json missing Q2 method alignment for {method}")
+            else:
+                invalid.extend(_source_primitive_blockers(alignment, method, "scheduling_llm_pilot_metrics.json"))
             schema = learned_manifest.get("semantic_state_schema")
             if not isinstance(schema, Mapping) or schema.get("oracle_labels_in_inference_features") is not False:
                 invalid.append("scheduling_llm_pilot_metrics.json must exclude oracle labels from inference features")
@@ -488,6 +504,21 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                     if str(cert_protocol.get("pruning_authority")) != "verified lower-bound/feasibility logic only":
                         invalid.append("certified pruning protocol must declare verified pruning authority")
     return invalid
+
+
+def _source_primitive_blockers(alignment: Mapping[str, object], method: str, artifact_name: str) -> List[str]:
+    method_alignment = alignment.get(method)
+    if not isinstance(method_alignment, Mapping):
+        return [f"{artifact_name} missing Q2 method alignment for {method}"]
+    declared = method_alignment.get("source_primitives")
+    if not isinstance(declared, list):
+        return [f"{artifact_name} missing source_primitives for {method}"]
+    declared_set = {str(item) for item in declared}
+    required = {str(item) for item in q2_method_contract(method).get("source_primitives", [])}
+    missing = sorted(required - declared_set)
+    if missing:
+        return [f"{artifact_name} source_primitives incomplete for {method}: " + ", ".join(missing)]
+    return []
 
 
 def _solver_prior_audit_blockers(source_dir: Path) -> List[str]:

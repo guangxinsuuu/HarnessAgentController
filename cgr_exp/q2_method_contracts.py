@@ -17,6 +17,13 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "release time and precedence constraints",
             "local makespan plus total tardiness objective",
         ],
+        "source_primitives": [
+            "integer scheduling variables",
+            "optional interval variables",
+            "NoOverlap machine constraints",
+            "precedence/release constraints",
+            "objective minimization",
+        ],
         "non_claims": ["not an LLM-agent baseline", "not exposed to rendered natural language"],
     },
     "EST / list scheduling heuristic": {
@@ -29,6 +36,11 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "structured SchedulingTask input",
             "ready-job dispatch by earliest feasible start/finish",
             "tardiness and due-date tie breaks",
+        ],
+        "source_primitives": [
+            "ready-list dispatch",
+            "earliest feasible start selection",
+            "deterministic tie breaking",
         ],
         "non_claims": ["not a learned method", "not a direct competitor to semantic LLM agents"],
     },
@@ -43,6 +55,11 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "step-by-step reasoning requested inside JSON",
             "typed action parsing and verifier validation",
         ],
+        "source_primitives": [
+            "single reasoning path",
+            "intermediate natural-language rationale",
+            "final answer extraction",
+        ],
         "non_claims": ["no frontier search", "no target trajectory training"],
     },
     "Self-Consistency": {
@@ -56,6 +73,11 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "aggregation by canonical final job order",
             "verified objective used only as a tie-break within selected answers",
         ],
+        "source_primitives": [
+            "multiple independent reasoning paths",
+            "final-answer aggregation",
+            "majority/consistency selection",
+        ],
         "non_claims": ["not frontier search", "not Best-of-N objective selection"],
     },
     "Best-of-N": {
@@ -68,6 +90,11 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "multiple complete-schedule samples",
             "verifier filters invalid schedules",
             "lowest verified objective selects the final sample",
+        ],
+        "source_primitives": [
+            "multiple complete answer samples",
+            "verifier or reward scoring",
+            "best sample selection",
         ],
         "non_claims": ["strong verifier-selected variant; table notes must disclose this"],
     },
@@ -84,6 +111,13 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "averaged value samples",
             "greedy top-b selection",
         ],
+        "source_primitives": [
+            "method_generate",
+            "method_evaluate",
+            "method_select",
+            "breadth-first search",
+            "greedy top-b selection",
+        ],
         "non_claims": ["Scheduling task adaptation; not the original Game24 prompt"],
     },
     "Target-PRM priority": {
@@ -97,6 +131,11 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "process/frontier ranking supervision",
             "canonical state features matched to solver-trained controller",
         ],
+        "source_primitives": [
+            "intermediate-step labels",
+            "process supervision",
+            "reward/value model over partial solutions",
+        ],
         "non_claims": ["not zero-shot", "not outcome-only PRM"],
     },
     "Outcome-PRM": {
@@ -108,6 +147,11 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
         "implemented_scope": [
             "target LLM-induced states",
             "terminal outcome supervision propagated to visited states",
+        ],
+        "source_primitives": [
+            "terminal outcome labels",
+            "outcome reward model",
+            "diagnostic ablation",
         ],
         "non_claims": ["not a PRM800K-style process reward model"],
     },
@@ -125,6 +169,13 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "selected-node expansion observation",
             "backup along the selected path",
         ],
+        "source_primitives": [
+            "MCTS selection",
+            "MCTS expansion",
+            "MCTS simulation/evaluation",
+            "MCTS backpropagation",
+            "process reward guidance",
+        ],
         "non_claims": ["not full ReST-MCTS iterative self-training"],
     },
     "Solver-trained priority": {
@@ -138,6 +189,11 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "frozen controller during real LLM-induced Scheduling search",
             "canonical state features without oracle label leakage",
         ],
+        "source_primitives": [
+            "solver-induced source trajectories",
+            "frontier priority learning",
+            "frozen zero-shot transfer",
+        ],
         "non_claims": ["no target LLM trajectory supervision"],
     },
     "Solver-trained priority + certified pruning": {
@@ -150,6 +206,11 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
             "same solver-trained priority controller",
             "verified pruning authority separated from learned ranking",
             "on-demand proposal accounting for avoided calls",
+        ],
+        "source_primitives": [
+            "solver-trained frontier priority",
+            "verified pruning authority",
+            "learned score separated from pruning decision",
         ],
         "non_claims": ["learned scores do not authorize irreversible pruning"],
     },

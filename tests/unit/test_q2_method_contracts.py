@@ -20,6 +20,7 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertIn("official_reproduction", contract, method)
             self.assertTrue(contract["required_table_wording"], method)
             self.assertTrue(contract["implemented_scope"], method)
+            self.assertTrue(contract["source_primitives"], method)
             self.assertTrue(contract["non_claims"], method)
 
     def test_rest_mcts_contract_is_explicitly_style_only(self) -> None:
@@ -28,13 +29,22 @@ class Q2MethodContractsTest(unittest.TestCase):
         self.assertFalse(contract["official_reproduction"])
         self.assertIn("style", contract["required_table_wording"])
         self.assertIn("backup along the selected path", contract["implemented_scope"])
+        self.assertIn("MCTS backpropagation", contract["source_primitives"])
         self.assertIn("not full ReST-MCTS iterative self-training", contract["non_claims"])
 
     def test_best_of_n_contract_discloses_verifier_selection(self) -> None:
         contract = q2_method_contract("Best-of-N")
         self.assertEqual(contract["required_table_wording"], "Best-of-N + verifier")
         self.assertIn("lowest verified objective selects the final sample", contract["implemented_scope"])
+        self.assertIn("best sample selection", contract["source_primitives"])
         self.assertIn("strong verifier-selected variant; table notes must disclose this", contract["non_claims"])
+
+    def test_tot_contract_tracks_official_bfs_entrypoints(self) -> None:
+        contract = q2_method_contract("Tree of Thoughts")
+        self.assertIn("method_generate", contract["source_primitives"])
+        self.assertIn("method_evaluate", contract["source_primitives"])
+        self.assertIn("method_select", contract["source_primitives"])
+        self.assertIn("breadth-first search", contract["source_primitives"])
 
     def test_external_baselines_are_not_marked_as_official_full_reproductions(self) -> None:
         for method, _setting, _source, source_kind in TABLE5_METHODS:

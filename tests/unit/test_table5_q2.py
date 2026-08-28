@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from cgr_exp.q2_method_contracts import q2_method_contracts
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 
 
@@ -1172,7 +1173,13 @@ def _write_native_manifest(path: Path, methods: list[str], test_count: int) -> N
             "oracle_future_labels_exposed": False,
         }
     (path / "scheduling_native_q2_manifest.json").write_text(
-        json.dumps({"splits": {"test": test_count}, "native_protocol": {"methods": method_protocols}}),
+        json.dumps(
+            {
+                "splits": {"test": test_count},
+                "native_protocol": {"methods": method_protocols},
+                "method_alignment": q2_method_contracts(methods),
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -1185,7 +1192,7 @@ def _write_structured_metrics(path: Path, methods: list[str], test_count: int) -
                 "structured_input": True,
                 "llm_calls": 0,
                 "tokens": 0,
-                "method_alignment": {method: {} for method in methods},
+                "method_alignment": q2_method_contracts(methods),
             }
         ),
         encoding="utf-8",
@@ -1226,7 +1233,7 @@ def _write_learned_metrics(path: Path, methods: list[str], policies: list[str]) 
     (path / "scheduling_llm_pilot_metrics.json").write_text(
         json.dumps(
             {
-                "q2_method_alignment": {method: {} for method in methods},
+                "q2_method_alignment": q2_method_contracts(methods),
                 "semantic_state_schema": {"oracle_labels_in_inference_features": False},
                 "learned_search_protocol": {"policies": policy_protocols},
             }

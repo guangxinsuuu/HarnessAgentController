@@ -193,7 +193,7 @@ def _missing_required_artifacts(row: Mapping[str, object]) -> List[str]:
     if not artifact_value:
         return ["source artifact"]
     artifact = Path(artifact_value)
-    source_dir = artifact.parent
+    source_dir = _artifact_run_root(method, artifact)
     required_by_method = {
         "Direct / CoT": ["scheduling_native_q2_samples.jsonl"],
         "Self-Consistency": ["scheduling_native_q2_samples.jsonl"],
@@ -218,6 +218,14 @@ def _missing_required_artifacts(row: Mapping[str, object]) -> List[str]:
         if not path.exists() or path.stat().st_size == 0:
             missing.append(filename)
     return missing
+
+
+def _artifact_run_root(method: str, artifact: Path) -> Path:
+    source_dir = artifact.parent
+    if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"} and artifact.name == "table5_native_row.json":
+        if source_dir.name == _native_method_dir_name(method):
+            return source_dir.parent
+    return source_dir
 
 
 def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path]) -> Dict[str, object]:

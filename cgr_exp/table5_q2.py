@@ -508,6 +508,9 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                     invalid.append("Tree of Thoughts manifest must exclude oracle future labels")
                 if str(protocol.get("search")) != "breadth-first frontier search":
                     invalid.append("Tree of Thoughts manifest must declare breadth-first frontier search")
+                method_evaluate = str(protocol.get("method_evaluate", ""))
+                if "value" not in method_evaluate and "vote" not in method_evaluate:
+                    invalid.append("Tree of Thoughts manifest method_evaluate must declare value/vote frontier evaluation")
                 if "greedy top-b" not in str(protocol.get("method_select", "")):
                     invalid.append("Tree of Thoughts manifest method_select must declare greedy top-b selection")
                 if _as_float(protocol.get("n_select_sample")) <= 0:
@@ -825,6 +828,24 @@ def _tot_trace_protocol_blockers(trace: List[Mapping[str, object]]) -> List[str]
     evaluate_events = [event for event in trace if str(event.get("event")) in {"evaluate_select", "evaluate"}]
     if evaluate_events and not any(isinstance(event.get("value_samples"), list) and event.get("value_samples") for event in evaluate_events):
         invalid.append("scheduling_tot_q2_trace.jsonl missing value sample records")
+    for event in evaluate_events:
+        candidate_ids = event.get("candidate_ids")
+        selected_ids = event.get("selected_ids")
+        averaged_scores = event.get("averaged_scores")
+        value_samples = event.get("value_samples")
+        if not isinstance(candidate_ids, list) or not candidate_ids:
+            invalid.append("scheduling_tot_q2_trace.jsonl evaluate event missing candidate_ids")
+            continue
+        if not isinstance(selected_ids, list) or not selected_ids:
+            invalid.append("scheduling_tot_q2_trace.jsonl evaluate event missing selected_ids")
+        if not isinstance(averaged_scores, list) or len(averaged_scores) != len(candidate_ids):
+            invalid.append("scheduling_tot_q2_trace.jsonl evaluate event averaged_scores must match candidate_ids")
+        if isinstance(value_samples, list):
+            for sample in value_samples:
+                scores = sample.get("scores") if isinstance(sample, Mapping) else None
+                if not isinstance(scores, list) or len(scores) != len(candidate_ids):
+                    invalid.append("scheduling_tot_q2_trace.jsonl value sample scores must match candidate_ids")
+                    break
     return invalid
 
 

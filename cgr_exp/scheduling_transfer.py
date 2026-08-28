@@ -285,6 +285,25 @@ class RealLLMFrontierRankingPolicy:
         return [float(score) for score in response.get("scores", [])]
 
 
+class PRMGuidedMCTSStylePolicy:
+    name = "prm_guided_mcts_style"
+
+    def __init__(self, task: SchedulingTask, ranker, exploration: float = 0.15):
+        self.task = task
+        self.ranker = ranker
+        self.exploration = exploration
+        self.cache: Dict[str, float] = {}
+
+    def score(self, node: SearchNode) -> float:
+        if node.node_id not in self.cache:
+            self.cache[node.node_id] = self.ranker.score(scheduling_feature_vector(self.task, node))
+        prior = self.cache[node.node_id]
+        depth = max(0.0, float(node.depth))
+        branch = max(1.0, float(node.universal_features.get("branch_factor", 1.0)))
+        exploration_bonus = self.exploration * math.sqrt(depth + 1.0) / branch
+        return prior + exploration_bonus
+
+
 def make_level2_scheduling_episodes(tasks: Sequence[SchedulingTask], seed: int = 0, perturbation: str = "mixed") -> List[Level2SchedulingEpisode]:
     rng = random.Random(seed)
     episodes = []
@@ -502,6 +521,8 @@ def run_scheduling_llm_pilot_from_env(
     include_gpt_value: bool = False,
     include_gpt_frontier_ranking: bool = False,
     include_target_prm: bool = False,
+    include_rest_mcts: bool = False,
+    include_solver_certification: bool = False,
     target_prm_train_count: int = 100,
 ) -> Dict[str, object]:
     client = OpenAICompatibleHTTPClient.from_env()
@@ -527,6 +548,8 @@ def run_scheduling_llm_pilot_from_env(
         include_gpt_value=include_gpt_value,
         include_gpt_frontier_ranking=include_gpt_frontier_ranking,
         include_target_prm=include_target_prm,
+        include_rest_mcts=include_rest_mcts,
+        include_solver_certification=include_solver_certification,
         target_prm_train_count=target_prm_train_count,
     )
 
@@ -548,6 +571,8 @@ def preflight_scheduling_llm_pilot(
     include_gpt_value: bool = False,
     include_gpt_frontier_ranking: bool = False,
     include_target_prm: bool = False,
+    include_rest_mcts: bool = False,
+    include_solver_certification: bool = False,
     target_prm_train_count: int = 100,
     env=None,
 ) -> Dict[str, object]:
@@ -568,6 +593,12 @@ def preflight_scheduling_llm_pilot(
     if include_target_prm:
         insert_at = policy_names.index("Solver-trained MLP")
         policy_names.insert(insert_at, "Target-PRM")
+    if include_rest_mcts:
+        insert_at = policy_names.index("Solver-trained MLP")
+        policy_names.insert(insert_at, "PRM-guided MCTS (ReST-MCTS-style)")
+    if include_solver_certification:
+        insert_at = policy_names.index("Oracle")
+        policy_names.insert(insert_at, "Solver-trained MLP + certified pruning")
     method_count = len(policy_names)
     completed_renderings = {rendering_id for rendering_id, count in completed_counts.items() if count >= method_count}
     remaining = [episode for episode in episodes if episode.rendering_id not in completed_renderings]
@@ -595,11 +626,13 @@ def preflight_scheduling_llm_pilot(
         "include_gpt_value": include_gpt_value,
         "include_gpt_frontier_ranking": include_gpt_frontier_ranking,
         "include_target_prm": include_target_prm,
-        "target_prm_train_count": target_prm_train_count if include_target_prm else 0,
+        "include_rest_mcts": include_rest_mcts,
+        "include_solver_certification": include_solver_certification,
+        "target_prm_train_count": target_prm_train_count if include_target_prm or include_rest_mcts else 0,
         "worst_case_request_count_upper_bound": worst_case_proposal_calls,
         "worst_case_value_request_count_upper_bound": len(remaining) * node_budget if include_gpt_value else 0,
         "worst_case_frontier_ranking_request_count_upper_bound": len(remaining) * node_budget if include_gpt_frontier_ranking else 0,
-        "target_prm_training_request_count_upper_bound": target_prm_train_count * node_budget if include_target_prm else 0,
+        "target_prm_training_request_count_upper_bound": target_prm_train_count * node_budget if include_target_prm or include_rest_mcts else 0,
         "estimated_prompt_tokens_per_request": avg_prompt_tokens,
         "estimated_prompt_tokens_upper_bound": int(worst_case_proposal_calls * avg_prompt_tokens),
         "resume_safe": True,
@@ -631,6 +664,8 @@ def run_scheduling_llm_pilot(
     include_gpt_value: bool = False,
     include_gpt_frontier_ranking: bool = False,
     include_target_prm: bool = False,
+    include_rest_mcts: bool = False,
+    include_solver_certification: bool = False,
     target_prm_train_count: int = 100,
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -660,7 +695,7 @@ def run_scheduling_llm_pilot(
     target_prm_pairs = []
     target_prm_cache_rows = []
     target_prm_state_rows = []
-    if include_target_prm:
+    if include_target_prm or include_rest_mcts:
         target_prm_instances = generate_scheduling_micro_instances(
             target_prm_train_count,
             0,
@@ -698,6 +733,16 @@ def run_scheduling_llm_pilot(
         insert_at = policy_names.index("Solver-trained MLP")
         policy_names.insert(insert_at, "Target-PRM")
         extra_policy_factories["Target-PRM"] = lambda episode, idx: SchedulingMLPPolicy(episode.hidden_task, target_prm_ranker)
+    if include_rest_mcts and target_prm_ranker is not None:
+        insert_at = policy_names.index("Solver-trained MLP")
+        policy_names.insert(insert_at, "PRM-guided MCTS (ReST-MCTS-style)")
+        extra_policy_factories["PRM-guided MCTS (ReST-MCTS-style)"] = lambda episode, idx: PRMGuidedMCTSStylePolicy(episode.hidden_task, target_prm_ranker)
+    policy_certified_pruning = {}
+    if include_solver_certification:
+        insert_at = policy_names.index("Oracle") if "Oracle" in policy_names else len(policy_names)
+        policy_names.insert(insert_at, "Solver-trained MLP + certified pruning")
+        extra_policy_factories["Solver-trained MLP + certified pruning"] = lambda episode, idx: SchedulingMLPPolicy(episode.hidden_task, ranker)
+        policy_certified_pruning["Solver-trained MLP + certified pruning"] = True
     table_rows, per_instance_rows, proposal_cache_rows, proposal_state_rows = _evaluate_level2_transfer(
         episodes,
         ranker,
@@ -711,6 +756,7 @@ def run_scheduling_llm_pilot(
         real_value_policy_factory=value_policy_factory,
         real_frontier_ranking_policy_factory=frontier_ranking_policy_factory,
         extra_policy_factories=extra_policy_factories,
+        policy_certified_pruning=policy_certified_pruning,
         checkpoint_dir=out_dir,
         output_prefix="scheduling_llm_pilot",
         batch_size=batch_size,
@@ -735,7 +781,9 @@ def run_scheduling_llm_pilot(
         "include_gpt_value": include_gpt_value,
         "include_gpt_frontier_ranking": include_gpt_frontier_ranking,
         "include_target_prm": include_target_prm,
-        "target_prm_train_count": target_prm_train_count if include_target_prm else 0,
+        "include_rest_mcts": include_rest_mcts,
+        "include_solver_certification": include_solver_certification,
+        "target_prm_train_count": target_prm_train_count if include_target_prm or include_rest_mcts else 0,
         "target_prm_trace_record_count": len(target_prm_records),
         "target_prm_pair_count": len(target_prm_pairs),
         "model": model,
@@ -1152,6 +1200,7 @@ def _evaluate_level2_transfer(
     real_value_policy_factory=None,
     real_frontier_ranking_policy_factory=None,
     extra_policy_factories: Dict[str, object] | None = None,
+    policy_certified_pruning: Dict[str, bool] | None = None,
 ) -> tuple[List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]]]:
     all_policies = {
         "Random": lambda episode, idx: RandomPolicy(seed + idx),
@@ -1166,6 +1215,7 @@ def _evaluate_level2_transfer(
         all_policies["GPT-frontier-rank / ToT-style"] = real_frontier_ranking_policy_factory
     if extra_policy_factories:
         all_policies.update(extra_policy_factories)
+    certified_by_policy = policy_certified_pruning or {}
     selected_names = tuple(policy_names) if policy_names is not None else tuple(all_policies)
     policies = {name: all_policies[name] for name in selected_names}
     by_policy: Dict[str, List[Dict[str, object]]] = {name: [] for name in policies}
@@ -1204,6 +1254,7 @@ def _evaluate_level2_transfer(
                 useful_action_recall=useful_action_recall,
                 proposal_model=proposal_model,
                 proposal_adapter_factory=proposal_adapter_factory,
+                policy_certified_pruning=certified_by_policy,
             )
         else:
             with ThreadPoolExecutor(max_workers=min(parallel, len(window))) as executor:
@@ -1219,6 +1270,7 @@ def _evaluate_level2_transfer(
                         useful_action_recall=useful_action_recall,
                         proposal_model=proposal_model,
                         proposal_adapter_factory=proposal_adapter_factory,
+                        policy_certified_pruning=certified_by_policy,
                     ): idx
                     for idx, episode in window
                 }
@@ -1262,6 +1314,7 @@ def _evaluate_one_level2_episode(
     useful_action_recall: float,
     proposal_model: str,
     proposal_adapter_factory=None,
+    policy_certified_pruning: Dict[str, bool] | None = None,
 ) -> tuple[List[Dict[str, object]], Dict[str, object], List[Dict[str, object]]]:
     shared_cache = SharedSchedulingProposalCache(
         episode,
@@ -1284,7 +1337,7 @@ def _evaluate_one_level2_episode(
             proposal_budget=action_budget,
             seed=seed + idx,
             proposer=shared_cache,
-            certified_pruning=False,
+            certified_pruning=bool((policy_certified_pruning or {}).get(name, False)),
         )
         if name == "Oracle":
             oracle_success = result.best_objective == result.optimum

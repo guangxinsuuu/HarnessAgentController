@@ -506,6 +506,35 @@ class SchedulingTransferTest(unittest.TestCase):
             ):
                 self.assertTrue((root / name).exists(), name)
 
+    def test_scheduling_llm_pilot_can_include_rest_mcts_and_solver_certification_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            metrics = run_scheduling_llm_pilot(
+                Path(tmp),
+                client=ScriptedSchedulingClient(model="mock-scheduling"),
+                model="mock-scheduling",
+                seed=31,
+                train_count=8,
+                validation_count=3,
+                test_count=3,
+                job_count=5,
+                machine_count=2,
+                node_budget=50,
+                action_budget=5,
+                records_per_instance=10,
+                rank_epochs=4,
+                perturbation="canonical",
+                batch_size=1,
+                include_rest_mcts=True,
+                include_solver_certification=True,
+                target_prm_train_count=4,
+            )
+            self.assertIn("PRM-guided MCTS (ReST-MCTS-style)", metrics["methods"])
+            self.assertIn("Solver-trained MLP + certified pruning", metrics["methods"])
+            self.assertEqual(metrics["target_prm_train_count"], 4)
+            self.assertGreater(metrics["target_prm_trace_record_count"], 0)
+            certified = metrics["methods"]["Solver-trained MLP + certified pruning"]
+            self.assertGreaterEqual(certified["false_prunes"], 0)
+
     def test_fewshot_curve_writes_regime_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             metrics = run_scheduling_fewshot_curve(

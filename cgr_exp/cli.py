@@ -154,6 +154,8 @@ def main() -> None:
             p.add_argument("--include-gpt-value", action="store_true", default=False)
             p.add_argument("--include-gpt-frontier-ranking", action="store_true", default=False)
             p.add_argument("--include-target-prm", action="store_true", default=False)
+            p.add_argument("--include-rest-mcts", action="store_true", default=False)
+            p.add_argument("--include-solver-certification", action="store_true", default=False)
             p.add_argument("--target-prm-train-count", type=int, default=100)
         if name == "run-scheduling-native-q2":
             p.add_argument("--model", default=None)
@@ -482,6 +484,8 @@ def main() -> None:
                     include_gpt_value=args.include_gpt_value,
                     include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
                     include_target_prm=args.include_target_prm,
+                    include_rest_mcts=args.include_rest_mcts,
+                    include_solver_certification=args.include_solver_certification,
                     target_prm_train_count=args.target_prm_train_count,
                 )
             else:
@@ -506,6 +510,8 @@ def main() -> None:
                     include_gpt_value=args.include_gpt_value,
                     include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
                     include_target_prm=args.include_target_prm,
+                    include_rest_mcts=args.include_rest_mcts,
+                    include_solver_certification=args.include_solver_certification,
                     target_prm_train_count=args.target_prm_train_count,
                 )
             manifest = {
@@ -522,6 +528,8 @@ def main() -> None:
                 "include_gpt_value": args.include_gpt_value,
                 "include_gpt_frontier_ranking": args.include_gpt_frontier_ranking,
                 "include_target_prm": args.include_target_prm,
+                "include_rest_mcts": args.include_rest_mcts,
+                "include_solver_certification": args.include_solver_certification,
                 "target_prm_train_count": metrics.get("target_prm_train_count", 0),
                 "target_prm_pair_count": metrics.get("target_prm_pair_count", 0),
                 "live_network_required": metrics["live_network_required"],
@@ -605,6 +613,8 @@ def main() -> None:
                 include_gpt_value=args.include_gpt_value,
                 include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
                 include_target_prm=args.include_target_prm,
+                include_rest_mcts=args.include_rest_mcts,
+                include_solver_certification=args.include_solver_certification,
                 target_prm_train_count=args.target_prm_train_count,
             )
             print(

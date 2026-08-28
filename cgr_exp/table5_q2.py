@@ -11,10 +11,10 @@ TABLE5_METHODS = [
     ("Self-Consistency", "native parallel sampling", None),
     ("Best-of-N", "native matched-budget sampling", None),
     ("Tree of Thoughts", "online LLM frontier guidance", "GPT-frontier-rank / ToT-style"),
-    ("Target-PRM", "target LLM states", "Target-PRM"),
-    ("ReST-MCTS*", "public PRM-guided tree search protocol", None),
-    ("Solver prior", "solver states only", "Solver-trained MLP"),
-    ("Solver prior + certification", "solver states only + certified pruning", None),
+    ("Target-PRM priority", "target LLM states", "Target-PRM"),
+    ("PRM-guided MCTS (ReST-MCTS-style)", "target LLM states + search", "PRM-guided MCTS (ReST-MCTS-style)"),
+    ("Solver-trained priority", "solver states only", "Solver-trained MLP"),
+    ("Solver-trained priority + certified pruning", "solver states only + certified pruning", "Solver-trained MLP + certified pruning"),
 ]
 
 
@@ -36,10 +36,10 @@ def build_table5_q2_results(
         "Self-Consistency": self_consistency_dir,
         "Best-of-N": best_of_n_dir,
         "Tree of Thoughts": gpt_frontier_rank_dir,
-        "Target-PRM": target_prm_dir,
-        "ReST-MCTS*": rest_mcts_dir,
-        "Solver prior": solver_prior_dir,
-        "Solver prior + certification": solver_certification_dir,
+        "Target-PRM priority": target_prm_dir,
+        "PRM-guided MCTS (ReST-MCTS-style)": rest_mcts_dir,
+        "Solver-trained priority": solver_prior_dir,
+        "Solver-trained priority + certified pruning": solver_certification_dir,
     }
     rows: List[Dict[str, object]] = []
     for method, training_states, source_policy in TABLE5_METHODS:

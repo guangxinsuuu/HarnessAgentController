@@ -64,11 +64,11 @@ class Table5Q2Test(unittest.TestCase):
             manifest = build_table5_q2_results(out, solver_prior_dir=solver, gpt_frontier_rank_dir=gpt)
             rows = _read_csv(out / "table5_q2_results.csv")
             by_method = {row["Method"]: row for row in rows}
-            self.assertEqual(by_method["Solver prior"]["Status"], "complete")
-            self.assertEqual(by_method["Solver prior"]["Success"], "0.8900")
-            self.assertEqual(by_method["Solver prior"]["LLM calls"], "8000")
-            self.assertEqual(by_method["Solver prior"]["Tokens"], "20.20M")
-            self.assertEqual(by_method["Solver prior"]["Wall-clock"], "1.00h")
+            self.assertEqual(by_method["Solver-trained priority"]["Status"], "complete")
+            self.assertEqual(by_method["Solver-trained priority"]["Success"], "0.8900")
+            self.assertEqual(by_method["Solver-trained priority"]["LLM calls"], "8000")
+            self.assertEqual(by_method["Solver-trained priority"]["Tokens"], "20.20M")
+            self.assertEqual(by_method["Solver-trained priority"]["Wall-clock"], "1.00h")
             self.assertEqual(by_method["Tree of Thoughts"]["Status"], "complete")
             self.assertEqual(by_method["Tree of Thoughts"]["LLM calls"], "16000")
             self.assertEqual(by_method["Direct / CoT"]["Status"], "pending")
@@ -105,8 +105,8 @@ class Table5Q2Test(unittest.TestCase):
             out = root / "out"
             build_table5_q2_results(out, solver_prior_dir=solver, expected_test_count=100)
             by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
-            self.assertEqual(by_method["Solver prior"]["Status"], "partial: 4/100")
-            self.assertIn("partial checkpoint", by_method["Solver prior"]["notes"])
+            self.assertEqual(by_method["Solver-trained priority"]["Status"], "partial: 4/100")
+            self.assertIn("partial checkpoint", by_method["Solver-trained priority"]["notes"])
 
     def test_builder_reads_native_row_json_when_available(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

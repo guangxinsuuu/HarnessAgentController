@@ -58,6 +58,9 @@ class SchedulingNativeQ2Test(unittest.TestCase):
             self.assertIn("single reasoning path", alignment["Direct / CoT"]["source_primitives"])
             self.assertIn("final-answer aggregation", alignment["Self-Consistency"]["source_primitives"])
             self.assertIn("best sample selection", alignment["Best-of-N"]["source_primitives"])
+            self.assertEqual(metrics["source_evidence"]["Direct / CoT"]["source_revision"], "arXiv:2201.11903v6")
+            self.assertEqual(metrics["source_evidence"]["Self-Consistency"]["source_revision"], "arXiv:2203.11171v4")
+            self.assertEqual(metrics["source_evidence"]["Best-of-N"]["source_revision"], "arXiv:2408.03314v1")
 
     def test_resume_skips_completed_method_task_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

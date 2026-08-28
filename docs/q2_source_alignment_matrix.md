@@ -81,6 +81,13 @@ anchors are present, and paper-backed rows cite explicit arXiv versions. Its
 default mode is offline and deterministic; `--online` additionally verifies
 that the pinned revision and raw-source URLs are reachable.
 
+Each current Q2 runner embeds the relevant `source_evidence` block in its own
+manifest (`scheduling_structured_q2_metrics.json`,
+`scheduling_native_q2_manifest.json`, `scheduling_tot_q2_manifest.json`, or
+`scheduling_llm_pilot_metrics.json`). The readiness audit rejects external
+baseline artifacts whose embedded evidence is missing or no longer matches the
+pinned source evidence in `cgr_exp/q2_source_evidence.py`.
+
 Examples:
 
 - Tree of Thoughts requires `method_generate`, `method_evaluate`,

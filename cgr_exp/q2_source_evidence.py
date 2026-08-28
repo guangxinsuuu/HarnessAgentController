@@ -216,6 +216,10 @@ def q2_source_evidence_methods() -> List[str]:
     return sorted(Q2_SOURCE_EVIDENCE)
 
 
+def q2_source_evidence_for_methods(methods: Iterable[str]) -> Dict[str, Dict[str, object]]:
+    return {method: q2_source_evidence(method) for method in methods if method in Q2_SOURCE_EVIDENCE}
+
+
 def audit_q2_source_evidence(out_dir: Path) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = [_audit_source_evidence_row(method) for method in Q2_EXTERNAL_SOURCE_METHODS]

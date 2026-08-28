@@ -76,6 +76,11 @@ python3 -m cgr_exp.cli verify-q2-source-refs \
   --overwrite
 ```
 
+Structured, native, ToT, and learned-search artifacts also embed
+`source_evidence` for the external methods they instantiate. If an older run
+directory lacks this field, the Q2 readiness audit keeps that row pending until
+the row is rerun with the current code.
+
 ## Row Contracts and Commands
 
 ### CP-SAT

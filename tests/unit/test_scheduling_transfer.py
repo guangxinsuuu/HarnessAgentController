@@ -536,6 +536,10 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertFalse(target_protocol["zero_shot_transfer"])
             self.assertEqual(len(metrics["target_prm_training_instance_ids"]), 4)
             self.assertIn("Target-PRM priority", metrics["q2_method_alignment"])
+            self.assertEqual(
+                metrics["source_evidence"]["Target-PRM priority"]["source_revision"],
+                "7ecc794703b2877f63226f2477a49b34f9b25163",
+            )
             self.assertIn(
                 "process supervision",
                 metrics["q2_method_alignment"]["Target-PRM priority"]["source_primitives"],
@@ -599,6 +603,10 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertFalse(cert_protocol["learned_score_authorizes_pruning"])
             self.assertIn("PRM-guided MCTS (ReST-MCTS-style)", metrics["q2_method_alignment"])
             self.assertIn("Solver-trained priority + certified pruning", metrics["q2_method_alignment"])
+            self.assertEqual(
+                metrics["source_evidence"]["PRM-guided MCTS (ReST-MCTS-style)"]["source_revision"],
+                "2d5f488c3d6e24f99d50a9860e818383b1bb5883",
+            )
             self.assertIn(
                 "MCTS backpropagation",
                 metrics["q2_method_alignment"]["PRM-guided MCTS (ReST-MCTS-style)"]["source_primitives"],

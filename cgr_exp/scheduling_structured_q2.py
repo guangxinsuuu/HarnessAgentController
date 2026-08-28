@@ -8,6 +8,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from cgr_exp.datasets.level1_scheduling import SchedulingTask
 from cgr_exp.q2_method_contracts import q2_method_contracts
+from cgr_exp.q2_source_evidence import q2_source_evidence_for_methods
 from cgr_exp.scheduling_micro import generate_scheduling_micro_instances
 
 
@@ -33,6 +34,7 @@ def run_scheduling_structured_q2(
     table_rows = _summarize(per_instance_rows, expected_count=len(tasks))
     _write_csv(out_dir / "scheduling_structured_q2_table.csv", table_rows)
     _write_csv(out_dir / "scheduling_structured_q2_per_instance.csv", per_instance_rows)
+    q2_methods = ["CP-SAT", "EST / list scheduling heuristic"]
     metrics = {
         "benchmark": "scheduling_structured_q2",
         "seed": seed,
@@ -43,7 +45,8 @@ def run_scheduling_structured_q2(
         "llm_calls": 0,
         "tokens": 0,
         "structured_input": True,
-        "method_alignment": q2_method_contracts(["CP-SAT", "EST / list scheduling heuristic"]),
+        "method_alignment": q2_method_contracts(q2_methods),
+        "source_evidence": q2_source_evidence_for_methods(q2_methods),
         "produced_artifacts": [
             "scheduling_structured_q2_table.csv",
             "scheduling_structured_q2_per_instance.csv",

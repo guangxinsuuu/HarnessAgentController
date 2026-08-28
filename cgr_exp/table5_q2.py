@@ -257,6 +257,27 @@ def _source_evidence_blockers_for_row(row: Mapping[str, object]) -> List[str]:
     return blockers
 
 
+def _artifact_source_evidence_blockers(manifest: Mapping[str, object], method: str, artifact_name: str) -> List[str]:
+    expected = Q2_SOURCE_EVIDENCE.get(method)
+    if not isinstance(expected, Mapping):
+        return []
+    observed_all = manifest.get("source_evidence")
+    if not isinstance(observed_all, Mapping):
+        return [f"{artifact_name} missing source_evidence for {method}"]
+    observed = observed_all.get(method)
+    if not isinstance(observed, Mapping):
+        return [f"{artifact_name} missing source_evidence for {method}"]
+    blockers = []
+    for key in ("source_url", "source_revision", "source_revision_url"):
+        if str(observed.get(key, "")) != str(expected.get(key, "")):
+            blockers.append(f"{artifact_name} source_evidence {key} mismatch for {method}")
+    expected_refs = {str(ref) for ref in expected.get("official_code_refs", [])}
+    observed_refs = {str(ref) for ref in observed.get("official_code_refs", [])} if isinstance(observed.get("official_code_refs"), list) else set()
+    if expected_refs - observed_refs:
+        blockers.append(f"{artifact_name} source_evidence missing official_code_refs for {method}")
+    return blockers
+
+
 def _apply_split_consistency_audit(rows: List[Mapping[str, object]], audit_rows: List[Dict[str, object]], expected_test_count: int) -> None:
     signatures: Dict[str, tuple[str, ...]] = {}
     for row in rows:
@@ -421,6 +442,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 invalid.append(f"scheduling_structured_q2_metrics.json missing Q2 method alignment for {method}")
             else:
                 invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_structured_q2_metrics.json"))
+            invalid.extend(_artifact_source_evidence_blockers(structured_manifest, method, "scheduling_structured_q2_metrics.json"))
             table_rows = _read_csv(source_dir / "scheduling_structured_q2_table.csv")
             structured_row = next((candidate for candidate in table_rows if candidate.get("Method") == method), {})
             invalid.extend(_structured_runtime_evidence_blockers(method, structured_row))
@@ -443,6 +465,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 invalid.append(f"scheduling_native_q2_manifest.json missing Q2 method alignment for {method}")
             else:
                 invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_native_q2_manifest.json"))
+            invalid.extend(_artifact_source_evidence_blockers(native_manifest, method, "scheduling_native_q2_manifest.json"))
             native_table_rows = _read_csv(source_dir / "scheduling_native_q2_table.csv")
             native_table_row = next((item for item in native_table_rows if str(item.get("Method")) == method), row)
             invalid.extend(_native_runtime_count_blockers(method, native_table_row, methods.get(method, {}) if isinstance(methods, Mapping) else {}, row))
@@ -493,6 +516,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 invalid.append(f"scheduling_tot_q2_manifest.json missing Q2 method alignment for {method}")
             else:
                 invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_tot_q2_manifest.json"))
+            invalid.extend(_artifact_source_evidence_blockers(tot_manifest, method, "scheduling_tot_q2_manifest.json"))
         table_rows = _read_csv(source_dir / "scheduling_tot_q2_table.csv")
         source_policy_row = next((item for item in table_rows if str(item.get("Method")) == method), table_rows[0] if table_rows else row)
         if _as_float(source_policy_row.get("tot_generate_events")) <= 0:
@@ -528,6 +552,7 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 invalid.append(f"scheduling_llm_pilot_metrics.json missing Q2 method alignment for {method}")
             else:
                 invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_llm_pilot_metrics.json"))
+            invalid.extend(_artifact_source_evidence_blockers(learned_manifest, method, "scheduling_llm_pilot_metrics.json"))
             protocols = learned_manifest.get("learned_search_protocol")
             protocol_by_policy = protocols.get("policies") if isinstance(protocols, Mapping) else None
             source_policy = str(row.get("source_policy", ""))

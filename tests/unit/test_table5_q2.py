@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cgr_exp.q2_method_contracts import q2_method_contracts
+from cgr_exp.q2_source_evidence import q2_source_evidence_for_methods
 from cgr_exp.q2_source_evidence import Q2_SOURCE_EVIDENCE
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 
@@ -1343,6 +1344,61 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
             self.assertIn("source evidence: arxiv source_revision must include explicit version", audit_rows["Direct / CoT"]["result_blockers"])
 
+    def test_readiness_audit_rejects_external_artifact_without_embedded_source_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_csv(
+                native / "scheduling_native_q2_table.csv",
+                [
+                    {
+                        "Method": "Direct / CoT",
+                        "success": "1.0",
+                        "gap": "0.0",
+                        "llm_calls": "1",
+                        "tokens": "10",
+                        "wall_clock_seconds": "1",
+                        "status": "complete",
+                        "source_policy": "native",
+                        "native_runtime_sample_count": "1",
+                        "native_runtime_selection_events": "1",
+                    }
+                ],
+            )
+            _write_csv(native / "scheduling_native_q2_per_instance.csv", [{"Method": "Direct / CoT", "task_id": "t0"}])
+            (native / "scheduling_native_q2_samples.jsonl").write_text(
+                json.dumps({"Method": "Direct / CoT", "task_id": "t0", "sample_index": 0}) + "\n",
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "splits": {"test": 1},
+                        "native_protocol": {
+                            "methods": {
+                                "Direct / CoT": {
+                                    "sample_count": 1,
+                                    "selection_rule": "first_valid",
+                                    "verifier_role": "validate complete schedules for metrics",
+                                    "oracle_future_labels_exposed": False,
+                                }
+                            }
+                        },
+                        "method_alignment": q2_method_contracts(["Direct / CoT"]),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", expected_test_count=1, direct_dir=native)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
+            self.assertIn(
+                "scheduling_native_q2_manifest.json missing source_evidence for Direct / CoT",
+                audit_rows["Direct / CoT"]["result_blockers"],
+            )
+
     def test_readiness_audit_rejects_github_external_row_without_pinned_revision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1890,6 +1946,7 @@ def _write_native_manifest(path: Path, methods: list[str], test_count: int) -> N
                 "splits": {"test": test_count},
                 "native_protocol": {"methods": method_protocols},
                 "method_alignment": q2_method_contracts(methods),
+                "source_evidence": q2_source_evidence_for_methods(methods),
             }
         ),
         encoding="utf-8",
@@ -1910,6 +1967,7 @@ def _write_tot_manifest(path: Path, test_count: int) -> None:
                     "n_evaluate_sample": 2,
                 },
                 "method_alignment": q2_method_contracts(["Tree of Thoughts"]),
+                "source_evidence": q2_source_evidence_for_methods(["Tree of Thoughts"]),
             }
         ),
         encoding="utf-8",
@@ -1953,6 +2011,7 @@ def _write_structured_metrics(path: Path, methods: list[str], test_count: int) -
                 "llm_calls": 0,
                 "tokens": 0,
                 "method_alignment": q2_method_contracts(methods),
+                "source_evidence": q2_source_evidence_for_methods(methods),
             }
         ),
         encoding="utf-8",
@@ -1968,6 +2027,7 @@ def _write_structured_metrics_without_table_patch(path: Path, methods: list[str]
                 "llm_calls": 0,
                 "tokens": 0,
                 "method_alignment": q2_method_contracts(methods),
+                "source_evidence": q2_source_evidence_for_methods(methods),
             }
         ),
         encoding="utf-8",
@@ -2012,6 +2072,7 @@ def _write_learned_metrics(path: Path, methods: list[str], policies: list[str]) 
         json.dumps(
             {
                 "q2_method_alignment": q2_method_contracts(methods),
+                "source_evidence": q2_source_evidence_for_methods(methods),
                 "semantic_state_schema": {"oracle_labels_in_inference_features": False},
                 "learned_search_protocol": {"policies": policy_protocols},
             }

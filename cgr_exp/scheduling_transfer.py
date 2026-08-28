@@ -18,6 +18,7 @@ from cgr_exp.datasets.level1_scheduling import ScheduleAction, SchedulingTask
 from cgr_exp.datasets.level2_renderer import Level2Rendering, render_scheduling_level2_variants
 from cgr_exp.proposers.llm_adapter import OpenAICompatibleHTTPClient, RealLLMProposerAdapter
 from cgr_exp.q2_method_contracts import q2_method_contracts
+from cgr_exp.q2_source_evidence import q2_source_evidence_for_methods
 from cgr_exp.scheduling_micro import (
     CachedSchedulingOraclePolicy,
     SCHEDULING_FEATURE_NAMES,
@@ -1043,6 +1044,7 @@ def run_scheduling_llm_pilot(
             "target_distribution": "real-llm-induced semantic search",
         },
         "q2_method_alignment": q2_method_contracts(q2_methods),
+        "source_evidence": q2_source_evidence_for_methods(q2_methods),
         "learned_search_protocol": _learned_search_protocol_manifest(
             observed_policy_names,
             include_target_prm=include_target_prm,

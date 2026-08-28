@@ -36,6 +36,11 @@ class SchedulingStructuredQ2Test(unittest.TestCase):
             self.assertIn("min(start", by_method["EST / list scheduling heuristic"]["structured_runtime_tie_break_rule"])
             self.assertEqual(metrics["llm_calls"], 0)
             self.assertIn("optional interval variables", metrics["method_alignment"]["CP-SAT"]["source_primitives"])
+            self.assertIn("CP-SAT", metrics["source_evidence"])
+            self.assertEqual(
+                metrics["source_evidence"]["CP-SAT"]["source_revision"],
+                "98c165af62df62b3056c2ee0fca66b24e79097cb",
+            )
             self.assertIn(
                 "ready-list dispatch",
                 metrics["method_alignment"]["EST / list scheduling heuristic"]["source_primitives"],

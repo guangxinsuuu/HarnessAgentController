@@ -54,6 +54,10 @@ class SchedulingToTQ2Test(unittest.TestCase):
             self.assertIn("method_evaluate", primitives)
             self.assertIn("method_select", primitives)
             self.assertIn("breadth-first search", primitives)
+            self.assertEqual(
+                metrics["source_evidence"]["Tree of Thoughts"]["source_revision"],
+                "8050e67d0e3a0fddc424d7fa5801538722a4c4cc",
+            )
             self.assertTrue((root / "table5_native_row.json").exists())
             trace = _read_jsonl(root / "scheduling_tot_q2_trace.jsonl")
             events = {row["event"] for row in trace}

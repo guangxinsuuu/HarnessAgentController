@@ -40,6 +40,11 @@ rendering is skipped only when `scheduling_tot_q2_trace.jsonl` contains its
 `finish` event. Missing audit artifacts cause reruns rather than incomplete
 promotion.
 
+The Q2 readiness audit also checks coverage against `--expected-test-count`.
+Native rows need sample records for the expected number of distinct test tasks,
+and the native ToT row needs finish events for the expected number of distinct
+renderings. A summary row marked `complete` is not enough by itself.
+
 ## Row Contracts and Commands
 
 ### CP-SAT

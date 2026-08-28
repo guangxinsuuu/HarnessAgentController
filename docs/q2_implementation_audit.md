@@ -37,6 +37,9 @@ write `table5_q2_readiness.csv` and `table5_q2_readiness.json`. The readiness
 audit marks each row's `result_ready` and `compute_ready` status and lists
 blockers such as missing artifacts, partial checkpoints, missing token
 accounting, or shared-cache fallback accounting.
+For native LLM rows, the audit additionally checks that the sample or ToT trace
+artifact covers the expected number of distinct held-out test cases. This
+prevents a manually written complete summary row from promoting a partial run.
 
 The Q2 table builder treats `Tree of Thoughts` as a native protocol row and
 only promotes artifacts produced by `run-scheduling-tot-q2`. Older

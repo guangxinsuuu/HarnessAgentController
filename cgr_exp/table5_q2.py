@@ -85,6 +85,7 @@ def build_table5_q2_results(
             loaded = _row_from_native_artifacts(method, transfer_setting, source_dir)
             if loaded is not None:
                 row = loaded
+        row["expected_test_count"] = expected_test_count
         rows.append(row)
     csv_path = out_dir / "table5_q2_results.csv"
     tex_path = out_dir / "table5_q2_results.tex"
@@ -92,7 +93,8 @@ def build_table5_q2_results(
     _write_csv(csv_path, rows)
     tex_path.write_text(_latex_table(rows), encoding="utf-8")
     manifest = {
-        "table": "Table 5",
+        "table": "Table 4",
+        "legacy_artifact_prefix": "table5_q2",
         "question": "Q2 end-to-end quality-compute comparison",
         "strict_pending_policy": True,
         "solver_prior_dir": str(solver_prior_dir),
@@ -141,7 +143,8 @@ def audit_table5_q2_readiness(
     audit_json = out_dir / "table5_q2_readiness.json"
     _write_csv(audit_csv, audit_rows)
     summary = {
-        "table": "Table 5",
+        "table": "Table 4",
+        "legacy_artifact_prefix": "table5_q2",
         "expected_test_count": expected_test_count,
         "all_rows_result_ready": all(_as_bool(row["result_ready"]) for row in audit_rows),
         "all_rows_compute_ready": all(_as_bool(row["compute_ready"]) for row in audit_rows),
@@ -248,8 +251,14 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             if error:
                 invalid.append(f"scheduling_native_q2_samples.jsonl {error}")
                 return invalid
-            if not any(str(sample.get("Method")) == method for sample in samples):
+            method_samples = [sample for sample in samples if str(sample.get("Method")) == method]
+            if not method_samples:
                 invalid.append("scheduling_native_q2_samples.jsonl missing method rows")
+            expected_count = _expected_count_from_row(row)
+            if expected_count is not None:
+                task_ids = {str(sample.get("task_id")) for sample in method_samples if sample.get("task_id") not in (None, "")}
+                if len(task_ids) < expected_count:
+                    invalid.append(f"scheduling_native_q2_samples.jsonl partial task coverage: {len(task_ids)}/{expected_count}")
     if method == "Tree of Thoughts":
         trace_path = source_dir / "scheduling_tot_q2_trace.jsonl"
         if trace_path.exists() and trace_path.stat().st_size > 0:
@@ -257,8 +266,14 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             if error:
                 invalid.append(f"scheduling_tot_q2_trace.jsonl {error}")
                 return invalid
-            if not any(str(event.get("event")) == "finish" for event in trace):
+            finish_events = [event for event in trace if str(event.get("event")) == "finish"]
+            if not finish_events:
                 invalid.append("scheduling_tot_q2_trace.jsonl missing finish event")
+            expected_count = _expected_count_from_row(row)
+            if expected_count is not None:
+                renderings = {str(event.get("rendering_id")) for event in finish_events if event.get("rendering_id") not in (None, "")}
+                if len(renderings) < expected_count:
+                    invalid.append(f"scheduling_tot_q2_trace.jsonl partial finish coverage: {len(renderings)}/{expected_count}")
     if method in {"Target-PRM priority", "PRM-guided MCTS (ReST-MCTS-style)"}:
         for filename in ("target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
             path = source_dir / filename
@@ -269,6 +284,33 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 elif not rows:
                     invalid.append(f"{filename} empty jsonl")
     return invalid
+
+
+def _expected_count_from_row(row: Mapping[str, object]) -> Optional[int]:
+    status = str(row.get("Status", ""))
+    if status != "complete":
+        return None
+    explicit_expected_count = _as_float(row.get("expected_test_count"))
+    if explicit_expected_count > 0:
+        return int(explicit_expected_count)
+    source_dir = _artifact_run_root(str(row.get("Method", "")), Path(str(row.get("source_artifact", ""))))
+    manifest_paths = [
+        source_dir / "scheduling_native_q2_manifest.json",
+        source_dir / "scheduling_tot_q2_manifest.json",
+    ]
+    for path in manifest_paths:
+        if not path.exists() or path.stat().st_size == 0:
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        splits = data.get("splits")
+        if isinstance(splits, Mapping):
+            test_count = _as_float(splits.get("test"))
+            if test_count > 0:
+                return int(test_count)
+    return None
 
 
 def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path]) -> Dict[str, object]:

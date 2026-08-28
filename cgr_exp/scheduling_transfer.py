@@ -925,6 +925,7 @@ def run_scheduling_llm_pilot(
     target_prm_pairs = []
     target_prm_cache_rows = []
     target_prm_state_rows = []
+    target_prm_train_ids: List[str] = []
     if include_target_prm or include_rest_mcts:
         target_prm_instances = generate_scheduling_micro_instances(
             target_prm_train_count,
@@ -934,6 +935,7 @@ def run_scheduling_llm_pilot(
             job_count,
             machine_count,
         )
+        target_prm_train_ids = [task.task_id for task in target_prm_instances["train"]]
         target_prm_episodes = make_level2_scheduling_episodes(target_prm_instances["train"], seed=seed + 9000, perturbation=perturbation)
         target_prm_records, target_prm_cache_rows, target_prm_state_rows = collect_real_level2_trace_records(
             target_prm_episodes,
@@ -1016,6 +1018,7 @@ def run_scheduling_llm_pilot(
         "include_rest_mcts": include_rest_mcts,
         "include_solver_certification": include_solver_certification,
         "target_prm_train_count": target_prm_train_count if include_target_prm or include_rest_mcts else 0,
+        "target_prm_training_instance_ids": target_prm_train_ids,
         "target_prm_trace_record_count": len(target_prm_records),
         "target_prm_pair_count": len(target_prm_pairs),
         "model": model,
@@ -1057,6 +1060,10 @@ def run_scheduling_llm_pilot(
         (out_dir / "target_prm_ranker.json").write_text(target_prm_ranker.to_json(), encoding="utf-8")
         _write_trace_records(out_dir / "target_prm_trace_records.jsonl", target_prm_records)
         _write_pairs(out_dir / "target_prm_train_pairs.jsonl", target_prm_pairs)
+        (out_dir / "target_prm_label_manifest.json").write_text(
+            json.dumps(_target_prm_label_manifest(metrics, target_prm_records, target_prm_pairs, target_prm_train_ids), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
         _write_csv(out_dir / "target_prm_training_proposal_cache.csv", target_prm_cache_rows)
         _write_jsonl(out_dir / "target_prm_training_proposal_states.jsonl", target_prm_state_rows)
     (out_dir / "scheduling_llm_pilot_leakage_manifest.json").write_text(json.dumps(metrics["semantic_state_schema"], indent=2, sort_keys=True), encoding="utf-8")
@@ -2182,6 +2189,63 @@ def _source_label_manifest(metrics: Dict[str, object], source_records: Sequence[
         "oracle_label_fields": list(ORACLE_LABEL_FIELDS),
         "oracle_labels_in_inference_features": bool(metrics["semantic_state_schema"]["oracle_labels_in_inference_features"]),
         "inference_feature_schema": "feature_schema.json",
+    }
+
+
+def _target_prm_label_manifest(
+    metrics: Dict[str, object],
+    target_records: Sequence[object],
+    target_pairs: Sequence[object],
+    target_train_ids: Sequence[str],
+) -> Dict[str, object]:
+    finite_labels = 0
+    infeasible_labels = 0
+    depths = []
+    parent_ids = set()
+    for record in target_records:
+        value = float(getattr(record, "best_descendant_objective", float("inf")))
+        if value == float("inf"):
+            infeasible_labels += 1
+        else:
+            finite_labels += 1
+        depths.append(int(getattr(record, "depth", 0)))
+        parent_id = getattr(record, "parent_id", None)
+        if parent_id is not None:
+            parent_ids.add(str(parent_id))
+    return {
+        "supervision": "target_process_frontier_ranking",
+        "label_source": "exact_residual_scheduling_oracle_on_target_llm_states",
+        "state_distribution": "target LLM-induced Scheduling trajectories from disjoint training instances",
+        "terminal_outcome_only": False,
+        "uses_intermediate_states": True,
+        "process_label_fields": [
+            "best_descendant_objective",
+            "future_search_cost",
+            "eventual_outcome",
+            "parent_id",
+            "depth",
+        ],
+        "objective_sense": "minimize",
+        "ranking_order": [
+            "completable states before infeasible states",
+            "lower exact best descendant objective before higher objective",
+            "deeper state before shallower state when objective ties",
+            "lower current lower bound before higher lower bound when objective and depth tie",
+        ],
+        "loss": "pairwise_logistic",
+        "process_label_record_count": len(target_records),
+        "target_pair_count": len(target_pairs),
+        "target_training_instance_ids": list(target_train_ids),
+        "target_training_instance_count": len(set(target_train_ids)),
+        "finite_best_descendant_labels": finite_labels,
+        "infeasible_best_descendant_labels": infeasible_labels,
+        "max_record_depth": max(depths) if depths else 0,
+        "frontier_parent_group_count": len(parent_ids),
+        "pseudo_oracle_labels_used": False,
+        "oracle_label_fields": list(ORACLE_LABEL_FIELDS),
+        "oracle_labels_in_inference_features": bool(metrics["semantic_state_schema"]["oracle_labels_in_inference_features"]),
+        "inference_feature_schema": "feature_schema.json",
+        "not_zero_shot": True,
     }
 
 

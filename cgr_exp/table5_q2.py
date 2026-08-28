@@ -295,12 +295,14 @@ def _missing_required_artifacts(row: Mapping[str, object]) -> List[str]:
             "target_prm_ranker.json",
             "target_prm_trace_records.jsonl",
             "target_prm_train_pairs.jsonl",
+            "target_prm_label_manifest.json",
         ],
         "PRM-guided MCTS (ReST-MCTS-style)": [
             "scheduling_llm_pilot_metrics.json",
             "target_prm_ranker.json",
             "target_prm_trace_records.jsonl",
             "target_prm_train_pairs.jsonl",
+            "target_prm_label_manifest.json",
         ],
         "Solver-trained priority": [
             "scheduling_llm_pilot_metrics.json",
@@ -480,6 +482,22 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                         invalid.append("ReST-MCTS-style table row must record positive MCTS simulation/evaluation calls")
                     if _as_float(source_policy_row.get("mcts_backup_updates")) <= 0:
                         invalid.append("ReST-MCTS-style table row must record positive MCTS backpropagation updates")
+        label_manifest, label_error = _read_json_manifest_for_audit(source_dir / "target_prm_label_manifest.json")
+        if label_error:
+            invalid.append(f"target_prm_label_manifest.json {label_error}")
+        if label_manifest:
+            if str(label_manifest.get("supervision")) != "target_process_frontier_ranking":
+                invalid.append("target_prm_label_manifest.json must declare target_process_frontier_ranking supervision")
+            if str(label_manifest.get("label_source")) != "exact_residual_scheduling_oracle_on_target_llm_states":
+                invalid.append("target_prm_label_manifest.json must declare exact residual labels on target LLM states")
+            if label_manifest.get("terminal_outcome_only") is not False:
+                invalid.append("target_prm_label_manifest.json must not be terminal outcome only")
+            if label_manifest.get("oracle_labels_in_inference_features") is not False:
+                invalid.append("target_prm_label_manifest.json must exclude oracle labels from inference features")
+            if _as_float(label_manifest.get("target_pair_count")) <= 0:
+                invalid.append("target_prm_label_manifest.json must record positive target pair count")
+            if _as_float(label_manifest.get("process_label_record_count")) <= 0:
+                invalid.append("target_prm_label_manifest.json must record positive process label count")
         for filename in ("target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
             path = source_dir / filename
             if path.exists() and path.stat().st_size > 0:

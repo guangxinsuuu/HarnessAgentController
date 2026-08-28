@@ -39,12 +39,14 @@ Q2_REQUIRED_ARTIFACTS: Dict[str, List[str]] = {
         "target_prm_ranker.json",
         "target_prm_trace_records.jsonl",
         "target_prm_train_pairs.jsonl",
+        "target_prm_label_manifest.json",
     ],
     "PRM-guided MCTS (ReST-MCTS-style)": [
         "scheduling_llm_pilot_metrics.json",
         "target_prm_ranker.json",
         "target_prm_trace_records.jsonl",
         "target_prm_train_pairs.jsonl",
+        "target_prm_label_manifest.json",
     ],
     "Solver-trained priority": [
         "scheduling_llm_pilot_metrics.json",

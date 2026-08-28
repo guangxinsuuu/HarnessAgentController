@@ -534,6 +534,7 @@ class SchedulingTransferTest(unittest.TestCase):
             target_protocol = metrics["learned_search_protocol"]["policies"]["Target-PRM"]
             self.assertEqual(target_protocol["training_distribution"], "target LLM-induced Scheduling trajectories from disjoint training instances")
             self.assertFalse(target_protocol["zero_shot_transfer"])
+            self.assertEqual(len(metrics["target_prm_training_instance_ids"]), 4)
             self.assertIn("Target-PRM priority", metrics["q2_method_alignment"])
             self.assertIn(
                 "process supervision",
@@ -541,12 +542,21 @@ class SchedulingTransferTest(unittest.TestCase):
             )
             for name in (
                 "target_prm_ranker.json",
+                "target_prm_label_manifest.json",
                 "target_prm_trace_records.jsonl",
                 "target_prm_train_pairs.jsonl",
                 "target_prm_training_proposal_cache.csv",
                 "target_prm_training_proposal_states.jsonl",
             ):
                 self.assertTrue((root / name).exists(), name)
+            label_manifest = json.loads((root / "target_prm_label_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(label_manifest["supervision"], "target_process_frontier_ranking")
+            self.assertEqual(label_manifest["label_source"], "exact_residual_scheduling_oracle_on_target_llm_states")
+            self.assertFalse(label_manifest["terminal_outcome_only"])
+            self.assertTrue(label_manifest["uses_intermediate_states"])
+            self.assertGreater(label_manifest["target_pair_count"], 0)
+            self.assertGreater(label_manifest["process_label_record_count"], 0)
+            self.assertFalse(label_manifest["oracle_labels_in_inference_features"])
 
     def test_scheduling_llm_pilot_can_include_rest_mcts_and_solver_certification_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -602,6 +612,7 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertLessEqual(certified["on_demand_total_tokens"], certified["total_tokens"])
             for name in (
                 "target_prm_ranker.json",
+                "target_prm_label_manifest.json",
                 "target_prm_trace_records.jsonl",
                 "target_prm_train_pairs.jsonl",
             ):

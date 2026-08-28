@@ -386,6 +386,15 @@ native frozen baselines, learned-search rows, and strict ToT BFS row as
 separate background jobs, while each runner still uses its own
 `--parallel-episodes` setting internally.
 
+Before spending API tokens, run:
+
+```bash
+scripts/run_q2_table4.sh preflight
+```
+
+This checks the local CLI, reports whether an LLM key is present without
+printing it, and writes the current `audit-table4-q2` readiness report.
+
 Native frozen baselines can run together:
 
 ```bash

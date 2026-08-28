@@ -514,8 +514,9 @@ class SchedulingTransferTest(unittest.TestCase):
 
     def test_scheduling_llm_pilot_can_include_rest_mcts_and_solver_certification_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
             metrics = run_scheduling_llm_pilot(
-                Path(tmp),
+                root,
                 client=ScriptedSchedulingClient(model="mock-scheduling"),
                 model="mock-scheduling",
                 seed=31,
@@ -549,6 +550,12 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertGreaterEqual(certified["false_prunes"], 0)
             self.assertIn("on_demand_total_tokens", certified)
             self.assertLessEqual(certified["on_demand_total_tokens"], certified["total_tokens"])
+            for name in (
+                "target_prm_ranker.json",
+                "target_prm_trace_records.jsonl",
+                "target_prm_train_pairs.jsonl",
+            ):
+                self.assertTrue((root / name).exists(), name)
 
     def test_scheduling_llm_pilot_resume_requires_each_requested_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

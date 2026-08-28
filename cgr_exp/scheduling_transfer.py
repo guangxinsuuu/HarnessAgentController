@@ -974,7 +974,7 @@ def run_scheduling_llm_pilot(
     _write_level2_episodes(out_dir / "scheduling_llm_pilot_episodes.jsonl", episodes)
     ranker_json = ranker.to_json()
     (out_dir / "scheduling_llm_pilot_ranker.json").write_text(ranker_json, encoding="utf-8")
-    if include_target_prm and target_prm_ranker is not None:
+    if (include_target_prm or include_rest_mcts) and target_prm_ranker is not None:
         (out_dir / "target_prm_ranker.json").write_text(target_prm_ranker.to_json(), encoding="utf-8")
         _write_trace_records(out_dir / "target_prm_trace_records.jsonl", target_prm_records)
         _write_pairs(out_dir / "target_prm_train_pairs.jsonl", target_prm_pairs)

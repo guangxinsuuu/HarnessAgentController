@@ -437,7 +437,7 @@ python3 -m cgr_exp.cli build-table5-q2 \
   --direct-dir runs/q2_native_llm_baselines_100_seed0 \
   --self-consistency-dir runs/q2_native_llm_baselines_100_seed0 \
   --best-of-n-dir runs/q2_native_llm_baselines_100_seed0 \
-  --gpt-frontier-rank-dir runs/q2_tot_bfs_100_seed0 \
+  --tot-dir runs/q2_tot_bfs_100_seed0 \
   --target-prm-dir runs/q2_learned_search_100_seed0 \
   --rest-mcts-dir runs/q2_learned_search_100_seed0 \
   --solver-prior-dir runs/q2_learned_search_100_seed0 \
@@ -458,7 +458,7 @@ python3 -m cgr_exp.cli audit-table5-q2 \
   --direct-dir runs/q2_native_llm_baselines_100_seed0 \
   --self-consistency-dir runs/q2_native_llm_baselines_100_seed0 \
   --best-of-n-dir runs/q2_native_llm_baselines_100_seed0 \
-  --gpt-frontier-rank-dir runs/q2_tot_bfs_100_seed0 \
+  --tot-dir runs/q2_tot_bfs_100_seed0 \
   --target-prm-dir runs/q2_learned_search_100_seed0 \
   --rest-mcts-dir runs/q2_learned_search_100_seed0 \
   --solver-prior-dir runs/q2_learned_search_100_seed0 \
@@ -482,6 +482,10 @@ partial summary CSV from being promoted as a source-aligned Q2 result.
 
 Use `table5_q2_readiness.csv` to check row-level blockers before promoting a
 number into the paper.
+
+`--gpt-frontier-rank-dir` remains a backwards-compatible alias for `--tot-dir`,
+but new commands should use `--tot-dir` because this row requires native ToT
+BFS artifacts, not older controller-isolation GPT-frontier-rank diagnostics.
 
 Final acceptance checks:
 

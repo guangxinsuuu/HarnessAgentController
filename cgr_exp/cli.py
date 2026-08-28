@@ -238,7 +238,7 @@ def main() -> None:
         if name in ("build-table5-q2", "audit-table5-q2"):
             p.add_argument("--solver-prior-dir", type=Path, default=Path("runs/scheduling_llm_pilot_real_100_seed0"))
             p.add_argument("--expected-test-count", type=int, default=100)
-            p.add_argument("--gpt-frontier-rank-dir", type=Path, default=None)
+            p.add_argument("--tot-dir", "--gpt-frontier-rank-dir", dest="gpt_frontier_rank_dir", type=Path, default=None)
             p.add_argument("--target-prm-dir", type=Path, default=None)
             p.add_argument("--direct-dir", type=Path, default=None)
             p.add_argument("--self-consistency-dir", type=Path, default=None)

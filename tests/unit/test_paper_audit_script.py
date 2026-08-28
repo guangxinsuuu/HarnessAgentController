@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+import stat
 from pathlib import Path
 
 
@@ -11,6 +12,8 @@ class PaperAuditScriptTest(unittest.TestCase):
     def test_paper_audit_script_is_syntax_valid_and_key_safe(self) -> None:
         script = Path("scripts/run_paper_audits.sh")
         text = script.read_text(encoding="utf-8")
+        mode = script.stat().st_mode
+        self.assertTrue(mode & stat.S_IXUSR)
         self.assertNotIn("sk-", text)
         self.assertIn("audit_q2", text)
         self.assertIn("audit_q4", text)
@@ -67,6 +70,15 @@ class PaperAuditScriptTest(unittest.TestCase):
             self.assertTrue((root / "q4_source_audit" / "q4_tau_source_evidence_audit.csv").exists())
             self.assertTrue((root / "q4_source_refs" / "q4_tau_source_ref_verification.csv").exists())
             self.assertTrue((root / "cert_audit" / "certification_tables_readiness.csv").exists())
+
+    def test_current_status_doc_records_audit_outputs_and_pending_tau(self) -> None:
+        text = Path("docs/current_experiment_status.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/run_paper_audits.sh all", text)
+        self.assertIn("q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv", text)
+        self.assertIn("q4_tau_table_current_audit/q4_tau_readiness.csv", text)
+        self.assertIn("certification_tables_readiness/certification_tables_readiness.csv", text)
+        self.assertIn("All Q4 tau/tau2 rows remain pending", text)
+        self.assertIn("Only rows marked ready", text)
 
 
 if __name__ == "__main__":

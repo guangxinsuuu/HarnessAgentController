@@ -29,6 +29,11 @@ class SchedulingStructuredQ2Test(unittest.TestCase):
             self.assertEqual(by_method["EST / list scheduling heuristic"]["llm_calls"], "0")
             self.assertEqual(by_method["EST / list scheduling heuristic"]["tokens"], "0")
             self.assertEqual(metrics["llm_calls"], 0)
+            self.assertIn("optional interval variables", metrics["method_alignment"]["CP-SAT"]["source_primitives"])
+            self.assertIn(
+                "ready-list dispatch",
+                metrics["method_alignment"]["EST / list scheduling heuristic"]["source_primitives"],
+            )
             self.assertTrue((root / "scheduling_structured_q2_per_instance.csv").exists())
 
 

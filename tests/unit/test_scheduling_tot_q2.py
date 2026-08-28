@@ -44,6 +44,11 @@ class SchedulingToTQ2Test(unittest.TestCase):
             self.assertEqual(metrics["native_tot_protocol"]["n_select_sample"], 2)
             self.assertEqual(metrics["native_tot_protocol"]["n_evaluate_sample"], 2)
             self.assertFalse(metrics["native_tot_protocol"]["oracle_future_labels_exposed"])
+            primitives = metrics["method_alignment"]["Tree of Thoughts"]["source_primitives"]
+            self.assertIn("method_generate", primitives)
+            self.assertIn("method_evaluate", primitives)
+            self.assertIn("method_select", primitives)
+            self.assertIn("breadth-first search", primitives)
             self.assertTrue((root / "table5_native_row.json").exists())
             trace = _read_jsonl(root / "scheduling_tot_q2_trace.jsonl")
             events = {row["event"] for row in trace}

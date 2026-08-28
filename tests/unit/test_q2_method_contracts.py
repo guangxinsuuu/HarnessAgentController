@@ -16,18 +16,37 @@ class Q2MethodContractsTest(unittest.TestCase):
         for method, _setting, _source, _kind in TABLE5_METHODS:
             contract = q2_method_contract(method)
             self.assertTrue(contract["reference"], method)
+            self.assertTrue(contract["claim_scope"], method)
+            self.assertIn("official_reproduction", contract, method)
+            self.assertTrue(contract["required_table_wording"], method)
             self.assertTrue(contract["implemented_scope"], method)
             self.assertTrue(contract["non_claims"], method)
 
     def test_rest_mcts_contract_is_explicitly_style_only(self) -> None:
         contract = q2_method_contract("PRM-guided MCTS (ReST-MCTS-style)")
+        self.assertEqual(contract["claim_scope"], "style_component_adaptation")
+        self.assertFalse(contract["official_reproduction"])
+        self.assertIn("style", contract["required_table_wording"])
         self.assertIn("backup along the selected path", contract["implemented_scope"])
         self.assertIn("not full ReST-MCTS iterative self-training", contract["non_claims"])
 
     def test_best_of_n_contract_discloses_verifier_selection(self) -> None:
         contract = q2_method_contract("Best-of-N")
+        self.assertEqual(contract["required_table_wording"], "Best-of-N + verifier")
         self.assertIn("lowest verified objective selects the final sample", contract["implemented_scope"])
         self.assertIn("strong verifier-selected variant; table notes must disclose this", contract["non_claims"])
+
+    def test_external_baselines_are_not_marked_as_official_full_reproductions(self) -> None:
+        for method, _setting, _source, source_kind in TABLE5_METHODS:
+            contract = q2_method_contract(method)
+            if source_kind in {"structured", "native", "scheduling"} and contract["claim_scope"] != "ours":
+                self.assertFalse(contract["official_reproduction"], method)
+
+    def test_solver_rows_are_marked_as_ours(self) -> None:
+        for method in ("Solver-trained priority", "Solver-trained priority + certified pruning"):
+            contract = q2_method_contract(method)
+            self.assertEqual(contract["claim_scope"], "ours")
+            self.assertTrue(contract["official_reproduction"])
 
     def test_source_alignment_matrix_mentions_core_external_sources(self) -> None:
         text = Path("docs/q2_source_alignment_matrix.md").read_text(encoding="utf-8")

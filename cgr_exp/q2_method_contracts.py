@@ -7,6 +7,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "CP-SAT": {
         "reference": "google/or-tools CP-SAT scheduling model family",
         "source_url": "https://github.com/google/or-tools",
+        "claim_scope": "structured_reference",
+        "official_reproduction": False,
+        "required_table_wording": "CP-SAT structured-input calibration reference",
         "implemented_scope": [
             "structured SchedulingTask input",
             "integer start/end variables",
@@ -19,6 +22,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "EST / list scheduling heuristic": {
         "reference": "standard earliest-start list scheduling heuristic",
         "source_url": "",
+        "claim_scope": "structured_reference",
+        "official_reproduction": False,
+        "required_table_wording": "EST / list scheduling structured-input calibration reference",
         "implemented_scope": [
             "structured SchedulingTask input",
             "ready-job dispatch by earliest feasible start/finish",
@@ -29,6 +35,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "Direct / CoT": {
         "reference": "Chain-of-Thought prompting",
         "source_url": "https://arxiv.org/abs/2201.11903",
+        "claim_scope": "native_adaptation",
+        "official_reproduction": False,
+        "required_table_wording": "Direct / CoT frozen native Scheduling adaptation",
         "implemented_scope": [
             "one native complete-schedule LLM sample",
             "step-by-step reasoning requested inside JSON",
@@ -39,6 +48,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "Self-Consistency": {
         "reference": "self-consistency decoding for chain-of-thought reasoning",
         "source_url": "https://arxiv.org/abs/2203.11171",
+        "claim_scope": "native_adaptation",
+        "official_reproduction": False,
+        "required_table_wording": "Self-Consistency frozen native Scheduling adaptation",
         "implemented_scope": [
             "multiple complete-schedule samples",
             "aggregation by canonical final job order",
@@ -49,6 +61,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "Best-of-N": {
         "reference": "test-time sampling with verifier/reward selection",
         "source_url": "",
+        "claim_scope": "native_adaptation",
+        "official_reproduction": False,
+        "required_table_wording": "Best-of-N + verifier",
         "implemented_scope": [
             "multiple complete-schedule samples",
             "verifier filters invalid schedules",
@@ -59,6 +74,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "Tree of Thoughts": {
         "reference": "princeton-nlp/tree-of-thought-llm BFS",
         "source_url": "https://github.com/princeton-nlp/tree-of-thought-llm",
+        "claim_scope": "native_adaptation",
+        "official_reproduction": False,
+        "required_table_wording": "Tree of Thoughts native BFS Scheduling adaptation",
         "implemented_scope": [
             "level/frontier BFS",
             "LLM proposal of candidate states",
@@ -71,6 +89,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "Target-PRM priority": {
         "reference": "process reward modeling / PRM800K process-supervision setup",
         "source_url": "https://github.com/openai/prm800k",
+        "claim_scope": "domain_adapted_baseline",
+        "official_reproduction": False,
+        "required_table_wording": "Target-PRM priority, in-domain target LLM states",
         "implemented_scope": [
             "target LLM-induced training trajectories on disjoint instances",
             "process/frontier ranking supervision",
@@ -81,6 +102,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "Outcome-PRM": {
         "reference": "outcome-supervised reward model diagnostic",
         "source_url": "",
+        "claim_scope": "diagnostic_ablation",
+        "official_reproduction": False,
+        "required_table_wording": "Outcome-PRM diagnostic only",
         "implemented_scope": [
             "target LLM-induced states",
             "terminal outcome supervision propagated to visited states",
@@ -90,6 +114,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "PRM-guided MCTS (ReST-MCTS-style)": {
         "reference": "THUDM/ReST-MCTS MCTS search component",
         "source_url": "https://github.com/THUDM/ReST-MCTS",
+        "claim_scope": "style_component_adaptation",
+        "official_reproduction": False,
+        "required_table_wording": "PRM-guided MCTS (ReST-MCTS-style search component)",
         "implemented_scope": [
             "target PRM priors",
             "persistent visit and value statistics",
@@ -103,6 +130,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "Solver-trained priority": {
         "reference": "CGR solver-to-LLM zero-shot controller",
         "source_url": "",
+        "claim_scope": "ours",
+        "official_reproduction": True,
+        "required_table_wording": "Solver prior, solver-to-LLM zero-shot transfer",
         "implemented_scope": [
             "source solver-induced training trajectories only",
             "frozen controller during real LLM-induced Scheduling search",
@@ -113,6 +143,9 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     "Solver-trained priority + certified pruning": {
         "reference": "CGR solver-to-LLM controller plus verified pruning",
         "source_url": "",
+        "claim_scope": "ours",
+        "official_reproduction": True,
+        "required_table_wording": "Solver prior + certification, solver-to-LLM zero-shot transfer",
         "implemented_scope": [
             "same solver-trained priority controller",
             "verified pruning authority separated from learned ranking",

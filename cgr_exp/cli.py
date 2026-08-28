@@ -27,7 +27,7 @@ from cgr_exp.scheduling_transfer import (
     run_scheduling_llm_pilot_from_env,
     run_scheduling_zero_shot_transfer,
 )
-from cgr_exp.table5_q2 import build_table5_q2_results
+from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 from cgr_exp.table6_authority import run_table6_authority_experiment
 
 COMMANDS = [
@@ -56,6 +56,7 @@ COMMANDS = [
     "analyze-domain-shift",
     "build-tables",
     "build-table5-q2",
+    "audit-table5-q2",
     "run-table6-authority",
 ]
 
@@ -234,7 +235,7 @@ def main() -> None:
             p.add_argument("--rank-epochs", type=int, default=25)
             p.add_argument("--useful-action-recall", type=float, default=0.88)
             p.add_argument("--perturbation", default="mixed")
-        if name == "build-table5-q2":
+        if name in ("build-table5-q2", "audit-table5-q2"):
             p.add_argument("--solver-prior-dir", type=Path, default=Path("runs/scheduling_llm_pilot_real_100_seed0"))
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--gpt-frontier-rank-dir", type=Path, default=None)
@@ -883,6 +884,32 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table5_q2_results.csv'}")
+            return
+        if args.command == "audit-table5-q2":
+            manifest = audit_table5_q2_readiness(
+                args.output_dir,
+                solver_prior_dir=args.solver_prior_dir,
+                expected_test_count=args.expected_test_count,
+                gpt_frontier_rank_dir=args.gpt_frontier_rank_dir,
+                target_prm_dir=args.target_prm_dir,
+                direct_dir=args.direct_dir,
+                self_consistency_dir=args.self_consistency_dir,
+                best_of_n_dir=args.best_of_n_dir,
+                rest_mcts_dir=args.rest_mcts_dir,
+                solver_certification_dir=args.solver_certification_dir,
+                structured_dir=args.structured_dir,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "all_rows_result_ready": manifest["readiness"]["all_rows_result_ready"],
+                "all_rows_compute_ready": manifest["readiness"]["all_rows_compute_ready"],
+                "produced_artifacts": manifest["readiness"]["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'table5_q2_readiness.csv'}")
             return
         if args.command == "run-table6-authority":
             corruption_seeds = tuple(int(part) for part in args.corruption_seeds.split(",") if part.strip())

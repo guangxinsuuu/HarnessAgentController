@@ -89,6 +89,78 @@ def build_table5_q2_results(
     return manifest
 
 
+def audit_table5_q2_readiness(
+    out_dir: Path,
+    solver_prior_dir: Path = Path("runs/scheduling_llm_pilot_real_100_seed0"),
+    expected_test_count: int = 100,
+    gpt_frontier_rank_dir: Optional[Path] = None,
+    target_prm_dir: Optional[Path] = None,
+    direct_dir: Optional[Path] = None,
+    self_consistency_dir: Optional[Path] = None,
+    best_of_n_dir: Optional[Path] = None,
+    rest_mcts_dir: Optional[Path] = None,
+    solver_certification_dir: Optional[Path] = None,
+    structured_dir: Optional[Path] = None,
+) -> Dict[str, object]:
+    manifest = build_table5_q2_results(
+        out_dir,
+        solver_prior_dir=solver_prior_dir,
+        expected_test_count=expected_test_count,
+        gpt_frontier_rank_dir=gpt_frontier_rank_dir,
+        target_prm_dir=target_prm_dir,
+        direct_dir=direct_dir,
+        self_consistency_dir=self_consistency_dir,
+        best_of_n_dir=best_of_n_dir,
+        rest_mcts_dir=rest_mcts_dir,
+        solver_certification_dir=solver_certification_dir,
+        structured_dir=structured_dir,
+    )
+    rows = list(manifest["rows"])
+    audit_rows = [_audit_row(row) for row in rows]
+    audit_csv = out_dir / "table5_q2_readiness.csv"
+    audit_json = out_dir / "table5_q2_readiness.json"
+    _write_csv(audit_csv, audit_rows)
+    summary = {
+        "table": "Table 5",
+        "expected_test_count": expected_test_count,
+        "all_rows_result_ready": all(_as_bool(row["result_ready"]) for row in audit_rows),
+        "all_rows_compute_ready": all(_as_bool(row["compute_ready"]) for row in audit_rows),
+        "pending_or_partial_rows": [row["Method"] for row in audit_rows if not _as_bool(row["result_ready"])],
+        "compute_qualified_rows": [row["Method"] for row in audit_rows if not _as_bool(row["compute_ready"])],
+        "audit_rows": audit_rows,
+        "produced_artifacts": [*manifest["produced_artifacts"], audit_csv.name, audit_json.name],
+    }
+    audit_json.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    return {**manifest, "readiness": summary}
+
+
+def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
+    status = str(row.get("Status", "pending"))
+    notes = str(row.get("notes", ""))
+    tokens = str(row.get("Tokens", "--"))
+    result_blockers = []
+    compute_blockers = []
+    if status != "complete":
+        result_blockers.append(status)
+    if "artifact missing" in notes:
+        result_blockers.append("artifact missing")
+    if tokens == "--":
+        compute_blockers.append("missing token accounting")
+    if "shared-cache fallback accounting" in notes:
+        compute_blockers.append("shared-cache fallback accounting")
+    if status != "complete":
+        compute_blockers.append("result not complete")
+    return {
+        "Method": row["Method"],
+        "Status": status,
+        "result_ready": not result_blockers,
+        "compute_ready": not compute_blockers,
+        "result_blockers": "; ".join(result_blockers),
+        "compute_blockers": "; ".join(compute_blockers),
+        "token_notes": notes,
+    }
+
+
 def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path]) -> Dict[str, object]:
     return {
         "Method": method,
@@ -259,6 +331,14 @@ def _as_float(value: object) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    return bool(value)
 
 
 def _fmt_float(value: float, digits: int) -> str:

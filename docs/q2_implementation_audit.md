@@ -28,6 +28,12 @@ field, the builder falls back to shared-cache `total_tokens` and writes
 fallback are acceptable for controller-isolation comparisons but should not be
 used as final Q2 end-to-end compute claims.
 
+Use `audit-table5-q2` with the same input directories as `build-table5-q2` to
+write `table5_q2_readiness.csv` and `table5_q2_readiness.json`. The readiness
+audit marks each row's `result_ready` and `compute_ready` status and lists
+blockers such as missing artifacts, partial checkpoints, missing token
+accounting, or shared-cache fallback accounting.
+
 ## Immediate Run Requirements
 
 To make the Q2 table result-complete without ToT:

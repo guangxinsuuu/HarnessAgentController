@@ -429,6 +429,36 @@ python3 -m cgr_exp.cli build-table5-q2 \
   --overwrite
 ```
 
+## Audit Table Readiness
+
+After building or updating any run directory, run the readiness audit with the
+same inputs:
+
+```bash
+python3 -m cgr_exp.cli audit-table5-q2 \
+  --output-dir runs/q2_table_current_seed0_audit \
+  --expected-test-count 100 \
+  --structured-dir runs/q2_structured_100_seed0 \
+  --direct-dir runs/q2_native_llm_baselines_100_seed0 \
+  --self-consistency-dir runs/q2_native_llm_baselines_100_seed0 \
+  --best-of-n-dir runs/q2_native_llm_baselines_100_seed0 \
+  --gpt-frontier-rank-dir runs/q2_tot_bfs_100_seed0 \
+  --target-prm-dir runs/q2_learned_search_100_seed0 \
+  --rest-mcts-dir runs/q2_learned_search_100_seed0 \
+  --solver-prior-dir runs/q2_learned_search_100_seed0 \
+  --solver-certification-dir runs/q2_learned_search_100_seed0 \
+  --overwrite
+```
+
+The audit writes:
+
+- `table5_q2_results.csv`
+- `table5_q2_readiness.csv`
+- `table5_q2_readiness.json`
+
+Use `table5_q2_readiness.csv` to check row-level blockers before promoting a
+number into the paper.
+
 Final acceptance checks:
 
 - No row with `partial:*` is promoted to the main result.

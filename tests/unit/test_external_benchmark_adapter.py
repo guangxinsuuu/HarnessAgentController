@@ -17,6 +17,7 @@ class ExternalBenchmarkAdapterTest(unittest.TestCase):
         self.assertEqual(adapter.to_manifest()["preferred_current_source_url"], "https://github.com/sierra-research/tau2-bench")
         self.assertIn("native stateful tool-agent", adapter.to_manifest()["native_protocol_reference"])
         self.assertIn("no local native tau-bench runner implemented", adapter.to_manifest()["implementation_scope"])
+        self.assertIn("official_task_verifier", adapter.to_manifest()["required_native_components"])
         with self.assertRaises(RuntimeError):
             adapter.load_tasks(split="test")
 

@@ -17,6 +17,23 @@ TAU_Q4_METHODS = [
     ("Solver-derived controller", "solver-derived zero-shot transfer"),
 ]
 
+TAU_NATIVE_PROTOCOL_REQUIRED = {
+    "stateful_tool_environment",
+    "user_simulator",
+    "official_task_verifier",
+    "pass_k_aggregation",
+    "tool_call_accounting",
+    "token_accounting",
+}
+
+TAU_METHOD_PROTOCOL_REQUIRED = {
+    "Native agent rerun": {"single_native_agent_rollout"},
+    "Best-of-N": {"multiple_independent_native_rollouts", "benchmark_compatible_selection"},
+    "Value-guided search": {"online_value_guidance", "native_tool_state_preserved"},
+    "Target-PRM": {"target_tool_agent_trajectory_training", "disjoint_train_test_tasks", "process_or_step_supervision"},
+    "Solver-derived controller": {"source_solver_training", "zero_shot_target_tool_transfer", "native_tool_state_preserved"},
+}
+
 
 def build_q4_tau_results(
     out_dir: Path,
@@ -55,6 +72,15 @@ def build_q4_tau_results(
         "expected_test_count": expected_test_count,
         "source_url": TAU_SOURCE_URL,
         "preferred_current_source_url": TAU2_SOURCE_URL,
+        "source_evidence": {
+            "source_urls": [TAU_SOURCE_URL, TAU2_SOURCE_URL],
+            "official_source_anchors": [
+                "tau-bench/tau2 run protocol preserves stateful user-tool-agent interaction",
+                "official metrics include pass^k style success, tool calls, and cost/accounting traces",
+            ],
+            "native_protocol_required": sorted(TAU_NATIVE_PROTOCOL_REQUIRED),
+            "method_protocol_required": {method: sorted(required) for method, required in TAU_METHOD_PROTOCOL_REQUIRED.items()},
+        },
         "strict_pending_policy": True,
         "rows": rows,
         "produced_artifacts": [csv_path.name, tex_path.name, manifest_path.name],
@@ -188,13 +214,80 @@ def _tau_artifact_blockers(method: str, source_dir: Path, expected_test_count: i
             blockers.append("q4_tau_manifest.json must preserve native protocol")
         if manifest.get("source_url") not in {TAU_SOURCE_URL, TAU2_SOURCE_URL}:
             blockers.append("q4_tau_manifest.json source_url is not a tau source")
+        protocol = manifest.get("native_protocol")
+        blockers.extend(_native_protocol_blockers(protocol))
+        method_protocols = manifest.get("method_protocols")
+        blockers.extend(_method_protocol_blockers(method, method_protocols))
         methods = manifest.get("methods")
         if not isinstance(methods, list) or method not in {str(item) for item in methods}:
             blockers.append(f"q4_tau_manifest.json missing method {method}")
     task_ids = _task_ids(source_dir / "q4_tau_per_instance.csv", method)
     if len(task_ids) < expected_test_count:
         blockers.append(f"q4_tau_per_instance.csv partial task coverage: {len(task_ids)}/{expected_test_count}")
+    row_blockers = _aggregate_row_blockers(method, source_dir)
+    blockers.extend(row_blockers)
     return blockers
+
+
+def _native_protocol_blockers(protocol: object) -> List[str]:
+    if not isinstance(protocol, Mapping):
+        return ["q4_tau_manifest.json missing native_protocol"]
+    declared = {str(item) for item in protocol.get("preserved_components", [])} if isinstance(protocol.get("preserved_components"), list) else set()
+    missing = sorted(TAU_NATIVE_PROTOCOL_REQUIRED - declared)
+    blockers = [f"q4_tau_manifest.json native_protocol missing preserved components: {', '.join(missing)}"] if missing else []
+    if protocol.get("uses_official_user_simulator") is not True:
+        blockers.append("q4_tau_manifest.json native_protocol must use official user simulator")
+    if protocol.get("uses_official_task_verifier") is not True:
+        blockers.append("q4_tau_manifest.json native_protocol must use official task verifier")
+    if protocol.get("preserves_tool_state") is not True:
+        blockers.append("q4_tau_manifest.json native_protocol must preserve tool state")
+    if "pass^1" not in {str(item) for item in protocol.get("reported_metrics", [])}:
+        blockers.append("q4_tau_manifest.json native_protocol must report pass^1")
+    if "pass^4" not in {str(item) for item in protocol.get("reported_metrics", [])}:
+        blockers.append("q4_tau_manifest.json native_protocol must report pass^4")
+    return blockers
+
+
+def _method_protocol_blockers(method: str, method_protocols: object) -> List[str]:
+    if not isinstance(method_protocols, Mapping):
+        return ["q4_tau_manifest.json missing method_protocols"]
+    protocol = method_protocols.get(method)
+    if not isinstance(protocol, Mapping):
+        return [f"q4_tau_manifest.json missing method protocol for {method}"]
+    declared = {str(item) for item in protocol.get("method_primitives", [])} if isinstance(protocol.get("method_primitives"), list) else set()
+    missing = sorted(TAU_METHOD_PROTOCOL_REQUIRED.get(method, set()) - declared)
+    blockers = [f"q4_tau_manifest.json method protocol for {method} missing primitives: {', '.join(missing)}"] if missing else []
+    if method in {"Target-PRM", "Solver-derived controller"} and protocol.get("training_eval_overlap") is not False:
+        blockers.append(f"q4_tau_manifest.json method protocol for {method} must declare no training/eval overlap")
+    if method == "Solver-derived controller" and protocol.get("zero_shot_transfer") is not True:
+        blockers.append("q4_tau_manifest.json Solver-derived controller protocol must declare zero-shot transfer")
+    if method == "Target-PRM" and protocol.get("zero_shot_transfer") is not False:
+        blockers.append("q4_tau_manifest.json Target-PRM protocol must not claim zero-shot transfer")
+    return blockers
+
+
+def _aggregate_row_blockers(method: str, source_dir: Path) -> List[str]:
+    data = _aggregate_row(source_dir, method)
+    if data is None:
+        return ["q4_tau_row.json or q4_tau_table.csv missing aggregate row"]
+    blockers = []
+    for key in ("pass^1", "pass^4", "violations", "tool_calls", "tokens", "wall_clock_seconds"):
+        if key not in data and key.replace("^", "") not in data and key.title() not in data:
+            blockers.append(f"aggregate row missing {key}")
+    if _as_float(data.get("pass^4", data.get("pass4"))) < _as_float(data.get("pass^1", data.get("pass1"))):
+        blockers.append("aggregate row pass^4 must be at least pass^1")
+    return blockers
+
+
+def _aggregate_row(source_dir: Path, method: str) -> Optional[Mapping[str, object]]:
+    row_path = source_dir / "q4_tau_row.json"
+    table_path = source_dir / "q4_tau_table.csv"
+    if row_path.exists() and row_path.stat().st_size > 0:
+        data = json.loads(row_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, Mapping) and str(data.get("Method", method)) == method else None
+    if table_path.exists() and table_path.stat().st_size > 0:
+        return next((row for row in _read_csv(table_path) if row.get("Method") == method), None)
+    return None
 
 
 def _task_ids(path: Path, method: str) -> List[str]:

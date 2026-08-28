@@ -33,4 +33,12 @@ class ExternalToolBenchmarkAdapter:
             "result_ready": False,
             "claim_scope": "external_benchmark_pending",
             "requires_network_for_smoke": False,
+            "required_native_components": [
+                "stateful_tool_environment",
+                "user_simulator",
+                "official_task_verifier",
+                "pass_k_aggregation",
+                "tool_call_accounting",
+                "token_accounting",
+            ],
         }

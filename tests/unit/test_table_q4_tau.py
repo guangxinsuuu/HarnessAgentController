@@ -61,6 +61,45 @@ class TableQ4TauTest(unittest.TestCase):
             self.assertIn("must preserve native protocol", rows["Native agent rerun"]["result_blockers"])
             self.assertIn("source_url is not a tau source", rows["Native agent rerun"]["result_blockers"])
 
+    def test_q4_tau_audit_rejects_manifest_without_detailed_native_protocol(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_tau_artifacts(native, "Native agent rerun", ["t0"])
+            (native / "q4_tau_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "benchmark": "tau-bench",
+                        "native_protocol_preserved": True,
+                        "source_url": "https://github.com/sierra-research/tau-bench",
+                        "methods": ["Native agent rerun"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_q4_tau_readiness(out, expected_test_count=1, native_dir=native)
+            rows = {row["Method"]: row for row in _read_csv(out / "q4_tau_readiness.csv")}
+            self.assertEqual(rows["Native agent rerun"]["result_ready"], "False")
+            self.assertIn("missing native_protocol", rows["Native agent rerun"]["result_blockers"])
+            self.assertIn("missing method_protocols", rows["Native agent rerun"]["result_blockers"])
+
+    def test_q4_tau_audit_rejects_solver_controller_without_zero_shot_protocol(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solver = root / "solver"
+            solver.mkdir()
+            _write_tau_artifacts(solver, "Solver-derived controller", ["t0"])
+            manifest = json.loads((solver / "q4_tau_manifest.json").read_text(encoding="utf-8"))
+            manifest["method_protocols"]["Solver-derived controller"]["zero_shot_transfer"] = False
+            (solver / "q4_tau_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            out = root / "out"
+            audit_q4_tau_readiness(out, expected_test_count=1, solver_controller_dir=solver)
+            rows = {row["Method"]: row for row in _read_csv(out / "q4_tau_readiness.csv")}
+            self.assertEqual(rows["Solver-derived controller"]["result_ready"], "False")
+            self.assertIn("must declare zero-shot transfer", rows["Solver-derived controller"]["result_blockers"])
+
 
 def _write_tau_artifacts(path: Path, method: str, task_ids: list[str]) -> None:
     (path / "q4_tau_row.json").write_text(
@@ -87,10 +126,40 @@ def _write_tau_artifacts(path: Path, method: str, task_ids: list[str]) -> None:
                 "native_protocol_preserved": True,
                 "source_url": "https://github.com/sierra-research/tau-bench",
                 "methods": [method],
+                "native_protocol": {
+                    "preserved_components": [
+                        "stateful_tool_environment",
+                        "user_simulator",
+                        "official_task_verifier",
+                        "pass_k_aggregation",
+                        "tool_call_accounting",
+                        "token_accounting",
+                    ],
+                    "uses_official_user_simulator": True,
+                    "uses_official_task_verifier": True,
+                    "preserves_tool_state": True,
+                    "reported_metrics": ["pass^1", "pass^4", "violations", "tool_calls", "tokens"],
+                },
+                "method_protocols": {method: _tau_method_protocol(method)},
             }
         ),
         encoding="utf-8",
     )
+
+
+def _tau_method_protocol(method: str) -> dict:
+    primitives = {
+        "Native agent rerun": ["single_native_agent_rollout"],
+        "Best-of-N": ["multiple_independent_native_rollouts", "benchmark_compatible_selection"],
+        "Value-guided search": ["online_value_guidance", "native_tool_state_preserved"],
+        "Target-PRM": ["target_tool_agent_trajectory_training", "disjoint_train_test_tasks", "process_or_step_supervision"],
+        "Solver-derived controller": ["source_solver_training", "zero_shot_target_tool_transfer", "native_tool_state_preserved"],
+    }[method]
+    return {
+        "method_primitives": primitives,
+        "training_eval_overlap": False,
+        "zero_shot_transfer": True if method == "Solver-derived controller" else False if method == "Target-PRM" else None,
+    }
 
 
 def _write_csv(path: Path, rows) -> None:

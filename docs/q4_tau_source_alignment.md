@@ -67,6 +67,22 @@ marked ready:
 - `q4_tau_manifest.json`: declares `benchmark` as `tau-bench`, `tau2-bench`, or
   `tau3-bench`; sets `native_protocol_preserved = true`; records the official
   source URL; and lists the covered methods.
+- `q4_tau_manifest.json` must also include a `native_protocol` object proving
+  that the run preserved the official stateful tool environment, user
+  simulator, task verifier, pass-k aggregation, tool-call accounting, and token
+  accounting. The audit requires `uses_official_user_simulator = true`,
+  `uses_official_task_verifier = true`, and `preserves_tool_state = true`.
+- `q4_tau_manifest.json` must include `method_protocols[method]`:
+  - `Native agent rerun`: `single_native_agent_rollout`.
+  - `Best-of-N`: `multiple_independent_native_rollouts` and
+    `benchmark_compatible_selection`.
+  - `Value-guided search`: `online_value_guidance` and
+    `native_tool_state_preserved`.
+  - `Target-PRM`: target tool-agent trajectory training, process/step
+    supervision, and disjoint train/test tasks; it must not claim zero-shot
+    transfer.
+  - `Solver-derived controller`: source-solver training, zero-shot target-tool
+    transfer, and native tool-state preservation.
 - `q4_tau_per_instance.csv`: one held-out task row per evaluated instance, with
   `task_id` or `instance_id` coverage matching `--expected-test-count`.
 - `q4_tau_row.json` or `q4_tau_table.csv`: aggregate `pass^1`, `pass^4`,

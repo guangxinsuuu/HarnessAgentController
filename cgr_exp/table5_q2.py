@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional
 
+from cgr_exp.q2_method_contracts import q2_method_contracts
+
 
 TABLE5_METHODS = [
     ("CP-SAT", "Structured-input solver", None, "structured"),
@@ -80,6 +82,7 @@ def build_table5_q2_results(
         "target_prm_dir": None if target_prm_dir is None else str(target_prm_dir),
         "structured_dir": None if structured_dir is None else str(structured_dir),
         "rows": rows,
+        "method_alignment": q2_method_contracts([row["Method"] for row in rows]),
         "produced_artifacts": [csv_path.name, tex_path.name, manifest_path.name],
     }
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")

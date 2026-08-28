@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from cgr_exp.datasets.level1_scheduling import SchedulingTask
+from cgr_exp.q2_method_contracts import q2_method_contracts
 from cgr_exp.scheduling_micro import generate_scheduling_micro_instances
 
 
@@ -42,6 +43,7 @@ def run_scheduling_structured_q2(
         "llm_calls": 0,
         "tokens": 0,
         "structured_input": True,
+        "method_alignment": q2_method_contracts(["CP-SAT", "EST / list scheduling heuristic"]),
         "produced_artifacts": [
             "scheduling_structured_q2_table.csv",
             "scheduling_structured_q2_per_instance.csv",

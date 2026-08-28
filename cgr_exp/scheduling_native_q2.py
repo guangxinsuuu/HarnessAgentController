@@ -11,6 +11,7 @@ from typing import Dict, Iterable, List, Optional, Sequence
 
 from cgr_exp.datasets.level1_scheduling import ScheduleAction, SchedulingTask
 from cgr_exp.proposers.llm_adapter import OpenAICompatibleHTTPClient
+from cgr_exp.q2_method_contracts import q2_method_contracts
 from cgr_exp.scheduling_micro import generate_scheduling_micro_instances
 from cgr_exp.schemas import CompletionStatus
 from cgr_exp.verification.level1_scheduling_verifier import Level1SchedulingVerifier
@@ -150,6 +151,7 @@ def run_scheduling_native_q2(
         "live_network_required": not client.__class__.__name__.startswith("Scripted"),
         "oracle_labels_in_inference_features": False,
         "native_protocol": True,
+        "method_alignment": q2_method_contracts([NATIVE_METHODS[key]["table_method"] for key in selected_methods]),
         "produced_artifacts": [
             "scheduling_native_q2_table.csv",
             "scheduling_native_q2_per_instance.csv",

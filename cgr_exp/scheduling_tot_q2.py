@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 from cgr_exp.budgets import BudgetState
 from cgr_exp.datasets.level1_scheduling import SchedulingTask
 from cgr_exp.proposers.llm_adapter import OpenAICompatibleHTTPClient, RealLLMProposerAdapter
+from cgr_exp.q2_method_contracts import q2_method_contracts
 from cgr_exp.scheduling_micro import generate_scheduling_micro_instances
 from cgr_exp.scheduling_transfer import Level2SchedulingEpisode, ScriptedSchedulingClient, make_level2_scheduling_episodes
 from cgr_exp.schemas import CompletionStatus, CostLedger, SearchNode
@@ -127,6 +128,7 @@ def run_scheduling_tot_q2(
             "method_evaluate": "LLM frontier value/ranking",
             "method_select": "greedy top-b by averaged value samples",
         },
+        "method_alignment": q2_method_contracts(["Tree of Thoughts"]),
         "produced_artifacts": [
             "scheduling_tot_q2_table.csv",
             "scheduling_tot_q2_per_instance.csv",

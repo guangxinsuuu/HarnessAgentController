@@ -7,6 +7,8 @@ __pycache__/
 .env
 .env.*
 *.log
+.venv/
+*.egg-info/
 runs/*
 !runs/current_experiment_summary.md
 !runs/game24_final_archive.md

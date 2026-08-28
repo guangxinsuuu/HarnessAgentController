@@ -6,6 +6,11 @@ native LLM inference, target-domain learned search, and solver-to-LLM
 zero-shot transfer. Rows must not be promoted unless their code path matches
 the stated method scope.
 
+The machine-readable version of these contracts lives in
+`cgr_exp/q2_method_contracts.py`. Q2 runners and the table builder include the
+relevant contract entries in their JSON manifests so that each reported row
+can be audited against its claimed method scope.
+
 ## Structured Optimization References
 
 ### CP-SAT
@@ -93,6 +98,11 @@ Scheduling adaptation:
 - Filter with the verifier.
 - Select the valid schedule with the lowest objective.
 
+Because this uses the structured verifier/objective for selection, captions or
+notes should identify it as a verifier-selected Best-of-N variant. This is a
+stronger and cleaner optimization baseline than unverified majority voting, but
+it should not be confused with a purely frozen LLM answer-selection protocol.
+
 ## Tree of Thoughts / GPT-Frontier-Rank
 
 Reference implementation target: Princeton NLP Tree-of-Thoughts
@@ -153,6 +163,9 @@ Current local status:
   backup.
 - It still does not implement the full ReST-MCTS* iterative self-training loop,
   so the row must remain `ReST-MCTS-style`.
+- A complete Q2 result should be rerun after MCTS implementation changes; older
+  artifacts are valid historical diagnostics but should not be promoted as the
+  final MCTS row.
 
 ## Ours
 

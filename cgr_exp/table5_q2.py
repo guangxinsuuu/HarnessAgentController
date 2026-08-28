@@ -7,6 +7,7 @@ from typing import Dict, Iterable, List, Mapping, Optional
 
 from cgr_exp.q2_method_contracts import q2_method_contract, q2_method_contracts
 from cgr_exp.q2_source_evidence import Q2_SOURCE_EVIDENCE
+from cgr_exp.q2_source_ref_verifier import q2_source_ref_verification_summary
 
 
 TABLE5_METHODS = [
@@ -105,6 +106,7 @@ def build_table5_q2_results(
         "rows": rows,
         "method_alignment": q2_method_contracts([row["Method"] for row in rows]),
         "source_evidence": _source_evidence_for_rows(rows),
+        "source_ref_verification": q2_source_ref_verification_summary(),
         "sections": [{"title": title, "methods": [method for method, *_rest in TABLE5_METHODS if method in methods]} for title, methods in TABLE5_SECTIONS],
         "produced_artifacts": [csv_path.name, tex_path.name, manifest_path.name],
     }
@@ -154,6 +156,7 @@ def audit_table5_q2_readiness(
         "compute_qualified_rows": [row["Method"] for row in audit_rows if not _as_bool(row["compute_ready"])],
         "audit_rows": audit_rows,
         "source_evidence": _source_evidence_for_rows(rows),
+        "source_ref_verification": q2_source_ref_verification_summary(),
         "produced_artifacts": [*manifest["produced_artifacts"], audit_csv.name, audit_json.name],
     }
     audit_json.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")

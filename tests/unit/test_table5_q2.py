@@ -110,6 +110,9 @@ class Table5Q2Test(unittest.TestCase):
                 saved["source_evidence"]["Tree of Thoughts"]["source_files"],
                 ["src/tot/methods/bfs.py"],
             )
+            self.assertTrue(saved["source_ref_verification"]["all_static_refs_ready"])
+            self.assertFalse(saved["source_ref_verification"]["online_checked"])
+            self.assertIn("Tree of Thoughts", saved["source_ref_verification"]["external_methods"])
             self.assertIn(
                 "declared sample_count coverage per held-out task",
                 saved["source_evidence"]["Best-of-N"]["local_promotion_gates"],
@@ -1237,6 +1240,7 @@ class Table5Q2Test(unittest.TestCase):
             readiness = json.loads((out / "table5_q2_readiness.json").read_text(encoding="utf-8"))
             self.assertIn("source_evidence", readiness)
             self.assertIn("Target-PRM priority", readiness["source_evidence"])
+            self.assertTrue(readiness["source_ref_verification"]["all_static_refs_ready"])
 
     def test_readiness_audit_requires_native_trace_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

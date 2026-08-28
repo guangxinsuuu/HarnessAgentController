@@ -25,12 +25,24 @@ def verify_q2_source_refs(
     """Verify that Q2 external-method evidence is pinned to inspectable sources."""
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    opener = urlopen or urllib.request.urlopen
-    rows = [_verify_method_refs(method, online=online, timeout=timeout, urlopen=opener) for method in Q2_EXTERNAL_SOURCE_METHODS]
+    manifest = q2_source_ref_verification_summary(online=online, timeout=timeout, urlopen=urlopen)
     csv_path = out_dir / "q2_source_ref_verification.csv"
     json_path = out_dir / "q2_source_ref_verification.json"
-    _write_csv(csv_path, rows)
-    manifest = {
+    _write_csv(csv_path, manifest["rows"])
+    manifest = {**manifest, "produced_artifacts": [csv_path.name, json_path.name]}
+    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
+def q2_source_ref_verification_summary(
+    *,
+    online: bool = False,
+    timeout: float = 10.0,
+    urlopen: Callable[..., object] | None = None,
+) -> Dict[str, object]:
+    opener = urlopen or urllib.request.urlopen
+    rows = [_verify_method_refs(method, online=online, timeout=timeout, urlopen=opener) for method in Q2_EXTERNAL_SOURCE_METHODS]
+    return {
         "artifact": "q2_source_ref_verification",
         "online_checked": online,
         "timeout": timeout,
@@ -38,10 +50,7 @@ def verify_q2_source_refs(
         "all_online_refs_ready": all(row["online_refs_ready"] for row in rows) if online else None,
         "external_methods": Q2_EXTERNAL_SOURCE_METHODS,
         "rows": rows,
-        "produced_artifacts": [csv_path.name, json_path.name],
     }
-    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    return manifest
 
 
 def _verify_method_refs(

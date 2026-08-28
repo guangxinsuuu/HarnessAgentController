@@ -12,6 +12,7 @@ from cgr_exp.q2_implementation_matrix import (
     build_q2_implementation_matrix,
 )
 from cgr_exp.q2_source_evidence import audit_q2_source_evidence, q2_source_evidence, q2_source_evidence_methods
+from cgr_exp.q2_source_ref_verifier import verify_q2_source_refs
 from cgr_exp.table5_q2 import TABLE5_METHODS
 
 
@@ -156,6 +157,44 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertIn("openai/prm800k/data/*.jsonl::label.steps", by_method["Target-PRM priority"]["official_code_refs"])
             self.assertIn("method_generate", by_method["Tree of Thoughts"]["official_source_anchors"])
             self.assertIn("process-supervision", by_method["Target-PRM priority"]["official_source_anchors"])
+
+    def test_source_ref_verifier_writes_static_readiness_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            manifest = verify_q2_source_refs(out)
+            self.assertTrue(manifest["all_static_refs_ready"])
+            self.assertIsNone(manifest["all_online_refs_ready"])
+            self.assertTrue((out / "q2_source_ref_verification.csv").exists())
+            saved = json.loads((out / "q2_source_ref_verification.json").read_text(encoding="utf-8"))
+            by_method = {row["Method"]: row for row in saved["rows"]}
+            self.assertEqual(by_method["Tree of Thoughts"]["raw_url_count"], 1)
+            self.assertGreater(by_method["Tree of Thoughts"]["symbol_ref_count"], 0)
+            self.assertTrue(by_method["Best-of-N"]["static_refs_ready"])
+            self.assertEqual(by_method["Direct / CoT"]["source_revision"], "arXiv:2201.11903v6")
+
+    def test_source_ref_verifier_can_run_online_check_with_injected_urlopen(self) -> None:
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+                return None
+
+        seen_urls = []
+
+        def fake_urlopen(request: object, timeout: float = 0.0) -> FakeResponse:
+            seen_urls.append(request.full_url)
+            self.assertEqual(timeout, 3.0)
+            return FakeResponse()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = verify_q2_source_refs(Path(tmp), online=True, timeout=3.0, urlopen=fake_urlopen)
+            self.assertTrue(manifest["all_static_refs_ready"])
+            self.assertTrue(manifest["all_online_refs_ready"])
+            self.assertTrue(any("raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm" in url for url in seen_urls))
+            self.assertTrue(any("github.com/THUDM/ReST-MCTS/commit" in url for url in seen_urls))
 
     def test_implementation_matrix_covers_table_rows_with_local_code_and_artifacts(self) -> None:
         table_methods = {method for method, _setting, _source, _kind in TABLE5_METHODS}

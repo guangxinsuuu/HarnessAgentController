@@ -56,6 +56,26 @@ Native rows need sample records for the expected number of distinct test tasks,
 and the native ToT row needs finish events for the expected number of distinct
 renderings. A summary row marked `complete` is not enough by itself.
 
+Before promoting any Q2 table, run the local preflight:
+
+```bash
+PYTHON_BIN=.venv/bin/python scripts/run_q2_table4.sh preflight
+```
+
+This writes the implementation matrix, source-evidence audit, source-ref
+verification, and table readiness audit without using the LLM API. The
+source-ref verifier checks pinned GitHub full SHAs, pinned raw GitHub URLs,
+symbol/schema anchors, and explicit arXiv versions. For a network reachability
+check of the same refs, run:
+
+```bash
+python3 -m cgr_exp.cli verify-q2-source-refs \
+  --output-dir runs/q2_source_ref_verification_online \
+  --online \
+  --timeout 10 \
+  --overwrite
+```
+
 ## Row Contracts and Commands
 
 ### CP-SAT

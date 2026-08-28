@@ -29,6 +29,7 @@ from cgr_exp.scheduling_transfer import (
 )
 from cgr_exp.q2_implementation_matrix import build_q2_implementation_matrix
 from cgr_exp.q2_source_evidence import audit_q2_source_evidence
+from cgr_exp.q2_source_ref_verifier import verify_q2_source_refs
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
 from cgr_exp.table6_authority import run_table6_authority_experiment
@@ -64,6 +65,7 @@ COMMANDS = [
     "audit-table5-q2",
     "build-q2-implementation-matrix",
     "audit-q2-source-evidence",
+    "verify-q2-source-refs",
     "build-table-q4-tau",
     "audit-table-q4-tau",
     "run-table6-authority",
@@ -92,6 +94,9 @@ def main() -> None:
             p.add_argument("--timeout", type=float, default=120.0)
             p.add_argument("--batch-size", type=int, default=1)
             p.add_argument("--mock", action="store_true", default=False)
+        if name == "verify-q2-source-refs":
+            p.add_argument("--online", action="store_true", default=False)
+            p.add_argument("--timeout", type=float, default=10.0)
         if name == "run-scheduling-micro":
             p.add_argument("--train-count", type=int, default=200)
             p.add_argument("--validation-count", type=int, default=50)
@@ -1006,6 +1011,21 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'q2_source_evidence_audit.csv'}")
+            return
+        if args.command == "verify-q2-source-refs":
+            manifest = verify_q2_source_refs(args.output_dir, online=args.online, timeout=args.timeout)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "online_checked": manifest["online_checked"],
+                "all_static_refs_ready": manifest["all_static_refs_ready"],
+                "all_online_refs_ready": manifest["all_online_refs_ready"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q2_source_ref_verification.csv'}")
             return
         if args.command == "build-q2-implementation-matrix":
             manifest = build_q2_implementation_matrix(args.output_dir)

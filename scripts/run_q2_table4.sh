@@ -32,12 +32,13 @@ TOT_DIR="${TOT_DIR:-runs/q2_tot_bfs_100_seed0_tot_gate_v2}"
 TABLE_DIR="${TABLE_DIR:-runs/q2_table_current_seed0_protocol_v2}"
 AUDIT_DIR="${AUDIT_DIR:-runs/q2_table_current_seed0_protocol_v2_audit}"
 SOURCE_AUDIT_DIR="${SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"
+SOURCE_REF_DIR="${SOURCE_REF_DIR:-runs/q2_source_ref_verification}"
 IMPLEMENTATION_MATRIX_DIR="${IMPLEMENTATION_MATRIX_DIR:-runs/q2_implementation_matrix}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/run_q2_table4.sh [all|preflight|implementation-matrix|source-audit|structured|llm|native|learned|tot|build|audit]
+  scripts/run_q2_table4.sh [all|preflight|implementation-matrix|source-audit|source-ref-verify|structured|llm|native|learned|tot|build|audit]
 
 Environment:
   CGR_LLM_API_KEY must be set for llm/native/learned/tot/all.
@@ -178,6 +179,12 @@ source_audit() {
     --overwrite
 }
 
+source_ref_verify() {
+  "${PYTHON_BIN}" -m cgr_exp.cli verify-q2-source-refs \
+    --output-dir "${SOURCE_REF_DIR}" \
+    --overwrite
+}
+
 implementation_matrix() {
   "${PYTHON_BIN}" -m cgr_exp.cli build-q2-implementation-matrix \
     --output-dir "${IMPLEMENTATION_MATRIX_DIR}" \
@@ -187,6 +194,7 @@ implementation_matrix() {
 preflight() {
   "${PYTHON_BIN}" -m cgr_exp.cli audit-table4-q2 --help >/dev/null
   "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-source-evidence --help >/dev/null
+  "${PYTHON_BIN}" -m cgr_exp.cli verify-q2-source-refs --help >/dev/null
   "${PYTHON_BIN}" -m cgr_exp.cli build-q2-implementation-matrix --help >/dev/null
   if "${PYTHON_BIN}" -c "from ortools.sat.python import cp_model" >/dev/null 2>&1; then
     cpsat_status="present"
@@ -202,6 +210,7 @@ preflight() {
   print "learned_dir: ${LEARNED_DIR}"
   print "tot_dir: ${TOT_DIR}"
   print "source_audit_dir: ${SOURCE_AUDIT_DIR}"
+  print "source_ref_dir: ${SOURCE_REF_DIR}"
   print "implementation_matrix_dir: ${IMPLEMENTATION_MATRIX_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: missing"
@@ -210,6 +219,7 @@ preflight() {
   fi
   implementation_matrix
   source_audit
+  source_ref_verify
   audit_table
 }
 
@@ -235,6 +245,7 @@ case "${MODE}" in
   all)
     implementation_matrix
     source_audit
+    source_ref_verify
     run_structured
     run_llm_parallel
     build_table
@@ -243,6 +254,7 @@ case "${MODE}" in
   preflight) preflight ;;
   implementation-matrix) implementation_matrix ;;
   source-audit) source_audit ;;
+  source-ref-verify) source_ref_verify ;;
   structured) run_structured ;;
   llm) run_llm_parallel ;;
   native) run_native ;;

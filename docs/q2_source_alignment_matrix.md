@@ -74,6 +74,13 @@ ReST-MCTS-style artifact may not promote itself as a full official ReST-MCTS*
 reproduction unless the full iterative self-training protocol has actually
 been implemented and evaluated.
 
+`verify-q2-source-refs` is the stricter source-ref verifier used by preflight.
+It writes `q2_source_ref_verification.csv` and checks that GitHub-backed rows
+use full pinned SHAs, raw GitHub URLs are pinned to the same SHA, symbol/schema
+anchors are present, and paper-backed rows cite explicit arXiv versions. Its
+default mode is offline and deterministic; `--online` additionally verifies
+that the pinned revision and raw-source URLs are reachable.
+
 Examples:
 
 - Tree of Thoughts requires `method_generate`, `method_evaluate`,
@@ -112,6 +119,10 @@ Examples:
   sources, code refs must include the pinned commit rather than a floating
   branch name. For arXiv paper-only baselines, source revisions must include an
   explicit arXiv version such as `arXiv:2201.11903v6`.
+- Run `python3 -m cgr_exp.cli verify-q2-source-refs --output-dir
+  runs/q2_source_ref_verification --overwrite` as part of the same promotion
+  gate. Add `--online` only when the machine has network access and you want to
+  verify remote reachability of pinned revision/raw-source URLs.
 - A row is result-ready only if `audit-table4-q2` marks `result_ready=True`.
 - A row is compute-ready for Q2 only if `audit-table4-q2` marks
   `compute_ready=True`.

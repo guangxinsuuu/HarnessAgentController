@@ -23,8 +23,10 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("build-table4-q2", text)
         self.assertIn("audit-table4-q2", text)
         self.assertIn("audit-q2-source-evidence", text)
+        self.assertIn("verify-q2-source-refs", text)
         self.assertIn("build-q2-implementation-matrix", text)
         self.assertIn("SOURCE_AUDIT_DIR", text)
+        self.assertIn("SOURCE_REF_DIR", text)
         self.assertIn("IMPLEMENTATION_MATRIX_DIR", text)
         self.assertIn("q2_structured_100_seed0_runtime_v2", text)
         self.assertIn("q2_native_llm_baselines_100_seed0_sc_v2", text)
@@ -32,8 +34,10 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("q2_tot_bfs_100_seed0_tot_gate_v2", text)
         self.assertIn("q2_table_current_seed0_protocol_v2", text)
         self.assertIn("source-audit", text)
+        self.assertIn("source-ref-verify", text)
         self.assertIn("implementation-matrix", text)
         self.assertIn("source_audit", text)
+        self.assertIn("source_ref_verify", text)
         self.assertIn("implementation_matrix", text)
         self.assertIn("run_native &", text)
         self.assertIn("run_learned &", text)
@@ -54,6 +58,7 @@ class Q2RunScriptTest(unittest.TestCase):
                 "TABLE_DIR": str(root / "table"),
                 "AUDIT_DIR": str(root / "audit"),
                 "SOURCE_AUDIT_DIR": str(root / "source_audit"),
+                "SOURCE_REF_DIR": str(root / "source_refs"),
                 "IMPLEMENTATION_MATRIX_DIR": str(root / "matrix"),
                 "TEST_COUNT": "1",
             }
@@ -69,9 +74,11 @@ class Q2RunScriptTest(unittest.TestCase):
             self.assertIn("llm_key: missing", result.stdout)
             self.assertIn("ortools_cp_sat:", result.stdout)
             self.assertIn("source_audit_dir:", result.stdout)
+            self.assertIn("source_ref_dir:", result.stdout)
             self.assertIn("implementation_matrix_dir:", result.stdout)
             self.assertTrue((root / "audit" / "table5_q2_readiness.csv").exists())
             self.assertTrue((root / "source_audit" / "q2_source_evidence_audit.csv").exists())
+            self.assertTrue((root / "source_refs" / "q2_source_ref_verification.csv").exists())
             self.assertTrue((root / "matrix" / "q2_implementation_matrix.csv").exists())
 
     def test_q2_runbook_uses_current_protocol_directories(self) -> None:
@@ -83,6 +90,7 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("q2_learned_search_100_seed0_rest_gate_v2", text)
         self.assertIn("q2_tot_bfs_100_seed0_tot_gate_v2", text)
         self.assertIn("q2_table_current_seed0_protocol_v2_audit", text)
+        self.assertIn("q2_source_ref_verification", text)
         self.assertNotIn("protocol_v2_protocol_v2", text)
 
 

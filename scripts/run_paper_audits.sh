@@ -5,10 +5,35 @@ MODE="${1:-all}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 TEST_COUNT="${TEST_COUNT:-100}"
 
-Q2_STRUCTURED_DIR="${Q2_STRUCTURED_DIR:-runs/q2_structured_100_seed0_runtime_v2}"
-Q2_NATIVE_DIR="${Q2_NATIVE_DIR:-runs/q2_native_llm_baselines_100_seed0_sc_v2}"
-Q2_LEARNED_DIR="${Q2_LEARNED_DIR:-runs/q2_learned_search_100_seed0_rest_gate_v2}"
-Q2_TOT_DIR="${Q2_TOT_DIR:-runs/q2_tot_bfs_100_seed0_tot_gate_v2}"
+prefer_existing_dir() {
+  local primary="$1"
+  shift
+  if [[ -d "${primary}" ]]; then
+    print "${primary}"
+    return
+  fi
+  local candidate
+  for candidate in "$@"; do
+    if [[ -d "${candidate}" ]]; then
+      print "${candidate}"
+      return
+    fi
+  done
+  print "${primary}"
+}
+
+if [[ -z "${Q2_STRUCTURED_DIR:-}" ]]; then
+  Q2_STRUCTURED_DIR="$(prefer_existing_dir runs/q2_structured_100_seed0_runtime_v2 runs/q2_structured_100_seed0)"
+fi
+if [[ -z "${Q2_NATIVE_DIR:-}" ]]; then
+  Q2_NATIVE_DIR="$(prefer_existing_dir runs/q2_native_llm_baselines_100_seed0_sc_v2 runs/q2_native_llm_baselines_100_seed0)"
+fi
+if [[ -z "${Q2_LEARNED_DIR:-}" ]]; then
+  Q2_LEARNED_DIR="$(prefer_existing_dir runs/q2_learned_search_100_seed0_rest_gate_v2 runs/scheduling_table5_prm_rest_cert_100_seed0 runs/scheduling_llm_pilot_real_100_seed0)"
+fi
+if [[ -z "${Q2_TOT_DIR:-}" ]]; then
+  Q2_TOT_DIR="$(prefer_existing_dir runs/q2_tot_bfs_100_seed0_tot_gate_v2 runs/scheduling_missing_gpt_frontier_rank_100_seed0)"
+fi
 Q2_TABLE_AUDIT_DIR="${Q2_TABLE_AUDIT_DIR:-runs/q2_table_current_seed0_protocol_v2_audit}"
 Q2_SOURCE_AUDIT_DIR="${Q2_SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"
 Q2_SOURCE_REF_DIR="${Q2_SOURCE_REF_DIR:-runs/q2_source_ref_verification}"

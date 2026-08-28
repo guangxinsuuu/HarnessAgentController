@@ -24,6 +24,9 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("build-current-experiment-status", text)
         self.assertIn("llm_key: not required", text)
         self.assertIn("STATUS_REPORT_DIR", text)
+        self.assertIn("prefer_existing_dir", text)
+        self.assertIn("scheduling_table5_prm_rest_cert_100_seed0", text)
+        self.assertIn("scheduling_missing_gpt_frontier_rank_100_seed0", text)
         result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 

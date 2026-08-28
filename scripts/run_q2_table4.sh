@@ -25,10 +25,35 @@ TOT_BREADTH="${TOT_BREADTH:-5}"
 TOT_VALUE_SAMPLES="${TOT_VALUE_SAMPLES:-3}"
 PERTURBATION="${PERTURBATION:-mixed}"
 
-STRUCTURED_DIR="${STRUCTURED_DIR:-runs/q2_structured_100_seed0_runtime_v2}"
-NATIVE_DIR="${NATIVE_DIR:-runs/q2_native_llm_baselines_100_seed0_sc_v2}"
-LEARNED_DIR="${LEARNED_DIR:-runs/q2_learned_search_100_seed0_rest_gate_v2}"
-TOT_DIR="${TOT_DIR:-runs/q2_tot_bfs_100_seed0_tot_gate_v2}"
+prefer_existing_dir() {
+  local primary="$1"
+  shift
+  if [[ -d "${primary}" ]]; then
+    print "${primary}"
+    return
+  fi
+  local candidate
+  for candidate in "$@"; do
+    if [[ -d "${candidate}" ]]; then
+      print "${candidate}"
+      return
+    fi
+  done
+  print "${primary}"
+}
+
+if [[ -z "${STRUCTURED_DIR:-}" ]]; then
+  STRUCTURED_DIR="$(prefer_existing_dir runs/q2_structured_100_seed0_runtime_v2 runs/q2_structured_100_seed0)"
+fi
+if [[ -z "${NATIVE_DIR:-}" ]]; then
+  NATIVE_DIR="$(prefer_existing_dir runs/q2_native_llm_baselines_100_seed0_sc_v2 runs/q2_native_llm_baselines_100_seed0)"
+fi
+if [[ -z "${LEARNED_DIR:-}" ]]; then
+  LEARNED_DIR="$(prefer_existing_dir runs/q2_learned_search_100_seed0_rest_gate_v2 runs/scheduling_table5_prm_rest_cert_100_seed0 runs/scheduling_llm_pilot_real_100_seed0)"
+fi
+if [[ -z "${TOT_DIR:-}" ]]; then
+  TOT_DIR="$(prefer_existing_dir runs/q2_tot_bfs_100_seed0_tot_gate_v2 runs/scheduling_missing_gpt_frontier_rank_100_seed0)"
+fi
 TABLE_DIR="${TABLE_DIR:-runs/q2_table_current_seed0_protocol_v2}"
 AUDIT_DIR="${AUDIT_DIR:-runs/q2_table_current_seed0_protocol_v2_audit}"
 SOURCE_AUDIT_DIR="${SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"

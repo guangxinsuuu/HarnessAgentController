@@ -39,7 +39,10 @@ class Q2MethodContractsTest(unittest.TestCase):
         self.assertIn("style", contract["required_table_wording"])
         self.assertIn("backup along the selected path", contract["implemented_scope"])
         self.assertIn("MCTS backpropagation", contract["source_primitives"])
+        self.assertIn("visit-count exploration bonus", contract["source_primitives"])
+        self.assertIn("step-value/process-reward guided child scoring", contract["source_primitives"])
         self.assertIn("not full ReST-MCTS iterative self-training", contract["non_claims"])
+        self.assertIn("not the original ReST-MCTS training loop", contract["non_claims"])
 
     def test_best_of_n_contract_discloses_verifier_selection(self) -> None:
         contract = q2_method_contract("Best-of-N")
@@ -54,6 +57,15 @@ class Q2MethodContractsTest(unittest.TestCase):
         self.assertIn("method_evaluate", contract["source_primitives"])
         self.assertIn("method_select", contract["source_primitives"])
         self.assertIn("breadth-first search", contract["source_primitives"])
+        self.assertIn("value or vote evaluation over generated candidates", contract["source_primitives"])
+        self.assertIn("value cache / duplicate candidate handling", contract["source_primitives"])
+
+    def test_prm_contract_requires_process_not_outcome_supervision(self) -> None:
+        contract = q2_method_contract("Target-PRM priority")
+        self.assertIn("intermediate-step labels", contract["source_primitives"])
+        self.assertIn("per-step candidate completions", contract["source_primitives"])
+        self.assertIn("step rating / process supervision", contract["source_primitives"])
+        self.assertIn("not outcome-only PRM", contract["non_claims"])
 
     def test_external_baselines_are_not_marked_as_official_full_reproductions(self) -> None:
         for method, _setting, _source, source_kind in TABLE5_METHODS:

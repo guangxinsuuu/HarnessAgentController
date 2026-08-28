@@ -18,10 +18,32 @@ matrix generation together with the source-evidence and table-readiness audits.
 
 ## Official Sources
 
-- OR-Tools CP-SAT: https://github.com/google/or-tools
-- Tree of Thoughts: https://github.com/princeton-nlp/tree-of-thought-llm
-- PRM800K / process supervision: https://github.com/openai/prm800k
-- ReST-MCTS*: https://github.com/THUDM/ReST-MCTS
+- OR-Tools CP-SAT: https://github.com/google/or-tools,
+  pinned at `98c165af62df62b3056c2ee0fca66b24e79097cb`.
+- Tree of Thoughts: https://github.com/princeton-nlp/tree-of-thought-llm,
+  pinned at `8050e67d0e3a0fddc424d7fa5801538722a4c4cc`.
+- PRM800K / process supervision: https://github.com/openai/prm800k,
+  pinned at `7ecc794703b2877f63226f2477a49b34f9b25163`.
+- ReST-MCTS*: https://github.com/THUDM/ReST-MCTS,
+  pinned at `2d5f488c3d6e24f99d50a9860e818383b1bb5883`.
+
+## Source-to-Local Alignment
+
+The table is an adaptation to Scheduling, not a claim that every external
+baseline is reproduced on its original benchmark. Each baseline row must still
+preserve the official algorithmic primitive that makes the method what it is.
+
+| Row | Official primitive that must be preserved | Local Scheduling adaptation boundary |
+| --- | --- | --- |
+| CP-SAT | OR-Tools scheduling models use integer decision variables, optional interval variables, `NoOverlap` resource constraints, and `Minimize` objectives. | The local row receives exact structured `SchedulingTask` input and is a calibration reference with `llm_calls = 0`. It is not an LLM-agent baseline. |
+| Direct / CoT | Chain-of-thought samples one reasoning trajectory before extracting the final answer. | The local row asks for one complete schedule with reasoning and validates the final typed schedule. It must not do frontier search. |
+| Self-Consistency | Self-consistency samples multiple reasoning trajectories and marginalizes over final answers. | The local row aggregates complete schedules by canonical final job order. It must not select by verified objective, because that would become Best-of-N. |
+| Best-of-N | Best-of-N draws multiple final candidates and selects one using a verifier/reward. | The local row is the stronger verifier-selected variant: invalid schedules are filtered and the lowest verified objective wins. The table footnote must disclose this. |
+| Tree of Thoughts | Official BFS loops over `method_generate`, `method_evaluate`, and `method_select`; candidate thoughts are valued or voted on, then the top breadth is kept. | The local row must come from `run-scheduling-tot-q2`, which logs generate/evaluate/select events and value samples. Controller-isolation `GPT-frontier-rank` artifacts cannot fill this row. |
+| Target-PRM | PRM800K is process supervision: intermediate solution steps receive labels/ratings, rather than only terminal outcome labels. | The local row trains a process/frontier ranker on target LLM-induced Scheduling states from disjoint target training instances. Outcome-PRM is only a diagnostic and cannot replace this row. |
+| PRM-guided MCTS (ReST-MCTS-style) | ReST-MCTS uses MCTS rounds with selection, expansion, simulation/evaluation, and backpropagation, guided by step values/process rewards. | The local row must record positive MCTS primitive counts and PRM prior/value guidance. It remains `ReST-MCTS-style` unless the full iterative self-training pipeline is implemented. |
+| Solver prior | This is the paper's method, not an external baseline. | It must train only on solver-induced source trajectories and freeze before real LLM-induced target evaluation. |
+| Solver prior + certification | This is the paper's method plus verified pruning authority. | Learned scores may rank nodes only; irreversible pruning must be authorized by verified lower-bound or feasibility logic and audited separately. |
 
 ## Rows
 
@@ -78,6 +100,9 @@ matrix generation together with the source-evidence and table-readiness audits.
 - ReST-MCTS-style rows must additionally declare the MCTS search primitives:
   selection, expansion, simulation/evaluation, and backpropagation, plus PRM
   process-reward guidance. A plain Target-PRM priority artifact is not enough.
+- ReST-MCTS-style rows must not claim the complete ReST-MCTS* algorithm unless
+  iterative target self-training and the official policy/reward update loop are
+  also implemented and evaluated.
 - Solver prior rows must include split manifests, checkpoint metadata,
   feature schema, and a manifest proving oracle labels are absent from
   inference features.

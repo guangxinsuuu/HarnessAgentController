@@ -51,10 +51,10 @@ Pinned Q4 source evidence:
 
 Machine audit: `runs/certification_tables_readiness/certification_tables_readiness.csv`.
 
-| Table | Current promotion status |
-| --- | --- |
-| Table 6 clean certification | Blocked: table6_clean_certification.csv missing; missing certification_protocol |
-| Table 7 grounding robustness | Blocked: table6_authority_metrics.json missing; table7_grounding_robustness.csv missing; table6_authority_per_instance.csv missing; table6_authority_per_instance.csv partial task coverage: 0/100 |
+| Table | Source artifact | Current promotion status |
+| --- | --- | --- |
+| Table 6 clean certification | runs/q2_structured_cert_reference_100_seed0 | Blocked: table6_clean_certification.csv missing; missing certification_protocol |
+| Table 7 grounding robustness | runs/table7_grounding_robustness_100_seed0 | Blocked: table6_authority_metrics.json missing; table7_grounding_robustness.csv missing; table6_authority_per_instance.csv missing; table6_authority_per_instance.csv partial task coverage: 0/100 |
 
 Required certification authority contract:
 

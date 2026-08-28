@@ -156,13 +156,23 @@ def _render_markdown(
             "",
             f"Machine audit: `{certification_readiness}`.",
             "",
-            "| Table | Current promotion status |",
-            "| --- | --- |",
+            "| Table | Source artifact | Current promotion status |",
+            "| --- | --- | --- |",
         ]
     )
     for row in cert_rows:
         table = row.get("Table", "")
-        lines.append(f"| {_escape(table)} | {_escape(_promotion_status(row))} |")
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape(table),
+                    _escape(_source_artifact_status(row)),
+                    _escape(_promotion_status(row)),
+                ]
+            )
+            + " |"
+        )
     lines.extend(
         [
             "",

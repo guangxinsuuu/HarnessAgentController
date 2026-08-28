@@ -43,7 +43,17 @@ class ExperimentStatusReportTest(unittest.TestCase):
                     }
                 ],
             )
-            _write_csv(cert, [{"Table": "Table 6 clean certification", "result_ready": "True", "result_blockers": ""}])
+            _write_csv(
+                cert,
+                [
+                    {
+                        "Table": "Table 6 clean certification",
+                        "source_artifact": "runs/q2_structured_cert_reference_100_seed0",
+                        "result_ready": "True",
+                        "result_blockers": "",
+                    }
+                ],
+            )
             _write_csv(
                 matrix,
                 [
@@ -65,6 +75,7 @@ class ExperimentStatusReportTest(unittest.TestCase):
             self.assertIn("All Q4 tau/tau2 rows remain pending", text)
             self.assertIn("runs/q4_tau_native", text)
             self.assertIn("native tau artifact missing", text)
+            self.assertIn("runs/q2_structured_cert_reference_100_seed0", text)
             saved = json.loads((root / "out" / "current_experiment_status.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["artifact"], "current_experiment_status")
 

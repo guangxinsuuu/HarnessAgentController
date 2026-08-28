@@ -355,6 +355,105 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
             self.assertIn("partial task coverage: 2/3", audit_rows["Direct / CoT"]["result_blockers"])
 
+    def test_readiness_audit_rejects_self_consistency_single_sample_protocol(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Self-Consistency",
+                        "success": 0.45,
+                        "gap": 0.2,
+                        "llm_calls": 1,
+                        "tokens": 1000,
+                        "wall_clock_seconds": 10,
+                        "status": "complete",
+                        "source_policy": "native",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_samples.jsonl").write_text(
+                json.dumps({"Method": "Self-Consistency", "task_id": "t0", "sample_index": 0}) + "\n",
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "splits": {"test": 1},
+                        "native_protocol": {
+                            "methods": {
+                                "Self-Consistency": {
+                                    "sample_count": 1,
+                                    "selection_rule": "first_valid",
+                                    "oracle_future_labels_exposed": False,
+                                    "verifier_role": "validate complete schedules for metrics",
+                                }
+                            }
+                        },
+                        "method_alignment": q2_method_contracts(["Self-Consistency"]),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", self_consistency_dir=native, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Self-Consistency"]["result_ready"], "False")
+            self.assertIn("must declare multiple independent samples", audit_rows["Self-Consistency"]["result_blockers"])
+            self.assertIn("selection_rule=majority_job_order_then_objective", audit_rows["Self-Consistency"]["result_blockers"])
+
+    def test_readiness_audit_rejects_best_of_n_below_declared_sample_count(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Best-of-N",
+                        "success": 0.45,
+                        "gap": 0.2,
+                        "llm_calls": 1,
+                        "tokens": 1000,
+                        "wall_clock_seconds": 10,
+                        "status": "complete",
+                        "source_policy": "native",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_samples.jsonl").write_text(
+                json.dumps({"Method": "Best-of-N", "task_id": "t0", "sample_index": 0}) + "\n",
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "splits": {"test": 1},
+                        "native_protocol": {
+                            "methods": {
+                                "Best-of-N": {
+                                    "sample_count": 4,
+                                    "selection_rule": "best_verified_objective",
+                                    "oracle_future_labels_exposed": False,
+                                    "verifier_role": "filter invalid complete schedules and select minimum verified objective",
+                                }
+                            }
+                        },
+                        "method_alignment": q2_method_contracts(["Best-of-N"]),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", best_of_n_dir=native, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Best-of-N"]["result_ready"], "False")
+            self.assertIn("sample coverage per task below declared sample_count: 1/4", audit_rows["Best-of-N"]["result_blockers"])
+
     def test_readiness_audit_rejects_native_manifest_without_method_protocol(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1174,8 +1273,15 @@ def _read_csv(path: Path):
 def _write_native_manifest(path: Path, methods: list[str], test_count: int) -> None:
     method_protocols = {}
     for method in methods:
+        sample_count = 1 if method == "Direct / CoT" else 8
+        selection_rule = {
+            "Direct / CoT": "first_valid",
+            "Self-Consistency": "majority_job_order_then_objective",
+            "Best-of-N": "best_verified_objective",
+        }[method]
         method_protocols[method] = {
-            "sample_count": 1,
+            "sample_count": sample_count,
+            "selection_rule": selection_rule,
             "verifier_role": (
                 "filter invalid complete schedules and select minimum verified objective"
                 if method == "Best-of-N"

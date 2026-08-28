@@ -368,10 +368,8 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 methods = protocol.get("methods")
                 if not isinstance(methods, Mapping) or method not in methods:
                     invalid.append(f"scheduling_native_q2_manifest.json missing native protocol for {method}")
-                elif method == "Best-of-N":
-                    verifier_role = str(methods[method].get("verifier_role", ""))
-                    if "select minimum verified objective" not in verifier_role:
-                        invalid.append("Best-of-N manifest does not disclose verifier objective selection")
+                else:
+                    invalid.extend(_native_protocol_blockers(method, methods[method]))
             alignment = native_manifest.get("method_alignment")
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_native_q2_manifest.json missing Q2 method alignment for {method}")
@@ -391,6 +389,11 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 task_ids = {str(sample.get("task_id")) for sample in method_samples if sample.get("task_id") not in (None, "")}
                 if len(task_ids) < expected_count:
                     invalid.append(f"scheduling_native_q2_samples.jsonl partial task coverage: {len(task_ids)}/{expected_count}")
+                native_manifest, _manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_native_q2_manifest.json")
+                protocol = native_manifest.get("native_protocol") if isinstance(native_manifest, Mapping) else None
+                methods = protocol.get("methods") if isinstance(protocol, Mapping) else None
+                method_protocol = methods.get(method) if isinstance(methods, Mapping) else {}
+                invalid.extend(_native_sample_count_blockers(method, method_samples, task_ids, method_protocol))
     if method == "Tree of Thoughts":
         tot_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_tot_q2_manifest.json")
         if manifest_error:
@@ -520,6 +523,59 @@ def _source_primitive_blockers(alignment: Mapping[str, object], method: str, art
     missing = sorted(required - declared_set)
     if missing:
         return [f"{artifact_name} source_primitives incomplete for {method}: " + ", ".join(missing)]
+    return []
+
+
+def _native_protocol_blockers(method: str, method_protocol: object) -> List[str]:
+    if not isinstance(method_protocol, Mapping):
+        return [f"scheduling_native_q2_manifest.json native protocol for {method} must be an object"]
+    invalid = []
+    expected_selection = {
+        "Direct / CoT": "first_valid",
+        "Self-Consistency": "majority_job_order_then_objective",
+        "Best-of-N": "best_verified_objective",
+    }[method]
+    if str(method_protocol.get("selection_rule", "")) != expected_selection:
+        invalid.append(f"{method} manifest must declare selection_rule={expected_selection}")
+    sample_count = int(max(0, _as_float(method_protocol.get("sample_count"))))
+    if method == "Direct / CoT" and sample_count != 1:
+        invalid.append("Direct / CoT manifest must declare exactly one reasoning sample")
+    if method in {"Self-Consistency", "Best-of-N"} and sample_count <= 1:
+        invalid.append(f"{method} manifest must declare multiple independent samples")
+    if method == "Best-of-N":
+        verifier_role = str(method_protocol.get("verifier_role", ""))
+        if "select minimum verified objective" not in verifier_role:
+            invalid.append("Best-of-N manifest does not disclose verifier objective selection")
+    if method_protocol.get("oracle_future_labels_exposed") is not False:
+        invalid.append(f"{method} manifest must exclude oracle future labels")
+    return invalid
+
+
+def _native_sample_count_blockers(
+    method: str,
+    method_samples: List[Mapping[str, object]],
+    task_ids: set[str],
+    method_protocol: object,
+) -> List[str]:
+    if not task_ids:
+        return []
+    if not isinstance(method_protocol, Mapping):
+        return []
+    declared = int(max(0, _as_float(method_protocol.get("sample_count"))))
+    expected = 1 if method == "Direct / CoT" else declared
+    if expected <= 0:
+        return []
+    counts = {task_id: 0 for task_id in task_ids}
+    for sample in method_samples:
+        task_id = str(sample.get("task_id", ""))
+        if task_id in counts:
+            counts[task_id] += 1
+    min_count = min(counts.values()) if counts else 0
+    max_count = max(counts.values()) if counts else 0
+    if method == "Direct / CoT" and (min_count != 1 or max_count != 1):
+        return [f"scheduling_native_q2_samples.jsonl Direct / CoT must have exactly one sample per task; observed range {min_count}-{max_count}"]
+    if method in {"Self-Consistency", "Best-of-N"} and min_count < expected:
+        return [f"scheduling_native_q2_samples.jsonl {method} sample coverage per task below declared sample_count: {min_count}/{expected}"]
     return []
 
 

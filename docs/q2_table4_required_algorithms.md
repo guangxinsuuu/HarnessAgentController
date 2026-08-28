@@ -44,3 +44,23 @@ algorithmic primitive rather than a convenient substitute.
    accounting.
 6. The ReST-MCTS row must retain the word `style` unless the full official
    iterative self-training loop is implemented and evaluated.
+
+## Artifact Promotion Gates
+
+- Direct / CoT must declare `selection_rule = first_valid`, exclude oracle
+  future labels, and provide exactly one sample per held-out task.
+- Self-Consistency must declare
+  `selection_rule = majority_job_order_then_objective`, exclude oracle future
+  labels, and provide multiple independent samples per held-out task.
+- Best-of-N must declare `selection_rule = best_verified_objective`, disclose
+  verifier objective selection, exclude oracle future labels, and provide the
+  declared number of samples per held-out task.
+- Tree of Thoughts must provide the strict ToT BFS manifest with
+  `method_generate`, `method_evaluate`, and `method_select`, plus a trace with
+  one finish event per held-out rendering.
+- Target-PRM and ReST-MCTS-style rows must include target PRM trace records,
+  training pairs, a PRM ranker artifact, Q2 method alignment, and no overlap
+  between target PRM training task IDs and held-out evaluation task IDs.
+- Solver prior rows must include split manifests, checkpoint metadata,
+  feature schema, and a manifest proving oracle labels are absent from
+  inference features.

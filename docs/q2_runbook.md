@@ -226,7 +226,7 @@ Completion evidence:
   Scheduling adaptation.
 
 Older `GPT-frontier-rank / ToT-style` controller-isolation artifacts should not
-be used as this strict native ToT row. `build-table5-q2` only promotes the ToT
+be used as this strict native ToT row. `build-table4-q2` only promotes the ToT
 row from native `run-scheduling-tot-q2` artifacts.
 
 ### Target-PRM Priority
@@ -495,6 +495,11 @@ their sample audit JSONL, native ToT requires its generate/evaluate/select
 trace JSONL, and Target-PRM/ReST-MCTS-style rows require the target PRM ranker,
 trace records, and train-pair artifacts. This prevents a hand-edited or
 partial summary CSV from being promoted as a source-aligned Q2 result.
+Completed rows must also carry `method_alignment` or `q2_method_alignment`
+entries with the expected `source_primitives` from
+`cgr_exp/q2_method_contracts.py`. Old artifacts generated before this field was
+added are intentionally blocked by the audit and should be rerun rather than
+patched by hand.
 
 Use `table5_q2_readiness.csv` to check row-level blockers before promoting a
 number into the paper.

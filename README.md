@@ -23,6 +23,9 @@ Install the CP-SAT extra when you need the CP-SAT row:
 python3 -m pip install -e ".[q2-structured]"
 ```
 
+The Scheduling Q2 table run commands and method-alignment checklist are in
+`docs/q2_runbook.md`.
+
 ## Quick Start
 
 ```bash

@@ -284,11 +284,16 @@ def _row_from_native_artifacts(method: str, transfer_setting: str, source_dir: P
     if table_path.exists():
         data = json.loads(table_path.read_text(encoding="utf-8"))
     else:
-        native_rows = _read_csv(source_dir / "scheduling_native_q2_table.csv")
-        data = next((row for row in native_rows if row.get("Method") == method), None)
-        if data is None:
-            return None
-        table_path = source_dir / "scheduling_native_q2_table.csv"
+        method_row_path = source_dir / _native_method_dir_name(method) / "table5_native_row.json"
+        if method_row_path.exists():
+            data = json.loads(method_row_path.read_text(encoding="utf-8"))
+            table_path = method_row_path
+        else:
+            native_rows = _read_csv(source_dir / "scheduling_native_q2_table.csv")
+            data = next((row for row in native_rows if row.get("Method") == method), None)
+            if data is None:
+                return None
+            table_path = source_dir / "scheduling_native_q2_table.csv"
     return {
         "Method": method,
         "Transfer setting": transfer_setting,
@@ -302,6 +307,10 @@ def _row_from_native_artifacts(method: str, transfer_setting: str, source_dir: P
         "source_policy": str(data.get("source_policy", "native")),
         "notes": str(data.get("notes", "native protocol row")),
     }
+
+
+def _native_method_dir_name(method: str) -> str:
+    return method.lower().replace(" / ", "_").replace("-", "_").replace(" ", "_")
 
 
 def _row_from_structured_artifacts(method: str, transfer_setting: str, source_dir: Path) -> Optional[Dict[str, object]]:

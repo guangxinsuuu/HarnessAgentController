@@ -181,6 +181,50 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(by_method["Best-of-N"]["Success"], "0.7000")
             self.assertEqual(by_method["Best-of-N"]["LLM calls"], "800")
 
+    def test_builder_reads_native_method_subdir_after_incremental_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            direct_dir = native / "direct_cot"
+            direct_dir.mkdir(parents=True)
+            (direct_dir / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Direct / CoT",
+                        "success": 0.45,
+                        "gap": 0.2,
+                        "llm_calls": 100,
+                        "tokens": 1000,
+                        "wall_clock_seconds": 10,
+                        "status": "complete",
+                        "source_policy": "native",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            _write_csv(
+                native / "scheduling_native_q2_table.csv",
+                [
+                    {
+                        "Method": "Self-Consistency",
+                        "success": "0.6",
+                        "gap": "0.15",
+                        "llm_calls": "800",
+                        "tokens": "9000",
+                        "wall_clock_seconds": "20",
+                        "status": "complete",
+                        "source_policy": "native",
+                    }
+                ],
+            )
+            out = root / "out"
+            build_table5_q2_results(out, solver_prior_dir=root / "missing", direct_dir=native, self_consistency_dir=native)
+            by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
+            self.assertEqual(by_method["Direct / CoT"]["Status"], "complete")
+            self.assertEqual(by_method["Direct / CoT"]["Success"], "0.4500")
+            self.assertIn("direct_cot/table5_native_row.json", by_method["Direct / CoT"]["source_artifact"])
+            self.assertEqual(by_method["Self-Consistency"]["Success"], "0.6000")
+
     def test_builder_reads_structured_reference_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

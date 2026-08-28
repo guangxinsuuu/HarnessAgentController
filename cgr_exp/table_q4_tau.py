@@ -5,9 +5,17 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional
 
+from cgr_exp.q4_tau_source_evidence import (
+    Q4_TAU_METHOD_REQUIREMENTS,
+    TAU2_BENCH_SOURCE_URL,
+    TAU_BENCH_SOURCE_URL,
+    q4_tau_source_evidence_for_url,
+    q4_tau_source_evidence_summary,
+)
+from cgr_exp.q4_tau_source_ref_verifier import q4_tau_source_ref_verification_summary
 
-TAU_SOURCE_URL = "https://github.com/sierra-research/tau-bench"
-TAU2_SOURCE_URL = "https://github.com/sierra-research/tau2-bench"
+TAU_SOURCE_URL = TAU_BENCH_SOURCE_URL
+TAU2_SOURCE_URL = TAU2_BENCH_SOURCE_URL
 
 TAU_Q4_METHODS = [
     ("Native agent rerun", "native benchmark protocol"),
@@ -72,15 +80,9 @@ def build_q4_tau_results(
         "expected_test_count": expected_test_count,
         "source_url": TAU_SOURCE_URL,
         "preferred_current_source_url": TAU2_SOURCE_URL,
-        "source_evidence": {
-            "source_urls": [TAU_SOURCE_URL, TAU2_SOURCE_URL],
-            "official_source_anchors": [
-                "tau-bench/tau2 run protocol preserves stateful user-tool-agent interaction",
-                "official metrics include pass^k style success, tool calls, and cost/accounting traces",
-            ],
-            "native_protocol_required": sorted(TAU_NATIVE_PROTOCOL_REQUIRED),
-            "method_protocol_required": {method: sorted(required) for method, required in TAU_METHOD_PROTOCOL_REQUIRED.items()},
-        },
+        "source_evidence": q4_tau_source_evidence_summary(),
+        "source_ref_verification": q4_tau_source_ref_verification_summary(),
+        "method_requirements": Q4_TAU_METHOD_REQUIREMENTS,
         "strict_pending_policy": True,
         "rows": rows,
         "produced_artifacts": [csv_path.name, tex_path.name, manifest_path.name],
@@ -137,6 +139,7 @@ def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path],
         "source_artifact": "" if source_dir is None else str(source_dir),
         "source_url": TAU_SOURCE_URL,
         "preferred_current_source_url": TAU2_SOURCE_URL,
+        "source_revision": "",
         "expected_test_count": expected_test_count,
         "notes": "native tau/tau2 artifact missing; external adapter is currently an explicit stub",
     }
@@ -172,6 +175,7 @@ def _row_from_tau_artifacts(method: str, transfer_setting: str, source_dir: Path
         "source_artifact": str(artifact_path),
         "source_url": str(data.get("source_url", TAU_SOURCE_URL)),
         "preferred_current_source_url": str(data.get("preferred_current_source_url", TAU2_SOURCE_URL)),
+        "source_revision": str(data.get("source_revision", "")),
         "expected_test_count": expected_test_count,
         "notes": str(data.get("notes", "native tau/tau2 protocol artifact")),
     }
@@ -214,6 +218,7 @@ def _tau_artifact_blockers(method: str, source_dir: Path, expected_test_count: i
             blockers.append("q4_tau_manifest.json must preserve native protocol")
         if manifest.get("source_url") not in {TAU_SOURCE_URL, TAU2_SOURCE_URL}:
             blockers.append("q4_tau_manifest.json source_url is not a tau source")
+        blockers.extend(_source_evidence_blockers(manifest))
         protocol = manifest.get("native_protocol")
         blockers.extend(_native_protocol_blockers(protocol))
         method_protocols = manifest.get("method_protocols")
@@ -226,6 +231,31 @@ def _tau_artifact_blockers(method: str, source_dir: Path, expected_test_count: i
         blockers.append(f"q4_tau_per_instance.csv partial task coverage: {len(task_ids)}/{expected_test_count}")
     row_blockers = _aggregate_row_blockers(method, source_dir)
     blockers.extend(row_blockers)
+    return blockers
+
+
+def _source_evidence_blockers(manifest: Mapping[str, object]) -> List[str]:
+    source_url = str(manifest.get("source_url", ""))
+    expected = q4_tau_source_evidence_for_url(source_url)
+    if not expected:
+        return ["q4_tau_manifest.json source_url has no pinned Q4 evidence"]
+    source_revision = str(manifest.get("source_revision", ""))
+    expected_revision = str(expected.get("source_revision", ""))
+    blockers = []
+    if source_revision != expected_revision:
+        blockers.append("q4_tau_manifest.json source_revision must match pinned Q4 source evidence")
+    artifact_evidence = manifest.get("source_evidence")
+    if not isinstance(artifact_evidence, Mapping):
+        blockers.append("q4_tau_manifest.json missing source_evidence")
+        return blockers
+    if artifact_evidence.get("source_url") != expected.get("source_url"):
+        blockers.append("q4_tau_manifest.json source_evidence source_url mismatch")
+    if artifact_evidence.get("source_revision") != expected_revision:
+        blockers.append("q4_tau_manifest.json source_evidence source_revision mismatch")
+    artifact_refs = {str(item) for item in artifact_evidence.get("official_code_refs", [])} if isinstance(artifact_evidence.get("official_code_refs"), list) else set()
+    expected_refs = {str(item) for item in expected.get("official_code_refs", [])} if isinstance(expected.get("official_code_refs"), list) else set()
+    if not expected_refs.issubset(artifact_refs):
+        blockers.append("q4_tau_manifest.json source_evidence missing pinned official refs")
     return blockers
 
 

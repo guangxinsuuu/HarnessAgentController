@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from cgr_exp.q4_tau_source_evidence import q4_tau_source_evidence
 from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
 
 
@@ -21,6 +22,8 @@ class TableQ4TauTest(unittest.TestCase):
             self.assertEqual(by_method["Target-PRM"]["source_url"], "https://github.com/sierra-research/tau-bench")
             self.assertEqual(manifest["strict_pending_policy"], True)
             self.assertEqual(manifest["preferred_current_source_url"], "https://github.com/sierra-research/tau2-bench")
+            self.assertTrue(manifest["source_evidence"]["all_sources_ready"])
+            self.assertTrue(manifest["source_ref_verification"]["all_static_refs_ready"])
             self.assertTrue((root / "q4_tau_results.tex").exists())
 
     def test_q4_tau_audit_accepts_complete_native_protocol_artifact(self) -> None:
@@ -85,6 +88,21 @@ class TableQ4TauTest(unittest.TestCase):
             self.assertIn("missing native_protocol", rows["Native agent rerun"]["result_blockers"])
             self.assertIn("missing method_protocols", rows["Native agent rerun"]["result_blockers"])
 
+    def test_q4_tau_audit_rejects_artifact_without_pinned_source_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_tau_artifacts(native, "Native agent rerun", ["t0"])
+            manifest = json.loads((native / "q4_tau_manifest.json").read_text(encoding="utf-8"))
+            manifest.pop("source_evidence")
+            (native / "q4_tau_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            out = root / "out"
+            audit_q4_tau_readiness(out, expected_test_count=1, native_dir=native)
+            rows = {row["Method"]: row for row in _read_csv(out / "q4_tau_readiness.csv")}
+            self.assertEqual(rows["Native agent rerun"]["result_ready"], "False")
+            self.assertIn("missing source_evidence", rows["Native agent rerun"]["result_blockers"])
+
     def test_q4_tau_audit_rejects_solver_controller_without_zero_shot_protocol(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -125,6 +143,8 @@ def _write_tau_artifacts(path: Path, method: str, task_ids: list[str]) -> None:
                 "benchmark": "tau-bench",
                 "native_protocol_preserved": True,
                 "source_url": "https://github.com/sierra-research/tau-bench",
+                "source_revision": q4_tau_source_evidence("tau-bench")["source_revision"],
+                "source_evidence": q4_tau_source_evidence("tau-bench"),
                 "methods": [method],
                 "native_protocol": {
                     "preserved_components": [

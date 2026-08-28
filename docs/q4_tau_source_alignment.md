@@ -8,11 +8,18 @@ benchmark adapter stub, but it does not yet implement a native tau-bench runner.
 ## Source Evidence
 
 - Original tau-bench: `https://github.com/sierra-research/tau-bench`
+  - Source revision pinned for Q4 evidence:
+    `59a200c6d575d595120f1cb70fea53cef0632f6b`.
 - Current recommended successor: `https://github.com/sierra-research/tau2-bench`
+  - Source revision pinned for Q4 evidence:
+    `a2c024725189473d2d7cea3a5cfdbcc67478e41f`.
 
 The original tau-bench repository currently points users to newer τ-bench task
 versions. A future Q4 implementation should therefore state whether it targets
 the original tau-bench protocol or the current tau2/tau3 successor protocol.
+The machine-readable checklist lives in
+`cgr_exp/q4_tau_source_evidence.py`, and the source-ref verifier checks full
+GitHub SHAs, pinned raw-source URLs, and symbol/anchor references.
 
 ## Required Rows
 
@@ -40,6 +47,14 @@ The repository can now build and audit a conservative Q4 table shell, but it
 does not generate native tau-bench trajectories by itself.
 
 ```bash
+python3 -m cgr_exp.cli audit-q4-tau-source-evidence \
+  --output-dir runs/q4_tau_source_evidence_audit \
+  --overwrite
+
+python3 -m cgr_exp.cli verify-q4-tau-source-refs \
+  --output-dir runs/q4_tau_source_ref_verification \
+  --overwrite
+
 python3 -m cgr_exp.cli build-table-q4-tau \
   --output-dir runs/q4_tau_table_current \
   --expected-test-count 100 \
@@ -66,7 +81,8 @@ marked ready:
 
 - `q4_tau_manifest.json`: declares `benchmark` as `tau-bench`, `tau2-bench`, or
   `tau3-bench`; sets `native_protocol_preserved = true`; records the official
-  source URL; and lists the covered methods.
+  source URL and pinned `source_revision`; embeds the matching `source_evidence`
+  block from `cgr_exp/q4_tau_source_evidence.py`; and lists the covered methods.
 - `q4_tau_manifest.json` must also include a `native_protocol` object proving
   that the run preserved the official stateful tool environment, user
   simulator, task verifier, pass-k aggregation, tool-call accounting, and token

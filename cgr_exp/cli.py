@@ -24,6 +24,7 @@ from cgr_exp.scheduling_transfer import (
     run_scheduling_zero_shot_transfer,
 )
 from cgr_exp.table5_q2 import build_table5_q2_results
+from cgr_exp.table6_authority import run_table6_authority_experiment
 
 COMMANDS = [
     "run-game24-offline",
@@ -47,6 +48,7 @@ COMMANDS = [
     "analyze-domain-shift",
     "build-tables",
     "build-table5-q2",
+    "run-table6-authority",
 ]
 
 
@@ -192,6 +194,17 @@ def main() -> None:
             p.add_argument("--best-of-n-dir", type=Path, default=None)
             p.add_argument("--rest-mcts-dir", type=Path, default=None)
             p.add_argument("--solver-certification-dir", type=Path, default=None)
+        if name == "run-table6-authority":
+            p.add_argument("--train-count", type=int, default=200)
+            p.add_argument("--validation-count", type=int, default=50)
+            p.add_argument("--test-count", type=int, default=100)
+            p.add_argument("--job-count", type=int, default=6)
+            p.add_argument("--machine-count", type=int, default=3)
+            p.add_argument("--node-budget", type=int, default=120)
+            p.add_argument("--action-budget", type=int, default=8)
+            p.add_argument("--records-per-instance", type=int, default=60)
+            p.add_argument("--rank-epochs", type=int, default=25)
+            p.add_argument("--corruption-seeds", default="0,1,2")
     args, rest = parser.parse_known_args()
     if args.command in (None, "run-smoke"):
         import sys
@@ -678,6 +691,36 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table5_q2_results.csv'}")
+            return
+        if args.command == "run-table6-authority":
+            corruption_seeds = tuple(int(part) for part in args.corruption_seeds.split(",") if part.strip())
+            metrics = run_table6_authority_experiment(
+                args.output_dir,
+                seed=args.seed,
+                train_count=args.train_count,
+                validation_count=args.validation_count,
+                test_count=args.test_count,
+                job_count=args.job_count,
+                machine_count=args.machine_count,
+                node_budget=args.node_budget,
+                action_budget=args.action_budget,
+                records_per_instance=args.records_per_instance,
+                rank_epochs=args.rank_epochs,
+                corruption_seeds=corruption_seeds,
+            )
+            manifest = {
+                "command": args.command,
+                "seed": args.seed,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "corruption_seeds": list(corruption_seeds),
+                "benchmark": metrics["benchmark"],
+                "oracle_labels_in_inference_features": False,
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'table6_authority.csv'}")
             return
         if args.command == "run-transfer-matrix":
             seeds = [int(part) for part in (args.seeds or str(args.seed)).split(",") if part.strip()]

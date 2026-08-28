@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
@@ -94,6 +95,9 @@ def run_scheduling_native_q2(
     instances = generate_scheduling_micro_instances(train_count, validation_count, test_count, seed, job_count, machine_count)
     tasks = instances["test"]
     existing = _read_csv_rows(out_dir / "scheduling_native_q2_per_instance.csv") if resume else []
+    per_instance_path = out_dir / "scheduling_native_q2_per_instance.csv"
+    if not resume and per_instance_path.exists():
+        per_instance_path.unlink()
     completed = {(str(row.get("method_key")), str(row.get("task_id"))) for row in existing}
     jobs = []
     for method_key in selected_methods:
@@ -107,6 +111,7 @@ def run_scheduling_native_q2(
         for done, item in enumerate(jobs, start=1):
             row = _run_one_method_task(client, model, item[0], item[1], item[2], sample_count)
             new_rows.append(row)
+            _append_csv_row(per_instance_path, row)
             print(f"[scheduling-native-q2] {done}/{len(jobs)} rows, method={row['Method']}, tokens={row['total_tokens']}", flush=True)
     else:
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -114,6 +119,7 @@ def run_scheduling_native_q2(
             for done, future in enumerate(as_completed(futures), start=1):
                 row = future.result()
                 new_rows.append(row)
+                _append_csv_row(per_instance_path, row)
                 print(f"[scheduling-native-q2] {done}/{len(jobs)} rows, method={row['Method']}, tokens={row['total_tokens']}", flush=True)
     all_rows = [*_coerce_rows(existing), *new_rows]
     all_rows.sort(key=lambda row: (str(row["method_key"]), int(row["task_index"])))
@@ -227,7 +233,7 @@ def _parse_actions(raw: str) -> tuple[List[ScheduleAction], int]:
     parse_failures = 0
     actions: List[ScheduleAction] = []
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(_extract_json_payload(raw))
         if isinstance(parsed, dict):
             parsed = parsed.get("actions", [])
         if not isinstance(parsed, list):
@@ -243,6 +249,19 @@ def _parse_actions(raw: str) -> tuple[List[ScheduleAction], int]:
     except Exception:
         parse_failures += 1
     return actions, parse_failures
+
+
+def _extract_json_payload(raw: str) -> str:
+    text = raw.strip()
+    if text.startswith("```"):
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+    if text and text[0] not in "[{":
+        starts = [idx for idx in (text.find("{"), text.find("[")) if idx >= 0]
+        if starts:
+            text = text[min(starts) :]
+    return text
 
 
 def _select_sample(samples: Sequence[Dict[str, object]], selection: str) -> Dict[str, object]:
@@ -314,6 +333,15 @@ def _write_csv(path: Path, rows: Sequence[Dict[str, object]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _append_csv_row(path: Path, row: Dict[str, object]) -> None:
+    exists = path.exists() and path.stat().st_size > 0
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(row))
+        if not exists:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 def _coerce_rows(rows: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:

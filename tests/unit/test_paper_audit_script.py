@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+class PaperAuditScriptTest(unittest.TestCase):
+    def test_paper_audit_script_is_syntax_valid_and_key_safe(self) -> None:
+        script = Path("scripts/run_paper_audits.sh")
+        text = script.read_text(encoding="utf-8")
+        self.assertNotIn("sk-", text)
+        self.assertIn("audit_q2", text)
+        self.assertIn("audit_q4", text)
+        self.assertIn("audit_certification", text)
+        self.assertIn("verify-q2-source-refs", text)
+        self.assertIn("verify-q4-tau-source-refs", text)
+        self.assertIn("audit-certification-tables", text)
+        self.assertIn("llm_key: not required", text)
+        result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_paper_audit_script_runs_without_key_or_network(self) -> None:
+        script = Path("scripts/run_paper_audits.sh")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {
+                **os.environ,
+                "TEST_COUNT": "1",
+                "Q2_STRUCTURED_DIR": str(root / "missing_q2_structured"),
+                "Q2_NATIVE_DIR": str(root / "missing_q2_native"),
+                "Q2_LEARNED_DIR": str(root / "missing_q2_learned"),
+                "Q2_TOT_DIR": str(root / "missing_q2_tot"),
+                "Q2_TABLE_AUDIT_DIR": str(root / "q2_table_audit"),
+                "Q2_SOURCE_AUDIT_DIR": str(root / "q2_source_audit"),
+                "Q2_SOURCE_REF_DIR": str(root / "q2_source_refs"),
+                "Q2_IMPLEMENTATION_MATRIX_DIR": str(root / "q2_matrix"),
+                "Q4_TABLE_AUDIT_DIR": str(root / "q4_table_audit"),
+                "Q4_SOURCE_AUDIT_DIR": str(root / "q4_source_audit"),
+                "Q4_SOURCE_REF_DIR": str(root / "q4_source_refs"),
+                "Q4_NATIVE_DIR": str(root / "missing_q4_native"),
+                "Q4_BEST_OF_N_DIR": str(root / "missing_q4_best"),
+                "Q4_VALUE_GUIDED_DIR": str(root / "missing_q4_value"),
+                "Q4_TARGET_PRM_DIR": str(root / "missing_q4_prm"),
+                "Q4_SOLVER_CONTROLLER_DIR": str(root / "missing_q4_solver"),
+                "CERTIFICATION_AUDIT_DIR": str(root / "cert_audit"),
+                "CERTIFICATION_DIR": str(root / "missing_cert"),
+                "AUTHORITY_DIR": str(root / "missing_authority"),
+            }
+            env.pop("CGR_LLM_API_KEY", None)
+            result = subprocess.run(
+                ["zsh", str(script), "all"],
+                check=False,
+                text=True,
+                capture_output=True,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("llm_key: not required", result.stdout)
+            self.assertTrue((root / "q2_table_audit" / "table5_q2_readiness.csv").exists())
+            self.assertTrue((root / "q2_source_audit" / "q2_source_evidence_audit.csv").exists())
+            self.assertTrue((root / "q2_source_refs" / "q2_source_ref_verification.csv").exists())
+            self.assertTrue((root / "q2_matrix" / "q2_implementation_matrix.csv").exists())
+            self.assertTrue((root / "q4_table_audit" / "q4_tau_readiness.csv").exists())
+            self.assertTrue((root / "q4_source_audit" / "q4_tau_source_evidence_audit.csv").exists())
+            self.assertTrue((root / "q4_source_refs" / "q4_tau_source_ref_verification.csv").exists())
+            self.assertTrue((root / "cert_audit" / "certification_tables_readiness.csv").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

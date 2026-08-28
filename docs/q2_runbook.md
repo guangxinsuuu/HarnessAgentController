@@ -62,6 +62,17 @@ Before promoting any Q2 table, run the local preflight:
 PYTHON_BIN=.venv/bin/python scripts/run_q2_table4.sh preflight
 ```
 
+For a paper-level promotion audit across Q2, Q4/tau, and the certification
+tables, run:
+
+```bash
+PYTHON_BIN=.venv/bin/python scripts/run_paper_audits.sh all
+```
+
+This audit-only script does not call the LLM API. It checks source evidence,
+pinned source refs, table readiness, and certification authority artifacts using
+the current run directories.
+
 This writes the implementation matrix, source-evidence audit, source-ref
 verification, and table readiness audit without using the LLM API. The
 source-ref verifier checks pinned GitHub full SHAs, pinned raw GitHub URLs,

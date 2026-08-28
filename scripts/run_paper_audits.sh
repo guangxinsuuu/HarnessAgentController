@@ -1,0 +1,129 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+MODE="${1:-all}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+TEST_COUNT="${TEST_COUNT:-100}"
+
+Q2_STRUCTURED_DIR="${Q2_STRUCTURED_DIR:-runs/q2_structured_100_seed0_runtime_v2}"
+Q2_NATIVE_DIR="${Q2_NATIVE_DIR:-runs/q2_native_llm_baselines_100_seed0_sc_v2}"
+Q2_LEARNED_DIR="${Q2_LEARNED_DIR:-runs/q2_learned_search_100_seed0_rest_gate_v2}"
+Q2_TOT_DIR="${Q2_TOT_DIR:-runs/q2_tot_bfs_100_seed0_tot_gate_v2}"
+Q2_TABLE_AUDIT_DIR="${Q2_TABLE_AUDIT_DIR:-runs/q2_table_current_seed0_protocol_v2_audit}"
+Q2_SOURCE_AUDIT_DIR="${Q2_SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"
+Q2_SOURCE_REF_DIR="${Q2_SOURCE_REF_DIR:-runs/q2_source_ref_verification}"
+Q2_IMPLEMENTATION_MATRIX_DIR="${Q2_IMPLEMENTATION_MATRIX_DIR:-runs/q2_implementation_matrix}"
+
+Q4_TABLE_AUDIT_DIR="${Q4_TABLE_AUDIT_DIR:-runs/q4_tau_table_current_audit}"
+Q4_SOURCE_AUDIT_DIR="${Q4_SOURCE_AUDIT_DIR:-runs/q4_tau_source_evidence_audit}"
+Q4_SOURCE_REF_DIR="${Q4_SOURCE_REF_DIR:-runs/q4_tau_source_ref_verification}"
+Q4_NATIVE_DIR="${Q4_NATIVE_DIR:-runs/q4_tau_native}"
+Q4_BEST_OF_N_DIR="${Q4_BEST_OF_N_DIR:-runs/q4_tau_best_of_n}"
+Q4_VALUE_GUIDED_DIR="${Q4_VALUE_GUIDED_DIR:-runs/q4_tau_value_guided}"
+Q4_TARGET_PRM_DIR="${Q4_TARGET_PRM_DIR:-runs/q4_tau_target_prm}"
+Q4_SOLVER_CONTROLLER_DIR="${Q4_SOLVER_CONTROLLER_DIR:-runs/q4_tau_solver_controller}"
+
+CERTIFICATION_AUDIT_DIR="${CERTIFICATION_AUDIT_DIR:-runs/certification_tables_readiness}"
+CERTIFICATION_DIR="${CERTIFICATION_DIR:-runs/q2_structured_cert_reference_100_seed0}"
+AUTHORITY_DIR="${AUTHORITY_DIR:-runs/table7_grounding_robustness_100_seed0}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/run_paper_audits.sh [all|q2|q4|certification]
+
+This script runs paper-level promotion audits only. It does not call the LLM
+API, set API keys, or generate new experiment trajectories.
+EOF
+}
+
+audit_q2() {
+  "${PYTHON_BIN}" -m cgr_exp.cli build-q2-implementation-matrix \
+    --output-dir "${Q2_IMPLEMENTATION_MATRIX_DIR}" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-source-evidence \
+    --output-dir "${Q2_SOURCE_AUDIT_DIR}" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli verify-q2-source-refs \
+    --output-dir "${Q2_SOURCE_REF_DIR}" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-table4-q2 \
+    --output-dir "${Q2_TABLE_AUDIT_DIR}" \
+    --expected-test-count "${TEST_COUNT}" \
+    --structured-dir "${Q2_STRUCTURED_DIR}" \
+    --direct-dir "${Q2_NATIVE_DIR}" \
+    --self-consistency-dir "${Q2_NATIVE_DIR}" \
+    --best-of-n-dir "${Q2_NATIVE_DIR}" \
+    --tot-dir "${Q2_TOT_DIR}" \
+    --target-prm-dir "${Q2_LEARNED_DIR}" \
+    --rest-mcts-dir "${Q2_LEARNED_DIR}" \
+    --solver-prior-dir "${Q2_LEARNED_DIR}" \
+    --solver-certification-dir "${Q2_LEARNED_DIR}" \
+    --overwrite
+}
+
+audit_q4() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-q4-tau-source-evidence \
+    --output-dir "${Q4_SOURCE_AUDIT_DIR}" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli verify-q4-tau-source-refs \
+    --output-dir "${Q4_SOURCE_REF_DIR}" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-table-q4-tau \
+    --output-dir "${Q4_TABLE_AUDIT_DIR}" \
+    --expected-test-count "${TEST_COUNT}" \
+    --native-dir "${Q4_NATIVE_DIR}" \
+    --best-of-n-dir "${Q4_BEST_OF_N_DIR}" \
+    --value-guided-dir "${Q4_VALUE_GUIDED_DIR}" \
+    --target-prm-dir "${Q4_TARGET_PRM_DIR}" \
+    --solver-controller-dir "${Q4_SOLVER_CONTROLLER_DIR}" \
+    --overwrite
+}
+
+audit_certification() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-certification-tables \
+    --output-dir "${CERTIFICATION_AUDIT_DIR}" \
+    --certification-dir "${CERTIFICATION_DIR}" \
+    --authority-dir "${AUTHORITY_DIR}" \
+    --expected-test-count "${TEST_COUNT}" \
+    --overwrite
+}
+
+print_summary() {
+  print "python: ${PYTHON_BIN}"
+  print "test_count: ${TEST_COUNT}"
+  print "q2_audit_dir: ${Q2_TABLE_AUDIT_DIR}"
+  print "q4_audit_dir: ${Q4_TABLE_AUDIT_DIR}"
+  print "certification_audit_dir: ${CERTIFICATION_AUDIT_DIR}"
+  if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
+    print "llm_key: not required"
+  else
+    print "llm_key: present but unused"
+  fi
+}
+
+case "${MODE}" in
+  all)
+    print_summary
+    audit_q2
+    audit_q4
+    audit_certification
+    ;;
+  q2)
+    print_summary
+    audit_q2
+    ;;
+  q4)
+    print_summary
+    audit_q4
+    ;;
+  certification)
+    print_summary
+    audit_certification
+    ;;
+  -h|--help|help) usage ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

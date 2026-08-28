@@ -5,8 +5,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cgr_exp.q2_method_contracts import q2_method_contracts
+from cgr_exp.q2_source_evidence import Q2_SOURCE_EVIDENCE
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 
 
@@ -1259,6 +1261,46 @@ class Table5Q2Test(unittest.TestCase):
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
             self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
             self.assertIn("scheduling_native_q2_samples.jsonl", audit_rows["Direct / CoT"]["result_blockers"])
+
+    def test_readiness_audit_rejects_complete_external_row_without_source_code_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_csv(
+                native / "scheduling_native_q2_table.csv",
+                [
+                    {
+                        "Method": "Direct / CoT",
+                        "success": "1.0",
+                        "gap": "0.0",
+                        "llm_calls": "2",
+                        "tokens": "20",
+                        "wall_clock_seconds": "1",
+                        "status": "complete",
+                        "source_policy": "native",
+                        "native_runtime_sample_count": "2",
+                        "native_runtime_selection_events": "2",
+                    }
+                ],
+            )
+            _write_csv(
+                native / "scheduling_native_q2_per_instance.csv",
+                [{"Method": "Direct / CoT", "task_id": f"t{i}"} for i in range(2)],
+            )
+            (native / "scheduling_native_q2_samples.jsonl").write_text(
+                "".join(json.dumps({"Method": "Direct / CoT", "task_id": f"t{i}", "sample_index": 0}) + "\n" for i in range(2)),
+                encoding="utf-8",
+            )
+            _write_native_manifest(native, ["Direct / CoT"], test_count=2)
+            weakened_evidence = {method: dict(evidence) for method, evidence in Q2_SOURCE_EVIDENCE.items()}
+            weakened_evidence["Direct / CoT"]["official_code_refs"] = []
+            out = root / "out"
+            with patch("cgr_exp.table5_q2.Q2_SOURCE_EVIDENCE", weakened_evidence):
+                audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", expected_test_count=2, direct_dir=native)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
+            self.assertIn("source evidence: missing official_code_refs", audit_rows["Direct / CoT"]["result_blockers"])
 
     def test_readiness_audit_requires_target_prm_training_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -176,6 +176,9 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
     invalid_artifacts = _invalid_required_artifacts(row)
     if invalid_artifacts:
         result_blockers.append("invalid artifacts: " + ", ".join(invalid_artifacts))
+    source_blockers = _source_evidence_blockers_for_row(row)
+    if source_blockers:
+        result_blockers.append("source evidence: " + ", ".join(source_blockers))
     if tokens == "--":
         compute_blockers.append("missing token accounting")
     if "shared-cache fallback accounting" in notes:
@@ -195,6 +198,41 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
         "compute_blockers": "; ".join(compute_blockers),
         "token_notes": notes,
     }
+
+
+def _source_evidence_blockers_for_row(row: Mapping[str, object]) -> List[str]:
+    method = str(row.get("Method", ""))
+    evidence = Q2_SOURCE_EVIDENCE.get(method)
+    if not isinstance(evidence, Mapping):
+        return []
+    blockers: List[str] = []
+    source_url = str(evidence.get("source_url", ""))
+    if not source_url:
+        blockers.append("missing source_url")
+    if source_url != str(row.get("Source URL", "")):
+        blockers.append("source_url mismatch")
+    source_files = evidence.get("source_files")
+    if not isinstance(source_files, list) or not source_files:
+        blockers.append("missing source_files")
+    official_primitives = evidence.get("official_primitives")
+    if not isinstance(official_primitives, list) or not official_primitives:
+        blockers.append("missing official_primitives")
+    official_code_refs = evidence.get("official_code_refs")
+    if not isinstance(official_code_refs, list) or not official_code_refs:
+        blockers.append("missing official_code_refs")
+    else:
+        refs = [str(ref) for ref in official_code_refs]
+        if source_url.startswith("https://github.com/") and not any("github:" in ref or "raw.githubusercontent.com" in ref for ref in refs):
+            blockers.append("github-backed source missing github/raw code refs")
+        if source_url.startswith("https://github.com/") and not any("::" in ref for ref in refs):
+            blockers.append("github-backed source missing symbol-level code refs")
+    anchors = evidence.get("official_source_anchors")
+    if not isinstance(anchors, list) or not anchors:
+        blockers.append("missing official_source_anchors")
+    promotion_gates = evidence.get("local_promotion_gates")
+    if not isinstance(promotion_gates, list) or not promotion_gates:
+        blockers.append("missing local_promotion_gates")
+    return blockers
 
 
 def _apply_split_consistency_audit(rows: List[Mapping[str, object]], audit_rows: List[Dict[str, object]], expected_test_count: int) -> None:

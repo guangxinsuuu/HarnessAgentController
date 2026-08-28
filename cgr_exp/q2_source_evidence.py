@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from typing import Dict, List
+import csv
+import json
+from pathlib import Path
+from typing import Dict, Iterable, List, Mapping
+
+from cgr_exp.q2_method_contracts import q2_method_contract
 
 
 Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
@@ -120,6 +125,16 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     },
 }
 
+Q2_EXTERNAL_SOURCE_METHODS = [
+    "CP-SAT",
+    "Direct / CoT",
+    "Self-Consistency",
+    "Best-of-N",
+    "Tree of Thoughts",
+    "Target-PRM priority",
+    "PRM-guided MCTS (ReST-MCTS-style)",
+]
+
 
 def q2_source_evidence(method: str) -> Dict[str, object]:
     return dict(Q2_SOURCE_EVIDENCE[method])
@@ -127,3 +142,68 @@ def q2_source_evidence(method: str) -> Dict[str, object]:
 
 def q2_source_evidence_methods() -> List[str]:
     return sorted(Q2_SOURCE_EVIDENCE)
+
+
+def audit_q2_source_evidence(out_dir: Path) -> Dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rows = [_audit_source_evidence_row(method) for method in Q2_EXTERNAL_SOURCE_METHODS]
+    csv_path = out_dir / "q2_source_evidence_audit.csv"
+    json_path = out_dir / "q2_source_evidence_audit.json"
+    _write_csv(csv_path, rows)
+    manifest = {
+        "audit": "q2_source_evidence",
+        "all_external_sources_ready": all(row["source_ready"] for row in rows),
+        "external_methods": Q2_EXTERNAL_SOURCE_METHODS,
+        "rows": rows,
+        "produced_artifacts": [csv_path.name, json_path.name],
+    }
+    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
+def _audit_source_evidence_row(method: str) -> Dict[str, object]:
+    blockers = []
+    evidence = Q2_SOURCE_EVIDENCE.get(method)
+    if not isinstance(evidence, Mapping):
+        blockers.append("missing source evidence")
+        evidence = {}
+    contract = q2_method_contract(method)
+    source_url = str(evidence.get("source_url", ""))
+    contract_url = str(contract.get("source_url", ""))
+    if not source_url:
+        blockers.append("missing source_url")
+    if source_url != contract_url:
+        blockers.append("source_url mismatch with q2_method_contracts")
+    source_files = [str(item) for item in evidence.get("source_files", [])] if isinstance(evidence.get("source_files"), list) else []
+    if not source_files:
+        blockers.append("missing source_files")
+    official_primitives = [str(item) for item in evidence.get("official_primitives", [])] if isinstance(evidence.get("official_primitives"), list) else []
+    if not official_primitives:
+        blockers.append("missing official_primitives")
+    contract_primitives = {str(item) for item in contract.get("source_primitives", [])}
+    if official_primitives and contract_primitives and not (set(official_primitives) & contract_primitives):
+        blockers.append("official_primitives do not intersect contract source_primitives")
+    promotion_gates = [str(item) for item in evidence.get("local_promotion_gates", [])] if isinstance(evidence.get("local_promotion_gates"), list) else []
+    if not promotion_gates:
+        blockers.append("missing local_promotion_gates")
+    return {
+        "Method": method,
+        "source_url": source_url,
+        "contract_source_url": contract_url,
+        "source_files": "; ".join(source_files),
+        "official_primitives": "; ".join(official_primitives),
+        "local_promotion_gates": "; ".join(promotion_gates),
+        "source_ready": not blockers,
+        "blockers": "; ".join(blockers),
+    }
+
+
+def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:
+    rows = list(rows)
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
 from cgr_exp.q2_method_contracts import Q2_METHOD_CONTRACTS, q2_method_contract
-from cgr_exp.q2_source_evidence import q2_source_evidence, q2_source_evidence_methods
+from cgr_exp.q2_source_evidence import audit_q2_source_evidence, q2_source_evidence, q2_source_evidence_methods
 from cgr_exp.table5_q2 import TABLE5_METHODS
 
 
@@ -115,6 +117,18 @@ class Q2MethodContractsTest(unittest.TestCase):
     def test_source_alignment_matrix_points_to_machine_readable_evidence(self) -> None:
         text = Path("docs/q2_source_alignment_matrix.md").read_text(encoding="utf-8")
         self.assertIn("cgr_exp/q2_source_evidence.py", text)
+
+    def test_source_evidence_audit_writes_ready_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            manifest = audit_q2_source_evidence(out)
+            self.assertTrue(manifest["all_external_sources_ready"])
+            self.assertTrue((out / "q2_source_evidence_audit.csv").exists())
+            saved = json.loads((out / "q2_source_evidence_audit.json").read_text(encoding="utf-8"))
+            self.assertTrue(saved["all_external_sources_ready"])
+            by_method = {row["Method"]: row for row in saved["rows"]}
+            self.assertEqual(by_method["Tree of Thoughts"]["source_url"], "https://github.com/princeton-nlp/tree-of-thought-llm")
+            self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["source_files"])
 
 
 if __name__ == "__main__":

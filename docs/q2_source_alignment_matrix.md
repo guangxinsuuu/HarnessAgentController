@@ -71,6 +71,10 @@ Examples:
 
 ## Promotion Rules
 
+- Run `python3 -m cgr_exp.cli audit-q2-source-evidence --output-dir
+  runs/q2_source_evidence_audit --overwrite` before promoting a Q2 table. This
+  checks that external baseline source URLs, source files, official primitives,
+  and local promotion gates remain consistent with the method contracts.
 - A row is result-ready only if `audit-table4-q2` marks `result_ready=True`.
 - A row is compute-ready for Q2 only if `audit-table4-q2` marks
   `compute_ready=True`.

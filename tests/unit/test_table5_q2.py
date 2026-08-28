@@ -172,6 +172,32 @@ class Table5Q2Test(unittest.TestCase):
             by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
             self.assertEqual(by_method["Direct / CoT"]["Status"], "pending")
 
+    def test_builder_does_not_use_native_artifact_for_learned_search_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_prm = root / "fake_prm"
+            fake_prm.mkdir()
+            (fake_prm / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Target-PRM priority",
+                        "success": 0.99,
+                        "gap": 0.0,
+                        "llm_calls": 1,
+                        "tokens": 1,
+                        "wall_clock_seconds": 1,
+                        "status": "complete",
+                        "source_policy": "native",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            build_table5_q2_results(out, solver_prior_dir=root / "missing", target_prm_dir=fake_prm)
+            by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
+            self.assertEqual(by_method["Target-PRM priority"]["Status"], "pending")
+            self.assertIn("native runner pending", by_method["Target-PRM priority"]["notes"])
+
     def test_builder_reads_native_method_from_aggregate_table(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -472,6 +498,63 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(by_method["CP-SAT"]["Tokens"], "0")
             self.assertEqual(by_method["EST / list scheduling heuristic"]["Success"], "0.2500")
             self.assertEqual(by_method["EST / list scheduling heuristic"]["Transfer setting"], "Structured-input heuristic")
+
+    def test_readiness_audit_requires_structured_metrics_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            structured = root / "structured"
+            structured.mkdir()
+            _write_csv(
+                structured / "scheduling_structured_q2_table.csv",
+                [
+                    {
+                        "Method": "CP-SAT",
+                        "success": "1.0",
+                        "gap": "0.0",
+                        "wall_clock_seconds": "0.01",
+                        "status": "complete",
+                    }
+                ],
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", structured_dir=structured)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["CP-SAT"]["result_ready"], "False")
+            self.assertIn("scheduling_structured_q2_metrics.json", audit_rows["CP-SAT"]["result_blockers"])
+
+    def test_readiness_audit_rejects_structured_metrics_with_llm_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            structured = root / "structured"
+            structured.mkdir()
+            _write_csv(
+                structured / "scheduling_structured_q2_table.csv",
+                [
+                    {
+                        "Method": "CP-SAT",
+                        "success": "1.0",
+                        "gap": "0.0",
+                        "wall_clock_seconds": "0.01",
+                        "status": "complete",
+                    }
+                ],
+            )
+            (structured / "scheduling_structured_q2_metrics.json").write_text(
+                json.dumps(
+                    {
+                        "structured_input": True,
+                        "llm_calls": 1,
+                        "tokens": 0,
+                        "method_alignment": {"CP-SAT": {}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", structured_dir=structured)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["CP-SAT"]["result_ready"], "False")
+            self.assertIn("structured reference must have llm_calls = 0", audit_rows["CP-SAT"]["result_blockers"])
 
     def test_builder_reads_native_tot_row_when_shared_artifact_absent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

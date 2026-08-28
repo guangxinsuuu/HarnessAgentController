@@ -77,8 +77,6 @@ def build_table5_q2_results(
                 row = loaded
         elif source_dir is not None and source_policy is not None:
             loaded = _row_from_scheduling_artifacts(method, transfer_setting, source_policy, source_dir, expected_test_count)
-            if loaded is None:
-                loaded = _row_from_native_artifacts(method, transfer_setting, source_dir)
             if loaded is not None:
                 row = loaded
         elif source_dir is not None:
@@ -204,6 +202,8 @@ def _missing_required_artifacts(row: Mapping[str, object]) -> List[str]:
     artifact = Path(artifact_value)
     source_dir = _artifact_run_root(method, artifact)
     required_by_method = {
+        "CP-SAT": ["scheduling_structured_q2_metrics.json"],
+        "EST / list scheduling heuristic": ["scheduling_structured_q2_metrics.json"],
         "Direct / CoT": ["scheduling_native_q2_samples.jsonl", "scheduling_native_q2_manifest.json"],
         "Self-Consistency": ["scheduling_native_q2_samples.jsonl", "scheduling_native_q2_manifest.json"],
         "Best-of-N": ["scheduling_native_q2_samples.jsonl", "scheduling_native_q2_manifest.json"],
@@ -249,6 +249,20 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
         return []
     source_dir = _artifact_run_root(method, Path(artifact_value))
     invalid = []
+    if method in {"CP-SAT", "EST / list scheduling heuristic"}:
+        structured_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_structured_q2_metrics.json")
+        if manifest_error:
+            invalid.append(f"scheduling_structured_q2_metrics.json {manifest_error}")
+        if structured_manifest:
+            if structured_manifest.get("structured_input") is not True:
+                invalid.append("scheduling_structured_q2_metrics.json must declare structured_input true")
+            if _as_float(structured_manifest.get("llm_calls")) != 0:
+                invalid.append("structured reference must have llm_calls = 0")
+            if _as_float(structured_manifest.get("tokens")) != 0:
+                invalid.append("structured reference must have tokens = 0")
+            alignment = structured_manifest.get("method_alignment")
+            if not isinstance(alignment, Mapping) or method not in alignment:
+                invalid.append(f"scheduling_structured_q2_metrics.json missing Q2 method alignment for {method}")
     if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
         native_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_native_q2_manifest.json")
         if manifest_error:

@@ -460,8 +460,16 @@ python3 -m cgr_exp.cli audit-table5-q2 \
 The audit writes:
 
 - `table5_q2_results.csv`
+- `table5_q2_results.tex`
+- `table5_q2_manifest.json`
 - `table5_q2_readiness.csv`
 - `table5_q2_readiness.json`
+
+Readiness is artifact-level, not just summary-table-level. Native rows require
+their sample audit JSONL, native ToT requires its generate/evaluate/select
+trace JSONL, and Target-PRM/ReST-MCTS-style rows require the target PRM ranker,
+trace records, and train-pair artifacts. This prevents a hand-edited or
+partial summary CSV from being promoted as a source-aligned Q2 result.
 
 Use `table5_q2_readiness.csv` to check row-level blockers before promoting a
 number into the paper.

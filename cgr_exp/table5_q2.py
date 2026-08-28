@@ -164,6 +164,9 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
         result_blockers.append(status)
     if "artifact missing" in notes:
         result_blockers.append("artifact missing")
+    missing_artifacts = _missing_required_artifacts(row)
+    if missing_artifacts:
+        result_blockers.append("missing artifacts: " + ", ".join(missing_artifacts))
     if tokens == "--":
         compute_blockers.append("missing token accounting")
     if "shared-cache fallback accounting" in notes:
@@ -179,6 +182,42 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
         "compute_blockers": "; ".join(compute_blockers),
         "token_notes": notes,
     }
+
+
+def _missing_required_artifacts(row: Mapping[str, object]) -> List[str]:
+    method = str(row.get("Method", ""))
+    status = str(row.get("Status", "pending"))
+    if status != "complete":
+        return []
+    artifact_value = str(row.get("source_artifact", "")).strip()
+    if not artifact_value:
+        return ["source artifact"]
+    artifact = Path(artifact_value)
+    source_dir = artifact.parent
+    required_by_method = {
+        "Direct / CoT": ["scheduling_native_q2_samples.jsonl"],
+        "Self-Consistency": ["scheduling_native_q2_samples.jsonl"],
+        "Best-of-N": ["scheduling_native_q2_samples.jsonl"],
+        "Tree of Thoughts": ["scheduling_tot_q2_trace.jsonl"],
+        "Target-PRM priority": [
+            "target_prm_ranker.json",
+            "target_prm_trace_records.jsonl",
+            "target_prm_train_pairs.jsonl",
+        ],
+        "PRM-guided MCTS (ReST-MCTS-style)": [
+            "target_prm_ranker.json",
+            "target_prm_trace_records.jsonl",
+            "target_prm_train_pairs.jsonl",
+        ],
+        "Solver-trained priority": ["scheduling_llm_pilot_ranker.json"],
+        "Solver-trained priority + certified pruning": ["scheduling_llm_pilot_ranker.json"],
+    }
+    missing = []
+    for filename in required_by_method.get(method, []):
+        path = source_dir / filename
+        if not path.exists() or path.stat().st_size == 0:
+            missing.append(filename)
+    return missing
 
 
 def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path]) -> Dict[str, object]:

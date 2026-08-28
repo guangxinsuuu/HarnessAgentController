@@ -273,6 +273,7 @@ class Table5Q2Test(unittest.TestCase):
                 solver / "scheduling_llm_pilot_per_instance.csv",
                 [{"Policy": "Solver-trained MLP", "task_id": f"t{i}"} for i in range(100)],
             )
+            (solver / "scheduling_llm_pilot_ranker.json").write_text("{}", encoding="utf-8")
             out = root / "out"
             manifest = audit_table5_q2_readiness(out, solver_prior_dir=solver, expected_test_count=100)
             readiness = manifest["readiness"]
@@ -285,6 +286,63 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Solver-trained priority"]["compute_ready"], "False")
             self.assertIn("shared-cache fallback accounting", audit_rows["Solver-trained priority"]["compute_blockers"])
             self.assertTrue((out / "table5_q2_readiness.json").exists())
+
+    def test_readiness_audit_requires_native_trace_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Direct / CoT",
+                        "success": 0.5,
+                        "gap": 0.1,
+                        "llm_calls": 100,
+                        "tokens": 2000,
+                        "wall_clock_seconds": 12,
+                        "status": "complete",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", direct_dir=native)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
+            self.assertIn("scheduling_native_q2_samples.jsonl", audit_rows["Direct / CoT"]["result_blockers"])
+
+    def test_readiness_audit_requires_target_prm_training_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prm = root / "prm"
+            prm.mkdir()
+            _write_csv(
+                prm / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "Target-PRM",
+                        "success": "0.84",
+                        "gap": "0.09",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                        "on_demand_total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(
+                prm / "scheduling_llm_pilot_per_instance.csv",
+                [{"Policy": "Target-PRM", "task_id": f"t{i}"} for i in range(100)],
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", target_prm_dir=prm)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
+            self.assertIn("target_prm_ranker.json", audit_rows["Target-PRM priority"]["result_blockers"])
 
 
 def _write_csv(path: Path, rows) -> None:

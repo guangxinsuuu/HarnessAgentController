@@ -220,6 +220,15 @@ def _source_evidence_blockers_for_row(row: Mapping[str, object]) -> List[str]:
             blockers.append("source_revision must be a full 40-character git SHA")
         if source_revision and source_revision not in source_revision_url:
             blockers.append("source_revision_url missing source_revision")
+    if source_url.startswith("https://arxiv.org/"):
+        if not source_revision:
+            blockers.append("missing source_revision")
+        if source_revision and not source_revision.startswith("arXiv:"):
+            blockers.append("arxiv source_revision must start with arXiv:")
+        if source_revision and "v" not in source_revision.rsplit(".", 1)[-1]:
+            blockers.append("arxiv source_revision must include explicit version")
+        if source_revision and source_revision.removeprefix("arXiv:") not in source_revision_url:
+            blockers.append("source_revision_url missing arxiv version")
     source_files = evidence.get("source_files")
     if not isinstance(source_files, list) or not source_files:
         blockers.append("missing source_files")
@@ -237,6 +246,8 @@ def _source_evidence_blockers_for_row(row: Mapping[str, object]) -> List[str]:
             blockers.append("github-backed source missing symbol-level code refs")
         if source_url.startswith("https://github.com/") and source_revision and not any(source_revision in ref for ref in refs):
             blockers.append("github-backed source code refs are not pinned to source_revision")
+        if source_url.startswith("https://arxiv.org/") and source_revision and not any(source_revision in ref for ref in refs):
+            blockers.append("paper source code refs are not pinned to source_revision")
     anchors = evidence.get("official_source_anchors")
     if not isinstance(anchors, list) or not anchors:
         blockers.append("missing official_source_anchors")

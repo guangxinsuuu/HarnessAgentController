@@ -31,10 +31,19 @@ style baselines that must not be described as full official replications.
   - Machine-readable evidence records the released schema anchor
     `data/*.jsonl::label.steps[].completions[].rating`.
 - Best-of-N / test-time compute scaling: `https://arxiv.org/abs/2408.03314`
+  - Source revision pinned for Q2 evidence: `arXiv:2408.03314v1`.
   - The Q2 row uses the generic Best-of-N primitive from test-time scaling:
     independently sample multiple complete answers and select the best one
     under a verifier/reward. Because the local verifier sees the structured
     Scheduling objective, the row must be disclosed as `Best-of-N + verifier`.
+- Chain-of-Thought: `https://arxiv.org/abs/2201.11903`
+  - Source revision pinned for Q2 evidence: `arXiv:2201.11903v6`.
+  - The Q2 Direct / CoT row uses the single sampled reasoning path primitive
+    adapted to a complete Scheduling JSON answer.
+- Self-Consistency: `https://arxiv.org/abs/2203.11171`
+  - Source revision pinned for Q2 evidence: `arXiv:2203.11171v4`.
+  - The Q2 row samples multiple independent reasoning paths and aggregates
+    final schedules by answer consistency rather than verified objective.
 - ReST-MCTS*: `https://github.com/THUDM/ReST-MCTS`
   - Source revision pinned for Q2 evidence:
     `2d5f488c3d6e24f99d50a9860e818383b1bb5883`.
@@ -100,8 +109,9 @@ Examples:
   checks that external baseline source URLs, pinned source revisions, source
   files, symbol/schema-level code refs, official primitives, and local
   promotion gates remain consistent with the method contracts. For GitHub
-  sources, code refs must include the pinned revision rather than a floating
-  branch name.
+  sources, code refs must include the pinned commit rather than a floating
+  branch name. For arXiv paper-only baselines, source revisions must include an
+  explicit arXiv version such as `arXiv:2201.11903v6`.
 - A row is result-ready only if `audit-table4-q2` marks `result_ready=True`.
 - A row is compute-ready for Q2 only if `audit-table4-q2` marks
   `compute_ready=True`.

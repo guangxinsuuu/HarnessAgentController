@@ -124,6 +124,11 @@ class Q2MethodContractsTest(unittest.TestCase):
                 self.assertEqual(len(str(evidence["source_revision"])), 40, method)
                 self.assertIn(str(evidence["source_revision"]), str(evidence["source_revision_url"]), method)
                 self.assertTrue(any(str(evidence["source_revision"]) in str(ref) for ref in evidence["official_code_refs"]), method)
+            if str(evidence["source_url"]).startswith("https://arxiv.org/"):
+                self.assertTrue(str(evidence["source_revision"]).startswith("arXiv:"), method)
+                self.assertIn("v", str(evidence["source_revision"]).rsplit(".", 1)[-1], method)
+                self.assertIn(str(evidence["source_revision"]).removeprefix("arXiv:"), str(evidence["source_revision_url"]), method)
+                self.assertTrue(any(str(evidence["source_revision"]) in str(ref) for ref in evidence["official_code_refs"]), method)
 
     def test_source_alignment_matrix_points_to_machine_readable_evidence(self) -> None:
         text = Path("docs/q2_source_alignment_matrix.md").read_text(encoding="utf-8")
@@ -138,6 +143,9 @@ class Q2MethodContractsTest(unittest.TestCase):
             saved = json.loads((out / "q2_source_evidence_audit.json").read_text(encoding="utf-8"))
             self.assertTrue(saved["all_external_sources_ready"])
             by_method = {row["Method"]: row for row in saved["rows"]}
+            self.assertEqual(by_method["Direct / CoT"]["source_revision"], "arXiv:2201.11903v6")
+            self.assertEqual(by_method["Self-Consistency"]["source_revision"], "arXiv:2203.11171v4")
+            self.assertEqual(by_method["Best-of-N"]["source_revision"], "arXiv:2408.03314v1")
             self.assertEqual(by_method["Tree of Thoughts"]["source_url"], "https://github.com/princeton-nlp/tree-of-thought-llm")
             self.assertEqual(by_method["Tree of Thoughts"]["source_revision"], "8050e67d0e3a0fddc424d7fa5801538722a4c4cc")
             self.assertIn("8050e67d0e3a0fddc424d7fa5801538722a4c4cc", by_method["Tree of Thoughts"]["source_revision_url"])

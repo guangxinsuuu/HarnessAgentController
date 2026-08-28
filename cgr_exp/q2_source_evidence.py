@@ -42,9 +42,11 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     },
     "Direct / CoT": {
         "source_url": "https://arxiv.org/abs/2201.11903",
+        "source_revision": "arXiv:2201.11903v6",
+        "source_revision_url": "https://arxiv.org/abs/2201.11903v6",
         "source_files": ["paper"],
         "official_code_refs": [
-            "paper: Wei et al. 2022 Chain-of-Thought Prompting; one sampled reasoning chain before final answer",
+            "paper@arXiv:2201.11903v6: Wei et al. 2022 Chain-of-Thought Prompting; one sampled reasoning chain before final answer",
         ],
         "official_source_anchors": [
             "paper method: sample one chain of intermediate reasoning steps before the final answer",
@@ -62,9 +64,11 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     },
     "Self-Consistency": {
         "source_url": "https://arxiv.org/abs/2203.11171",
+        "source_revision": "arXiv:2203.11171v4",
+        "source_revision_url": "https://arxiv.org/abs/2203.11171v4",
         "source_files": ["paper"],
         "official_code_refs": [
-            "paper: Wang et al. 2023 Self-Consistency; sample diverse reasoning paths and marginalize final answers",
+            "paper@arXiv:2203.11171v4: Wang et al. 2023 Self-Consistency; sample diverse reasoning paths and marginalize final answers",
         ],
         "official_source_anchors": [
             "paper method: sample diverse reasoning paths and marginalize/aggregate final answers",
@@ -82,9 +86,11 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
     },
     "Best-of-N": {
         "source_url": "https://arxiv.org/abs/2408.03314",
+        "source_revision": "arXiv:2408.03314v1",
+        "source_revision_url": "https://arxiv.org/abs/2408.03314v1",
         "source_files": ["paper"],
         "official_code_refs": [
-            "paper: Snell et al. 2024 test-time compute scaling; best-of-N uses independent samples selected by verifier/reward",
+            "paper@arXiv:2408.03314v1: Snell et al. 2024 test-time compute scaling; best-of-N uses independent samples selected by verifier/reward",
         ],
         "official_source_anchors": [
             "test-time scaling primitive: draw N candidate outputs and select by reward/verifier score",
@@ -249,6 +255,15 @@ def _audit_source_evidence_row(method: str) -> Dict[str, object]:
             blockers.append("source_revision must be a full 40-character git SHA")
         if source_revision and source_revision not in source_revision_url:
             blockers.append("source_revision_url missing source_revision")
+    if source_url.startswith("https://arxiv.org/"):
+        if not source_revision:
+            blockers.append("missing source_revision")
+        if source_revision and not source_revision.startswith("arXiv:"):
+            blockers.append("arxiv source_revision must start with arXiv:")
+        if source_revision and "v" not in source_revision.rsplit(".", 1)[-1]:
+            blockers.append("arxiv source_revision must include explicit version")
+        if source_revision and source_revision.removeprefix("arXiv:") not in source_revision_url:
+            blockers.append("source_revision_url missing arxiv version")
     source_files = [str(item) for item in evidence.get("source_files", [])] if isinstance(evidence.get("source_files"), list) else []
     if not source_files:
         blockers.append("missing source_files")
@@ -261,6 +276,8 @@ def _audit_source_evidence_row(method: str) -> Dict[str, object]:
         blockers.append("github-backed source missing symbol-level code refs")
     if source_url.startswith("https://github.com/") and source_revision and not any(source_revision in ref for ref in code_refs):
         blockers.append("github-backed source code refs are not pinned to source_revision")
+    if source_url.startswith("https://arxiv.org/") and source_revision and not any(source_revision in ref for ref in code_refs):
+        blockers.append("paper source code refs are not pinned to source_revision")
     official_primitives = [str(item) for item in evidence.get("official_primitives", [])] if isinstance(evidence.get("official_primitives"), list) else []
     if not official_primitives:
         blockers.append("missing official_primitives")

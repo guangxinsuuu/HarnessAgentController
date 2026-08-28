@@ -1,0 +1,146 @@
+from __future__ import annotations
+
+import csv
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from cgr_exp.table5_q2 import build_table5_q2_results
+
+
+class Table5Q2Test(unittest.TestCase):
+    def test_builder_keeps_missing_native_rows_pending_and_extracts_completed_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solver = root / "solver"
+            solver.mkdir()
+            _write_csv(
+                solver / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "Solver-trained MLP",
+                        "success": "0.89",
+                        "gap": "0.019335",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "20196491",
+                        "value_tokens": "0",
+                        "total_tokens": "20196491",
+                    }
+                ],
+            )
+            _write_csv(
+                solver / "scheduling_llm_pilot_per_instance.csv",
+                [{"Policy": "Solver-trained MLP", "task_id": f"t{i}"} for i in range(100)],
+            )
+            _write_csv(solver / "timing_metrics.csv", [{"component": "proposal_cache", "wall_clock_seconds": "3600", "call_count": "1"}])
+
+            gpt = root / "gpt"
+            gpt.mkdir()
+            _write_csv(
+                gpt / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "GPT-frontier-rank / ToT-style",
+                        "success": "0.61",
+                        "gap": "0.08",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "8000",
+                        "proposal_tokens": "20196491",
+                        "value_tokens": "4000000",
+                        "total_tokens": "24196491",
+                    }
+                ],
+            )
+            _write_csv(
+                gpt / "scheduling_llm_pilot_per_instance.csv",
+                [{"Policy": "GPT-frontier-rank / ToT-style", "task_id": f"t{i}"} for i in range(100)],
+            )
+
+            out = root / "out"
+            manifest = build_table5_q2_results(out, solver_prior_dir=solver, gpt_frontier_rank_dir=gpt)
+            rows = _read_csv(out / "table5_q2_results.csv")
+            by_method = {row["Method"]: row for row in rows}
+            self.assertEqual(by_method["Solver prior"]["Status"], "complete")
+            self.assertEqual(by_method["Solver prior"]["Success"], "0.8900")
+            self.assertEqual(by_method["Solver prior"]["LLM calls"], "8000")
+            self.assertEqual(by_method["Solver prior"]["Tokens"], "20.20M")
+            self.assertEqual(by_method["Solver prior"]["Wall-clock"], "1.00h")
+            self.assertEqual(by_method["Tree of Thoughts"]["Status"], "complete")
+            self.assertEqual(by_method["Tree of Thoughts"]["LLM calls"], "16000")
+            self.assertEqual(by_method["Direct / CoT"]["Status"], "pending")
+            self.assertTrue((out / "table5_q2_results.tex").exists())
+            self.assertEqual(manifest["strict_pending_policy"], True)
+            saved = json.loads((out / "table5_q2_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["table"], "Table 5")
+
+    def test_builder_marks_incomplete_checkpoints_as_partial(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solver = root / "solver"
+            solver.mkdir()
+            _write_csv(
+                solver / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "Solver-trained MLP",
+                        "success": "1.0",
+                        "gap": "0.0",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(
+                solver / "scheduling_llm_pilot_per_instance.csv",
+                [{"Policy": "Solver-trained MLP", "task_id": f"t{i}"} for i in range(4)],
+            )
+            out = root / "out"
+            build_table5_q2_results(out, solver_prior_dir=solver, expected_test_count=100)
+            by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
+            self.assertEqual(by_method["Solver prior"]["Status"], "partial: 4/100")
+            self.assertIn("partial checkpoint", by_method["Solver prior"]["notes"])
+
+    def test_builder_reads_native_row_json_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "direct"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "success": 0.5,
+                        "gap": 0.1,
+                        "llm_calls": 100,
+                        "tokens": 1200000,
+                        "wall_clock_seconds": 61,
+                        "status": "complete",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            solver = root / "missing_solver"
+            out = root / "out"
+            build_table5_q2_results(out, solver_prior_dir=solver, direct_dir=native)
+            by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
+            self.assertEqual(by_method["Direct / CoT"]["Status"], "complete")
+            self.assertEqual(by_method["Direct / CoT"]["Tokens"], "1.20M")
+
+
+def _write_csv(path: Path, rows) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _read_csv(path: Path):
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))

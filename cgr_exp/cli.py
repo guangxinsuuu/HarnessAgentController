@@ -22,6 +22,7 @@ from cgr_exp.scheduling_transfer import (
     run_scheduling_llm_pilot_from_env,
     run_scheduling_zero_shot_transfer,
 )
+from cgr_exp.table5_q2 import build_table5_q2_results
 
 COMMANDS = [
     "run-game24-offline",
@@ -43,6 +44,7 @@ COMMANDS = [
     "run-transfer-matrix",
     "analyze-domain-shift",
     "build-tables",
+    "build-table5-q2",
 ]
 
 
@@ -163,6 +165,16 @@ def main() -> None:
             p.add_argument("--rank-epochs", type=int, default=25)
             p.add_argument("--useful-action-recall", type=float, default=0.88)
             p.add_argument("--perturbation", default="mixed")
+        if name == "build-table5-q2":
+            p.add_argument("--solver-prior-dir", type=Path, default=Path("runs/scheduling_llm_pilot_real_100_seed0"))
+            p.add_argument("--expected-test-count", type=int, default=100)
+            p.add_argument("--gpt-frontier-rank-dir", type=Path, default=None)
+            p.add_argument("--target-prm-dir", type=Path, default=None)
+            p.add_argument("--direct-dir", type=Path, default=None)
+            p.add_argument("--self-consistency-dir", type=Path, default=None)
+            p.add_argument("--best-of-n-dir", type=Path, default=None)
+            p.add_argument("--rest-mcts-dir", type=Path, default=None)
+            p.add_argument("--solver-certification-dir", type=Path, default=None)
     args, rest = parser.parse_known_args()
     if args.command in (None, "run-smoke"):
         import sys
@@ -565,6 +577,29 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'scheduling_transfer_diagnosis_metrics.json'}")
+            return
+        if args.command == "build-table5-q2":
+            manifest = build_table5_q2_results(
+                args.output_dir,
+                solver_prior_dir=args.solver_prior_dir,
+                expected_test_count=args.expected_test_count,
+                gpt_frontier_rank_dir=args.gpt_frontier_rank_dir,
+                target_prm_dir=args.target_prm_dir,
+                direct_dir=args.direct_dir,
+                self_consistency_dir=args.self_consistency_dir,
+                best_of_n_dir=args.best_of_n_dir,
+                rest_mcts_dir=args.rest_mcts_dir,
+                solver_certification_dir=args.solver_certification_dir,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'table5_q2_results.csv'}")
             return
         if args.command == "run-transfer-matrix":
             seeds = [int(part) for part in (args.seeds or str(args.seed)).split(",") if part.strip()]

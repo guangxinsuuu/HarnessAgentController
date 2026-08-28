@@ -81,11 +81,19 @@ def run_scheduling_tot_q2(
     per_instance_path = out_dir / "scheduling_tot_q2_per_instance.csv"
     trace_path = out_dir / "scheduling_tot_q2_trace.jsonl"
     existing = _read_csv_rows(per_instance_path) if resume else []
+    existing_trace = _read_jsonl_rows(trace_path) if resume else []
     if not resume and per_instance_path.exists():
         per_instance_path.unlink()
     if not resume and trace_path.exists():
         trace_path.unlink()
-    completed = {str(row.get("rendering_id")) for row in existing}
+    completed = _completed_tot_renderings(existing, existing_trace)
+    if resume:
+        existing = [row for row in existing if str(row.get("rendering_id")) in completed]
+        existing_trace = [row for row in existing_trace if str(row.get("rendering_id")) in completed]
+        if existing_trace:
+            _write_jsonl(trace_path, existing_trace)
+        elif trace_path.exists():
+            trace_path.write_text("", encoding="utf-8")
     pending = [(idx, episode) for idx, episode in enumerate(episodes) if episode.rendering_id not in completed]
     started = time.perf_counter()
     new_rows: List[Dict[str, object]] = []
@@ -154,6 +162,16 @@ def run_scheduling_tot_q2(
     }
     (out_dir / "scheduling_tot_q2_manifest.json").write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
     return metrics
+
+
+def _completed_tot_renderings(rows: Sequence[Dict[str, object]], trace_rows: Sequence[Dict[str, object]]) -> set[str]:
+    row_renderings = {str(row.get("rendering_id")) for row in rows}
+    finished_trace_renderings = {
+        str(row.get("rendering_id"))
+        for row in trace_rows
+        if str(row.get("event")) == "finish"
+    }
+    return row_renderings & finished_trace_renderings
 
 
 def _run_one_tot_episode(
@@ -389,6 +407,19 @@ def _append_csv_row(path: Path, row: Dict[str, object]) -> None:
 def _append_jsonl_row(path: Path, row: Dict[str, object]) -> None:
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _write_jsonl(path: Path, rows: Sequence[Dict[str, object]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _read_jsonl_rows(path: Path) -> List[Dict[str, object]]:
+    if not path.exists() or path.stat().st_size == 0:
+        return []
+    with path.open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
 
 
 def _coerce_rows(rows: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:

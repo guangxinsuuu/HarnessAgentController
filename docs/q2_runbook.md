@@ -22,6 +22,13 @@ skipped only when the checkpoint already contains every policy requested by the
 current command. If a previous partial run is missing one requested policy row,
 that rendering is rerun instead of being silently promoted.
 
+Native Direct/Self-Consistency/Best-of-N resume is sample-audit aware: a
+method-task row is skipped only when its expected sample rows are present in
+`scheduling_native_q2_samples.jsonl`. Native ToT resume is trace aware: a
+rendering is skipped only when `scheduling_tot_q2_trace.jsonl` contains its
+`finish` event. Missing audit artifacts cause reruns rather than incomplete
+promotion.
+
 ## Row Contracts and Commands
 
 ### CP-SAT

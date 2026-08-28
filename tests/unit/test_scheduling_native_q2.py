@@ -83,6 +83,39 @@ class SchedulingNativeQ2Test(unittest.TestCase):
             per_instance = _read_csv(out / "scheduling_native_q2_per_instance.csv")
             self.assertEqual(len(per_instance), 2)
 
+    def test_resume_reruns_rows_when_sample_audit_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            client = ScriptedSchedulingClient(input_tokens=10, output_tokens=5, model="mock")
+            run_scheduling_native_q2(
+                out,
+                client=client,
+                model="mock",
+                seed=14,
+                train_count=1,
+                validation_count=0,
+                test_count=2,
+                job_count=4,
+                machine_count=2,
+                methods=("direct",),
+            )
+            (out / "scheduling_native_q2_samples.jsonl").unlink()
+            run_scheduling_native_q2(
+                out,
+                client=client,
+                model="mock",
+                seed=14,
+                train_count=1,
+                validation_count=0,
+                test_count=2,
+                job_count=4,
+                machine_count=2,
+                methods=("direct",),
+                resume=True,
+            )
+            self.assertEqual(len(_read_csv(out / "scheduling_native_q2_per_instance.csv")), 2)
+            self.assertEqual(len(_read_jsonl(out / "scheduling_native_q2_samples.jsonl")), 2)
+
     def test_runner_streams_per_instance_rows_before_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)

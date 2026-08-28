@@ -55,6 +55,32 @@ class SchedulingToTQ2Test(unittest.TestCase):
             self.assertIn("value_samples", evaluate_events[0])
             self.assertIn("scheduling_tot_q2_trace.jsonl", metrics["produced_artifacts"])
 
+    def test_tot_resume_reruns_rows_when_trace_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            client = ScriptedSchedulingClient(input_tokens=10, output_tokens=5, model="mock")
+            kwargs = dict(
+                client=client,
+                model="mock",
+                seed=16,
+                train_count=1,
+                validation_count=0,
+                test_count=2,
+                job_count=4,
+                machine_count=2,
+                node_budget=20,
+                action_budget=3,
+                breadth=2,
+                value_samples=2,
+                perturbation="canonical",
+            )
+            run_scheduling_tot_q2(root, **kwargs)
+            (root / "scheduling_tot_q2_trace.jsonl").unlink()
+            run_scheduling_tot_q2(root, **kwargs, resume=True)
+            self.assertEqual(len(_read_csv(root / "scheduling_tot_q2_per_instance.csv")), 2)
+            finish_events = [row for row in _read_jsonl(root / "scheduling_tot_q2_trace.jsonl") if row["event"] == "finish"]
+            self.assertEqual(len(finish_events), 2)
+
 
 def _read_csv(path: Path):
     with path.open(newline="", encoding="utf-8") as handle:

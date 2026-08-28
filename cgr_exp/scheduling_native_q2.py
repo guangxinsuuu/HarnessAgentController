@@ -98,14 +98,26 @@ def run_scheduling_native_q2(
     selected_methods = _normalize_methods(methods)
     instances = generate_scheduling_micro_instances(train_count, validation_count, test_count, seed, job_count, machine_count)
     tasks = instances["test"]
-    existing = _read_csv_rows(out_dir / "scheduling_native_q2_per_instance.csv") if resume else []
     per_instance_path = out_dir / "scheduling_native_q2_per_instance.csv"
+    sample_path = out_dir / "scheduling_native_q2_samples.jsonl"
+    existing = _read_csv_rows(per_instance_path) if resume else []
+    existing_samples = _read_jsonl_rows(sample_path) if resume else []
     if not resume and per_instance_path.exists():
         per_instance_path.unlink()
-    sample_path = out_dir / "scheduling_native_q2_samples.jsonl"
     if not resume and sample_path.exists():
         sample_path.unlink()
-    completed = {(str(row.get("method_key")), str(row.get("task_id"))) for row in existing}
+    completed = _completed_native_method_tasks(existing, existing_samples, selected_methods, sample_count)
+    if resume:
+        existing = [row for row in existing if (str(row.get("method_key")), str(row.get("task_id"))) in completed]
+        existing_samples = [
+            row
+            for row in existing_samples
+            if (str(row.get("method_key")), str(row.get("task_id"))) in completed
+        ]
+        if existing_samples:
+            _write_jsonl(sample_path, existing_samples)
+        elif sample_path.exists():
+            sample_path.write_text("", encoding="utf-8")
     jobs = []
     for method_key in selected_methods:
         for idx, task in enumerate(tasks):
@@ -164,6 +176,33 @@ def run_scheduling_native_q2(
     }
     (out_dir / "scheduling_native_q2_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return {"model": model, "table_rows": table_rows, "per_instance_rows": all_rows, **manifest}
+
+
+def _completed_native_method_tasks(
+    rows: Sequence[Dict[str, object]],
+    sample_rows: Sequence[Dict[str, object]],
+    selected_methods: Sequence[str],
+    sample_count: int,
+) -> set[tuple[str, str]]:
+    selected = set(selected_methods)
+    sample_counts: Dict[tuple[str, str], int] = {}
+    for row in sample_rows:
+        key = (str(row.get("method_key")), str(row.get("task_id")))
+        sample_counts[key] = sample_counts.get(key, 0) + 1
+    completed = set()
+    for row in rows:
+        method_key = str(row.get("method_key"))
+        if method_key not in selected:
+            continue
+        task_id = str(row.get("task_id"))
+        key = (method_key, task_id)
+        if sample_counts.get(key, 0) >= _expected_native_sample_count(method_key, sample_count):
+            completed.add(key)
+    return completed
+
+
+def _expected_native_sample_count(method_key: str, sample_count: int) -> int:
+    return 1 if method_key == "direct" else max(1, int(sample_count))
 
 
 def _native_protocol_manifest(method_keys: Sequence[str], sample_count: int) -> Dict[str, object]:
@@ -416,6 +455,19 @@ def _append_csv_row(path: Path, row: Dict[str, object]) -> None:
 def _append_jsonl_row(path: Path, row: Dict[str, object]) -> None:
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _write_jsonl(path: Path, rows: Sequence[Dict[str, object]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _read_jsonl_rows(path: Path) -> List[Dict[str, object]]:
+    if not path.exists() or path.stat().st_size == 0:
+        return []
+    with path.open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
 
 
 def _coerce_rows(rows: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:

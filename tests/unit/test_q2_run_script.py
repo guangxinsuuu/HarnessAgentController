@@ -23,6 +23,10 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("build-q2-implementation-matrix", text)
         self.assertIn("SOURCE_AUDIT_DIR", text)
         self.assertIn("IMPLEMENTATION_MATRIX_DIR", text)
+        self.assertIn("q2_native_llm_baselines_100_seed0_sc_v2", text)
+        self.assertIn("q2_learned_search_100_seed0_rest_gate_v2", text)
+        self.assertIn("q2_tot_bfs_100_seed0_tot_gate_v2", text)
+        self.assertIn("q2_table_current_seed0_protocol_v2", text)
         self.assertIn("source-audit", text)
         self.assertIn("implementation-matrix", text)
         self.assertIn("source_audit", text)
@@ -64,6 +68,14 @@ class Q2RunScriptTest(unittest.TestCase):
             self.assertTrue((root / "audit" / "table5_q2_readiness.csv").exists())
             self.assertTrue((root / "source_audit" / "q2_source_evidence_audit.csv").exists())
             self.assertTrue((root / "matrix" / "q2_implementation_matrix.csv").exists())
+
+    def test_q2_runbook_uses_current_protocol_directories(self) -> None:
+        text = Path("docs/q2_runbook.md").read_text(encoding="utf-8")
+        self.assertIn("q2_native_llm_baselines_100_seed0_sc_v2", text)
+        self.assertIn("q2_learned_search_100_seed0_rest_gate_v2", text)
+        self.assertIn("q2_tot_bfs_100_seed0_tot_gate_v2", text)
+        self.assertIn("q2_table_current_seed0_protocol_v2_audit", text)
+        self.assertNotIn("protocol_v2_protocol_v2", text)
 
 
 if __name__ == "__main__":

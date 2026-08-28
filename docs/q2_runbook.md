@@ -105,7 +105,7 @@ Command:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-native-q2 \
-  --output-dir runs/q2_native_llm_baselines_100_seed0 \
+  --output-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -139,7 +139,7 @@ Command:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-native-q2 \
-  --output-dir runs/q2_native_llm_baselines_100_seed0 \
+  --output-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -168,7 +168,7 @@ Command:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-native-q2 \
-  --output-dir runs/q2_native_llm_baselines_100_seed0 \
+  --output-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -198,7 +198,7 @@ Command:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-tot-q2 \
-  --output-dir runs/q2_tot_bfs_100_seed0 \
+  --output-dir runs/q2_tot_bfs_100_seed0_tot_gate_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -241,7 +241,7 @@ Command:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-llm-pilot \
-  --output-dir runs/q2_learned_search_100_seed0 \
+  --output-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -283,7 +283,7 @@ Command:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-llm-pilot \
-  --output-dir runs/q2_learned_search_100_seed0 \
+  --output-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -318,7 +318,7 @@ Command:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-llm-pilot \
-  --output-dir runs/q2_learned_search_100_seed0 \
+  --output-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -349,7 +349,7 @@ Command:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-llm-pilot \
-  --output-dir runs/q2_learned_search_100_seed0 \
+  --output-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -400,7 +400,7 @@ Native frozen baselines can run together:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-native-q2 \
-  --output-dir runs/q2_native_llm_baselines_100_seed0 \
+  --output-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -419,7 +419,7 @@ Learned-search rows can run together:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-llm-pilot \
-  --output-dir runs/q2_learned_search_100_seed0 \
+  --output-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -447,7 +447,7 @@ generate/evaluate/select protocol:
 
 ```bash
 python3 -m cgr_exp.cli run-scheduling-tot-q2 \
-  --output-dir runs/q2_tot_bfs_100_seed0 \
+  --output-dir runs/q2_tot_bfs_100_seed0_tot_gate_v2 \
   --seed 0 \
   --train-count 200 \
   --validation-count 50 \
@@ -469,17 +469,17 @@ python3 -m cgr_exp.cli run-scheduling-tot-q2 \
 
 ```bash
 python3 -m cgr_exp.cli build-table4-q2 \
-  --output-dir runs/q2_table_current_seed0 \
+  --output-dir runs/q2_table_current_seed0_protocol_v2 \
   --expected-test-count 100 \
   --structured-dir runs/q2_structured_100_seed0 \
-  --direct-dir runs/q2_native_llm_baselines_100_seed0 \
-  --self-consistency-dir runs/q2_native_llm_baselines_100_seed0 \
-  --best-of-n-dir runs/q2_native_llm_baselines_100_seed0 \
-  --tot-dir runs/q2_tot_bfs_100_seed0 \
-  --target-prm-dir runs/q2_learned_search_100_seed0 \
-  --rest-mcts-dir runs/q2_learned_search_100_seed0 \
-  --solver-prior-dir runs/q2_learned_search_100_seed0 \
-  --solver-certification-dir runs/q2_learned_search_100_seed0 \
+  --direct-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
+  --self-consistency-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
+  --best-of-n-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
+  --tot-dir runs/q2_tot_bfs_100_seed0_tot_gate_v2 \
+  --target-prm-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
+  --rest-mcts-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
+  --solver-prior-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
+  --solver-certification-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
   --overwrite
 ```
 
@@ -490,17 +490,17 @@ same inputs:
 
 ```bash
 python3 -m cgr_exp.cli audit-table4-q2 \
-  --output-dir runs/q2_table_current_seed0_audit \
+  --output-dir runs/q2_table_current_seed0_protocol_v2_audit \
   --expected-test-count 100 \
   --structured-dir runs/q2_structured_100_seed0 \
-  --direct-dir runs/q2_native_llm_baselines_100_seed0 \
-  --self-consistency-dir runs/q2_native_llm_baselines_100_seed0 \
-  --best-of-n-dir runs/q2_native_llm_baselines_100_seed0 \
-  --tot-dir runs/q2_tot_bfs_100_seed0 \
-  --target-prm-dir runs/q2_learned_search_100_seed0 \
-  --rest-mcts-dir runs/q2_learned_search_100_seed0 \
-  --solver-prior-dir runs/q2_learned_search_100_seed0 \
-  --solver-certification-dir runs/q2_learned_search_100_seed0 \
+  --direct-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
+  --self-consistency-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
+  --best-of-n-dir runs/q2_native_llm_baselines_100_seed0_sc_v2 \
+  --tot-dir runs/q2_tot_bfs_100_seed0_tot_gate_v2 \
+  --target-prm-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
+  --rest-mcts-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
+  --solver-prior-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
+  --solver-certification-dir runs/q2_learned_search_100_seed0_rest_gate_v2 \
   --overwrite
 ```
 

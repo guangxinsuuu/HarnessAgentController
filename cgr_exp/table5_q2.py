@@ -123,6 +123,7 @@ def _row_from_scheduling_artifacts(
     proposal_calls = _as_float(source_row.get("proposal_calls_mean")) * instance_count
     value_calls = _as_float(source_row.get("value_calls"))
     total_calls = proposal_calls + value_calls
+    token_field = "on_demand_total_tokens" if source_row.get("on_demand_total_tokens") not in (None, "") else "total_tokens"
     wall_clock = _wall_clock_seconds(source_dir)
     return {
         "Method": method,
@@ -130,7 +131,7 @@ def _row_from_scheduling_artifacts(
         "Success": _fmt_float(_as_float(source_row.get("success")), 4),
         "Gap": _fmt_float(_as_float(source_row.get("gap")), 5),
         "LLM calls": _fmt_count(total_calls) if instance_count else "--",
-        "Tokens": _fmt_tokens(_as_float(source_row.get("total_tokens"))),
+        "Tokens": _fmt_tokens(_as_float(source_row.get(token_field))),
         "Wall-clock": _fmt_seconds(wall_clock),
         "Status": "complete" if complete else f"partial: {instance_count}/{expected_test_count}",
         "source_artifact": str(table_path),

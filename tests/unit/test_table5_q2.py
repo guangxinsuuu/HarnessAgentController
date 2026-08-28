@@ -28,6 +28,7 @@ class Table5Q2Test(unittest.TestCase):
                         "proposal_tokens": "20196491",
                         "value_tokens": "0",
                         "total_tokens": "20196491",
+                        "on_demand_total_tokens": "5000",
                     }
                 ],
             )
@@ -67,7 +68,7 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(by_method["Solver-trained priority"]["Status"], "complete")
             self.assertEqual(by_method["Solver-trained priority"]["Success"], "0.8900")
             self.assertEqual(by_method["Solver-trained priority"]["LLM calls"], "8000")
-            self.assertEqual(by_method["Solver-trained priority"]["Tokens"], "20.20M")
+            self.assertEqual(by_method["Solver-trained priority"]["Tokens"], "5.0K")
             self.assertEqual(by_method["Solver-trained priority"]["Wall-clock"], "1.00h")
             self.assertEqual(by_method["Tree of Thoughts"]["Status"], "complete")
             self.assertEqual(by_method["Tree of Thoughts"]["LLM calls"], "16000")

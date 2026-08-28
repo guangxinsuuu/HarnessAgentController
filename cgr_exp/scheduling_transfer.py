@@ -182,6 +182,29 @@ class SharedSchedulingProposalCache:
         return [dict(row) for row in self.meta.values()]
 
 
+class PolicyAccountingProposer:
+    def __init__(self, shared_cache: SharedSchedulingProposalCache):
+        self.shared_cache = shared_cache
+        self.proposal_calls = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.wall_clock_seconds = 0.0
+
+    def propose(self, task: SchedulingTask, node: SearchNode, k: int, budget_state=None) -> List[ScheduleAction]:
+        key = canonical_state_hash(task, node, self.shared_cache.node_budget, self.shared_cache.model, self.shared_cache.prompt_version, k, self.shared_cache.temperature)
+        actions = self.shared_cache.propose(task, node, k, budget_state=budget_state)
+        meta = self.shared_cache.meta.get(key, {})
+        self.proposal_calls += 1
+        self.input_tokens += int(meta.get("input_tokens", 0))
+        self.output_tokens += int(meta.get("output_tokens", 0))
+        self.wall_clock_seconds += float(meta.get("latency", 0.0))
+        return actions
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
 class SimulatedLLMSchedulingProposer:
     def __init__(
         self,
@@ -1373,6 +1396,7 @@ def _evaluate_one_level2_episode(
     episode_rows = []
     for name, factory in policies.items():
         policy = factory(episode, idx)
+        accounting_proposer = PolicyAccountingProposer(shared_cache)
         result, ranking = _run_frontier_search_with_ranking_diagnostics(
             task=episode.hidden_task,
             policy=policy,
@@ -1380,7 +1404,7 @@ def _evaluate_one_level2_episode(
             node_budget=node_budget,
             proposal_budget=action_budget,
             seed=seed + idx,
-            proposer=shared_cache,
+            proposer=accounting_proposer,
             certified_pruning=bool((policy_certified_pruning or {}).get(name, False)),
         )
         if name == "Oracle":
@@ -1397,8 +1421,11 @@ def _evaluate_one_level2_episode(
                 "nodes": result.expanded_nodes,
                 "proposal_calls": result.cost.proposal_calls,
                 "proposal_tokens": 0,
+                "on_demand_proposal_calls": accounting_proposer.proposal_calls,
+                "on_demand_proposal_tokens": accounting_proposer.total_tokens,
                 "value_calls": value_cost.evaluation_calls,
                 "value_tokens": value_cost.input_tokens + value_cost.output_tokens,
+                "on_demand_total_tokens": accounting_proposer.total_tokens + value_cost.input_tokens + value_cost.output_tokens,
                 "total_tokens": 0,
                 "false_prunes": result.false_prune_count,
                 "budget_exhausted": result.budget_exhausted or (result.best_objective != result.optimum and result.expanded_nodes >= node_budget),
@@ -1433,10 +1460,13 @@ def _summarize_policy_rows(by_policy: Dict[str, List[Dict[str, object]]]) -> Lis
                 "gap": _mean(float(row["gap"]) for row in rows),
                 "nodes_mean": _mean(float(row["nodes"]) for row in rows),
                 "proposal_calls_mean": _mean(float(row["proposal_calls"]) for row in rows),
+                "on_demand_proposal_calls": sum(int(row.get("on_demand_proposal_calls", row["proposal_calls"])) for row in rows),
+                "on_demand_proposal_tokens": sum(int(row.get("on_demand_proposal_tokens", row["proposal_tokens"])) for row in rows),
                 "value_calls": sum(int(row["value_calls"]) for row in rows),
                 "proposal_tokens": sum(int(row["proposal_tokens"]) for row in rows),
                 "value_tokens": sum(int(row["value_tokens"]) for row in rows),
                 "total_tokens": sum(int(row["total_tokens"]) for row in rows),
+                "on_demand_total_tokens": sum(int(row.get("on_demand_total_tokens", row["total_tokens"])) for row in rows),
                 "false_prunes": sum(int(row["false_prunes"]) for row in rows),
                 "frontier_decisions": sum(int(row["frontier_decisions"]) for row in rows),
                 "frontier_top1_accuracy": _weighted_mean(rows, "frontier_top1_accuracy", "frontier_decisions"),
@@ -2120,7 +2150,19 @@ def _coerce_result_row(row: Dict[str, object]) -> Dict[str, object]:
     for field in ("success", "budget_exhausted", "oracle_reachable_success"):
         if field in coerced:
             coerced[field] = _as_bool(coerced[field])
-    for field in ("nodes", "proposal_calls", "proposal_tokens", "value_calls", "value_tokens", "total_tokens", "false_prunes", "frontier_decisions"):
+    for field in (
+        "nodes",
+        "proposal_calls",
+        "proposal_tokens",
+        "on_demand_proposal_calls",
+        "on_demand_proposal_tokens",
+        "value_calls",
+        "value_tokens",
+        "total_tokens",
+        "on_demand_total_tokens",
+        "false_prunes",
+        "frontier_decisions",
+    ):
         if field in coerced:
             coerced[field] = int(float(coerced[field]))
     for field in ("gap", "frontier_top1_accuracy", "pairwise_accuracy", "selection_regret_mean"):

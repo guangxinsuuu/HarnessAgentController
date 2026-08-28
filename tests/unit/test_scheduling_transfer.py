@@ -535,6 +535,8 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertGreater(metrics["target_prm_trace_record_count"], 0)
             certified = metrics["methods"]["Solver-trained MLP + certified pruning"]
             self.assertGreaterEqual(certified["false_prunes"], 0)
+            self.assertIn("on_demand_total_tokens", certified)
+            self.assertLessEqual(certified["on_demand_total_tokens"], certified["total_tokens"])
 
     def test_prm_guided_mcts_policy_tracks_visits_and_backups(self) -> None:
         class ConstantRanker:

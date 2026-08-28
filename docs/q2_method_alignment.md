@@ -174,5 +174,6 @@ Required semantics:
   irreversible pruning.
 - Learned scores and uncertain constraints may rank states but must not hard
   prune states.
-- For Q2 compute accounting, a native/on-demand mode should count only proposal
-  calls actually made after certification pruning.
+- For Q2 compute accounting, the Scheduling LLM pilot emits per-policy
+  on-demand proposal tokens in addition to shared-cache tokens, so certified
+  pruning can receive credit only when it actually avoids proposal calls.

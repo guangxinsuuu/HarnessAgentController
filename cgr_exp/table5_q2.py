@@ -250,7 +250,9 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
     source_dir = _artifact_run_root(method, Path(artifact_value))
     invalid = []
     if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
-        native_manifest = _read_json_manifest(source_dir / "scheduling_native_q2_manifest.json")
+        native_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_native_q2_manifest.json")
+        if manifest_error:
+            invalid.append(f"scheduling_native_q2_manifest.json {manifest_error}")
         if native_manifest:
             protocol = native_manifest.get("native_protocol")
             if not isinstance(protocol, Mapping):
@@ -278,7 +280,9 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 if len(task_ids) < expected_count:
                     invalid.append(f"scheduling_native_q2_samples.jsonl partial task coverage: {len(task_ids)}/{expected_count}")
     if method == "Tree of Thoughts":
-        tot_manifest = _read_json_manifest(source_dir / "scheduling_tot_q2_manifest.json")
+        tot_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_tot_q2_manifest.json")
+        if manifest_error:
+            invalid.append(f"scheduling_tot_q2_manifest.json {manifest_error}")
         if tot_manifest:
             protocol = tot_manifest.get("native_tot_protocol")
             if not isinstance(protocol, Mapping):
@@ -307,7 +311,9 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 if len(renderings) < expected_count:
                     invalid.append(f"scheduling_tot_q2_trace.jsonl partial finish coverage: {len(renderings)}/{expected_count}")
     if method in {"Target-PRM priority", "PRM-guided MCTS (ReST-MCTS-style)"}:
-        learned_manifest = _read_json_manifest(source_dir / "scheduling_llm_pilot_metrics.json")
+        learned_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_llm_pilot_metrics.json")
+        if manifest_error:
+            invalid.append(f"scheduling_llm_pilot_metrics.json {manifest_error}")
         if learned_manifest:
             alignment = learned_manifest.get("q2_method_alignment")
             if not isinstance(alignment, Mapping) or method not in alignment:
@@ -328,7 +334,9 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 elif not rows:
                     invalid.append(f"{filename} empty jsonl")
     if method in {"Solver-trained priority", "Solver-trained priority + certified pruning"}:
-        learned_manifest = _read_json_manifest(source_dir / "scheduling_llm_pilot_metrics.json")
+        learned_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_llm_pilot_metrics.json")
+        if manifest_error:
+            invalid.append(f"scheduling_llm_pilot_metrics.json {manifest_error}")
         if learned_manifest:
             alignment = learned_manifest.get("q2_method_alignment")
             if not isinstance(alignment, Mapping) or method not in alignment:
@@ -382,14 +390,16 @@ def _expected_count_from_row(row: Mapping[str, object]) -> Optional[int]:
     return None
 
 
-def _read_json_manifest(path: Path) -> Dict[str, object]:
+def _read_json_manifest_for_audit(path: Path) -> tuple[Dict[str, object], str]:
     if not path.exists() or path.stat().st_size == 0:
-        return {}
+        return {}, ""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError as exc:
+        return {}, f"malformed json at line {exc.lineno}"
+    if not isinstance(data, dict):
+        return {}, "must contain a JSON object"
+    return data, ""
 
 
 def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path]) -> Dict[str, object]:

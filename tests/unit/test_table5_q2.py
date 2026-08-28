@@ -403,6 +403,36 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
             self.assertIn("malformed jsonl", audit_rows["Direct / CoT"]["result_blockers"])
 
+    def test_readiness_audit_reports_malformed_native_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Direct / CoT",
+                        "success": 0.45,
+                        "gap": 0.2,
+                        "llm_calls": 100,
+                        "tokens": 1000,
+                        "wall_clock_seconds": 10,
+                        "status": "complete",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_samples.jsonl").write_text(
+                json.dumps({"Method": "Direct / CoT", "task_id": "t0"}) + "\n",
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_manifest.json").write_text("{bad json\n", encoding="utf-8")
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", direct_dir=native, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
+            self.assertIn("scheduling_native_q2_manifest.json malformed json", audit_rows["Direct / CoT"]["result_blockers"])
+
     def test_builder_reads_structured_reference_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -586,6 +616,37 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
             self.assertIn("missing official BFS entrypoints", audit_rows["Tree of Thoughts"]["result_blockers"])
 
+    def test_readiness_audit_reports_malformed_tot_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            (tot / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": 0.6,
+                        "gap": 0.07,
+                        "llm_calls": 1200,
+                        "tokens": 23000000,
+                        "wall_clock_seconds": 300,
+                        "status": "complete",
+                        "source_policy": "native_tot_bfs",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_trace.jsonl").write_text(
+                json.dumps({"event": "finish", "rendering_id": "r0"}) + "\n",
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_manifest.json").write_text("{bad json\n", encoding="utf-8")
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
+            self.assertIn("scheduling_tot_q2_manifest.json malformed json", audit_rows["Tree of Thoughts"]["result_blockers"])
+
     def test_readiness_audit_flags_pending_and_shared_cache_fallback_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -733,6 +794,40 @@ class Table5Q2Test(unittest.TestCase):
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
             self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "False")
             self.assertIn("must not claim full iterative self-training", audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_blockers"])
+
+    def test_readiness_audit_reports_malformed_learned_metrics_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solver = root / "solver"
+            solver.mkdir()
+            _write_csv(
+                solver / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "Solver-trained MLP",
+                        "success": "0.89",
+                        "gap": "0.02",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                        "on_demand_total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(
+                solver / "scheduling_llm_pilot_per_instance.csv",
+                [{"Policy": "Solver-trained MLP", "task_id": "t0"}],
+            )
+            (solver / "scheduling_llm_pilot_ranker.json").write_text("{}", encoding="utf-8")
+            (solver / "scheduling_llm_pilot_metrics.json").write_text("{bad json\n", encoding="utf-8")
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=solver, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Solver-trained priority"]["result_ready"], "False")
+            self.assertIn("scheduling_llm_pilot_metrics.json malformed json", audit_rows["Solver-trained priority"]["result_blockers"])
 
 
 def _write_csv(path: Path, rows) -> None:

@@ -603,6 +603,41 @@ class SchedulingTransferTest(unittest.TestCase):
             for policy_names in policies_by_rendering.values():
                 self.assertEqual(sorted(policy_names), ["Hand heuristic", "Oracle", "Random", "Solver-trained MLP"])
 
+    def test_scheduling_llm_pilot_resume_preserves_unrequested_policy_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            kwargs = dict(
+                client=ScriptedSchedulingClient(model="mock-scheduling"),
+                model="mock-scheduling",
+                seed=37,
+                train_count=8,
+                validation_count=3,
+                test_count=2,
+                job_count=5,
+                machine_count=2,
+                node_budget=35,
+                action_budget=5,
+                records_per_instance=10,
+                rank_epochs=4,
+                perturbation="canonical",
+                batch_size=1,
+                target_prm_train_count=4,
+            )
+            run_scheduling_llm_pilot(root, **kwargs, include_target_prm=True)
+            resumed = run_scheduling_llm_pilot(root, **kwargs, include_solver_certification=True, resume=True)
+            self.assertIn("Target-PRM", resumed["methods"])
+            self.assertIn("Solver-trained MLP + certified pruning", resumed["methods"])
+            self.assertIn("Target-PRM priority", resumed["q2_method_alignment"])
+            with (root / "scheduling_llm_pilot_per_instance.csv").open(newline="", encoding="utf-8") as handle:
+                per_instance = list(csv.DictReader(handle))
+            policies = {row["Policy"] for row in per_instance}
+            self.assertIn("Target-PRM", policies)
+            self.assertIn("Solver-trained MLP + certified pruning", policies)
+            with (root / "scheduling_llm_pilot_proposal_cache.csv").open(newline="", encoding="utf-8") as handle:
+                proposal_rows = list(csv.DictReader(handle))
+            proposal_renderings = [row["rendering_id"] for row in proposal_rows]
+            self.assertEqual(len(proposal_renderings), len(set(proposal_renderings)))
+
     def test_prm_guided_mcts_policy_tracks_visits_and_backups(self) -> None:
         class ConstantRanker:
             def score(self, features):

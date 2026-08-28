@@ -895,7 +895,6 @@ def run_scheduling_llm_pilot(
         policy_names.insert(insert_at, "Solver-trained MLP + certified pruning")
         extra_policy_factories["Solver-trained MLP + certified pruning"] = lambda episode, idx: SchedulingMLPPolicy(episode.hidden_task, ranker)
         policy_certified_pruning["Solver-trained MLP + certified pruning"] = True
-    q2_methods = _q2_methods_for_level2_policies(policy_names)
     table_rows, per_instance_rows, proposal_cache_rows, proposal_state_rows = _evaluate_level2_transfer(
         episodes,
         ranker,
@@ -917,6 +916,8 @@ def run_scheduling_llm_pilot(
         resume=resume,
         progress_label="scheduling-llm-pilot",
     )
+    observed_policy_names = [str(row["Policy"]) for row in table_rows]
+    q2_methods = _q2_methods_for_level2_policies(observed_policy_names)
     proposal_stats = _summarize_cache_rows(proposal_cache_rows)
     metrics = {
         "benchmark": "scheduling_real_llm_pilot",
@@ -960,7 +961,7 @@ def run_scheduling_llm_pilot(
         },
         "q2_method_alignment": q2_method_contracts(q2_methods),
         "learned_search_protocol": _learned_search_protocol_manifest(
-            policy_names,
+            observed_policy_names,
             include_target_prm=include_target_prm,
             include_rest_mcts=include_rest_mcts,
             include_solver_certification=include_solver_certification,
@@ -1379,6 +1380,7 @@ def _evaluate_level2_transfer(
     selected_names = tuple(policy_names) if policy_names is not None else tuple(all_policies)
     policies = {name: all_policies[name] for name in selected_names}
     by_policy: Dict[str, List[Dict[str, object]]] = {name: [] for name in policies}
+    preserved_by_policy: Dict[str, List[Dict[str, object]]] = {}
     per_instance_rows = []
     proposal_cache_rows = []
     proposal_state_rows = []
@@ -1400,11 +1402,32 @@ def _evaluate_level2_transfer(
             for rendering_id, rows_by_policy in rows_by_rendering.items()
             if requested_policy_names.issubset(rows_by_policy)
         }
+        completed_task_ids = {
+            str(row.get("task_id"))
+            for row in existing_per_instance_rows
+            if str(row.get("rendering_id")) in completed_renderings
+        }
+        proposal_cache_rows = [
+            row
+            for row in proposal_cache_rows
+            if str(row.get("rendering_id")) in completed_renderings
+        ]
+        proposal_state_rows = [
+            row
+            for row in proposal_state_rows
+            if (
+                str(row.get("rendering_id")) in completed_renderings
+                or str(row.get("task_id", row.get("instance_id", ""))) in completed_task_ids
+            )
+        ]
         per_instance_rows = []
         for row in existing_per_instance_rows:
             policy = str(row.get("Policy", ""))
             rendering_id = str(row.get("rendering_id"))
-            if rendering_id in completed_renderings and policy in requested_policy_names:
+            if policy not in requested_policy_names:
+                per_instance_rows.append(row)
+                preserved_by_policy.setdefault(policy, []).append(_coerce_result_row(row))
+            elif rendering_id in completed_renderings:
                 per_instance_rows.append(row)
                 by_policy[policy].append(_coerce_result_row(row))
         if progress_label and completed_renderings:
@@ -1461,7 +1484,7 @@ def _evaluate_level2_transfer(
             finished = len({str(row.get("rendering_id")) for row in per_instance_rows})
             if checkpoint_dir is not None and output_prefix is not None and (completed_since_flush >= flush_every or finished == len(episodes)):
                 completed_since_flush = 0
-                partial_table = _summarize_policy_rows(by_policy)
+                partial_table = _summarize_policy_rows({**preserved_by_policy, **by_policy})
                 _write_csv(checkpoint_dir / f"{output_prefix}_table.csv", partial_table)
                 _write_csv(checkpoint_dir / f"{output_prefix}_per_instance.csv", per_instance_rows)
                 _write_csv(checkpoint_dir / f"{output_prefix}_proposal_cache.csv", proposal_cache_rows)
@@ -1474,7 +1497,7 @@ def _evaluate_level2_transfer(
                         flush=True,
                     )
     table_rows = []
-    table_rows = _summarize_policy_rows(by_policy)
+    table_rows = _summarize_policy_rows({**preserved_by_policy, **by_policy})
     return table_rows, per_instance_rows, proposal_cache_rows, proposal_state_rows
 
 

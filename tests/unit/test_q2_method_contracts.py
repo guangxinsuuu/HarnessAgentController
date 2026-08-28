@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from cgr_exp.q2_method_contracts import Q2_METHOD_CONTRACTS, q2_method_contract
+from cgr_exp.q2_source_evidence import q2_source_evidence, q2_source_evidence_methods
 from cgr_exp.table5_q2 import TABLE5_METHODS
 
 
@@ -86,6 +87,34 @@ class Q2MethodContractsTest(unittest.TestCase):
             "selection, expansion, simulation, and backpropagation",
         ):
             self.assertIn(needle, text)
+
+    def test_source_evidence_covers_external_baselines(self) -> None:
+        required = {
+            "CP-SAT",
+            "Direct / CoT",
+            "Self-Consistency",
+            "Best-of-N",
+            "Tree of Thoughts",
+            "Target-PRM priority",
+            "PRM-guided MCTS (ReST-MCTS-style)",
+        }
+        self.assertEqual(required - set(q2_source_evidence_methods()), set())
+
+    def test_source_evidence_matches_contract_urls_and_primitives(self) -> None:
+        for method in q2_source_evidence_methods():
+            evidence = q2_source_evidence(method)
+            contract = q2_method_contract(method)
+            self.assertEqual(evidence["source_url"], contract["source_url"], method)
+            self.assertTrue(evidence["source_files"], method)
+            self.assertTrue(evidence["official_primitives"], method)
+            self.assertTrue(evidence["local_promotion_gates"], method)
+            declared = {str(item) for item in evidence["official_primitives"]}
+            required = {str(item) for item in contract["source_primitives"]}
+            self.assertTrue(required & declared, method)
+
+    def test_source_alignment_matrix_points_to_machine_readable_evidence(self) -> None:
+        text = Path("docs/q2_source_alignment_matrix.md").read_text(encoding="utf-8")
+        self.assertIn("cgr_exp/q2_source_evidence.py", text)
 
 
 if __name__ == "__main__":

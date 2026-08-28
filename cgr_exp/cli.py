@@ -7,6 +7,7 @@ from dataclasses import replace
 
 from cgr_exp.analysis.statistics import write_seed_aggregate
 from cgr_exp.certification_table_readiness import audit_certification_tables
+from cgr_exp.experiment_status_report import build_current_experiment_status
 from cgr_exp.experiments import PRESETS, run_experiment
 from cgr_exp.game24_experiments import run_game24_offline_experiment
 from cgr_exp.game24_llm_pilot import ScriptedGame24Client, run_game24_llm_pilot, run_game24_llm_pilot_from_env
@@ -75,6 +76,7 @@ COMMANDS = [
     "audit-table-q4-tau",
     "run-table6-authority",
     "audit-certification-tables",
+    "build-current-experiment-status",
 ]
 
 
@@ -291,6 +293,12 @@ def main() -> None:
             p.add_argument("--certification-dir", type=Path, default=None)
             p.add_argument("--authority-dir", type=Path, default=None)
             p.add_argument("--expected-test-count", type=int, default=100)
+        if name == "build-current-experiment-status":
+            p.add_argument("--q2-readiness", type=Path, default=Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv"))
+            p.add_argument("--q4-readiness", type=Path, default=Path("runs/q4_tau_table_current_audit/q4_tau_readiness.csv"))
+            p.add_argument("--certification-readiness", type=Path, default=Path("runs/certification_tables_readiness/certification_tables_readiness.csv"))
+            p.add_argument("--q2-implementation-matrix", type=Path, default=Path("runs/q2_implementation_matrix/q2_implementation_matrix.csv"))
+            p.add_argument("--audit-command", default="PYTHON_BIN=.venv/bin/python scripts/run_paper_audits.sh all")
     args, rest = parser.parse_known_args()
     if args.command in (None, "run-smoke"):
         import sys
@@ -1130,6 +1138,26 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'certification_tables_readiness.csv'}")
+            return
+        if args.command == "build-current-experiment-status":
+            manifest = build_current_experiment_status(
+                args.output_dir,
+                q2_readiness=args.q2_readiness,
+                q4_readiness=args.q4_readiness,
+                certification_readiness=args.certification_readiness,
+                q2_implementation_matrix=args.q2_implementation_matrix,
+                audit_command=args.audit_command,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "produced_artifacts": manifest["produced_artifacts"],
+                "input_artifacts": manifest["input_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'current_experiment_status.md'}")
             return
         if args.command == "run-transfer-matrix":
             seeds = [int(part) for part in (args.seeds or str(args.seed)).split(",") if part.strip()]

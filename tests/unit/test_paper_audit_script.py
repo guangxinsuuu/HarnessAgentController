@@ -21,7 +21,9 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("verify-q2-source-refs", text)
         self.assertIn("verify-q4-tau-source-refs", text)
         self.assertIn("audit-certification-tables", text)
+        self.assertIn("build-current-experiment-status", text)
         self.assertIn("llm_key: not required", text)
+        self.assertIn("STATUS_REPORT_DIR", text)
         result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -51,6 +53,7 @@ class PaperAuditScriptTest(unittest.TestCase):
                 "CERTIFICATION_AUDIT_DIR": str(root / "cert_audit"),
                 "CERTIFICATION_DIR": str(root / "missing_cert"),
                 "AUTHORITY_DIR": str(root / "missing_authority"),
+                "STATUS_REPORT_DIR": str(root / "status"),
             }
             env.pop("CGR_LLM_API_KEY", None)
             result = subprocess.run(
@@ -70,6 +73,7 @@ class PaperAuditScriptTest(unittest.TestCase):
             self.assertTrue((root / "q4_source_audit" / "q4_tau_source_evidence_audit.csv").exists())
             self.assertTrue((root / "q4_source_refs" / "q4_tau_source_ref_verification.csv").exists())
             self.assertTrue((root / "cert_audit" / "certification_tables_readiness.csv").exists())
+            self.assertTrue((root / "status" / "current_experiment_status.md").exists())
 
     def test_current_status_doc_records_audit_outputs_and_pending_tau(self) -> None:
         text = Path("docs/current_experiment_status.md").read_text(encoding="utf-8")

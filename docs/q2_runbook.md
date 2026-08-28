@@ -71,7 +71,8 @@ PYTHON_BIN=.venv/bin/python scripts/run_paper_audits.sh all
 
 This audit-only script does not call the LLM API. It checks source evidence,
 pinned source refs, table readiness, and certification authority artifacts using
-the current run directories.
+the current run directories, then writes a generated status report to
+`runs/current_experiment_status/current_experiment_status.md`.
 
 This writes the implementation matrix, source-evidence audit, source-ref
 verification, and table readiness audit without using the LLM API. The

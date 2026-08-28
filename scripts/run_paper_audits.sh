@@ -26,11 +26,12 @@ Q4_SOLVER_CONTROLLER_DIR="${Q4_SOLVER_CONTROLLER_DIR:-runs/q4_tau_solver_control
 CERTIFICATION_AUDIT_DIR="${CERTIFICATION_AUDIT_DIR:-runs/certification_tables_readiness}"
 CERTIFICATION_DIR="${CERTIFICATION_DIR:-runs/q2_structured_cert_reference_100_seed0}"
 AUTHORITY_DIR="${AUTHORITY_DIR:-runs/table7_grounding_robustness_100_seed0}"
+STATUS_REPORT_DIR="${STATUS_REPORT_DIR:-runs/current_experiment_status}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/run_paper_audits.sh [all|q2|q4|certification]
+  scripts/run_paper_audits.sh [all|q2|q4|certification|status]
 
 This script runs paper-level promotion audits only. It does not call the LLM
 API, set API keys, or generate new experiment trajectories.
@@ -95,11 +96,23 @@ print_summary() {
   print "q2_audit_dir: ${Q2_TABLE_AUDIT_DIR}"
   print "q4_audit_dir: ${Q4_TABLE_AUDIT_DIR}"
   print "certification_audit_dir: ${CERTIFICATION_AUDIT_DIR}"
+  print "status_report_dir: ${STATUS_REPORT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: not required"
   else
     print "llm_key: present but unused"
   fi
+}
+
+build_status_report() {
+  "${PYTHON_BIN}" -m cgr_exp.cli build-current-experiment-status \
+    --output-dir "${STATUS_REPORT_DIR}" \
+    --q2-readiness "${Q2_TABLE_AUDIT_DIR}/table5_q2_readiness.csv" \
+    --q4-readiness "${Q4_TABLE_AUDIT_DIR}/q4_tau_readiness.csv" \
+    --certification-readiness "${CERTIFICATION_AUDIT_DIR}/certification_tables_readiness.csv" \
+    --q2-implementation-matrix "${Q2_IMPLEMENTATION_MATRIX_DIR}/q2_implementation_matrix.csv" \
+    --audit-command "PYTHON_BIN=${PYTHON_BIN} scripts/run_paper_audits.sh all" \
+    --overwrite
 }
 
 case "${MODE}" in
@@ -108,6 +121,7 @@ case "${MODE}" in
     audit_q2
     audit_q4
     audit_certification
+    build_status_report
     ;;
   q2)
     print_summary
@@ -120,6 +134,10 @@ case "${MODE}" in
   certification)
     print_summary
     audit_certification
+    ;;
+  status)
+    print_summary
+    build_status_report
     ;;
   -h|--help|help) usage ;;
   *)

@@ -7,14 +7,16 @@ from typing import Dict, Iterable, List, Mapping, Optional
 
 
 TABLE5_METHODS = [
-    ("Direct / CoT", "native direct reasoning", None),
-    ("Self-Consistency", "native parallel sampling", None),
-    ("Best-of-N", "native matched-budget sampling", None),
-    ("Tree of Thoughts", "online LLM frontier guidance", "GPT-frontier-rank / ToT-style"),
-    ("Target-PRM priority", "target LLM states", "Target-PRM"),
-    ("PRM-guided MCTS (ReST-MCTS-style)", "target LLM states + search", "PRM-guided MCTS (ReST-MCTS-style)"),
-    ("Solver-trained priority", "solver states only", "Solver-trained MLP"),
-    ("Solver-trained priority + certified pruning", "solver states only + certified pruning", "Solver-trained MLP + certified pruning"),
+    ("CP-SAT", "Structured-input solver", None, "structured"),
+    ("EST / list scheduling heuristic", "Structured-input heuristic", None, "structured"),
+    ("Direct / CoT", "Frozen", None, "native"),
+    ("Self-Consistency", "Frozen", None, "native"),
+    ("Best-of-N", "Frozen", None, "native"),
+    ("Tree of Thoughts", "Online", "GPT-frontier-rank / ToT-style", "scheduling"),
+    ("Target-PRM priority", "In-domain trained", "Target-PRM", "scheduling"),
+    ("PRM-guided MCTS (ReST-MCTS-style)", "In-domain trained", "PRM-guided MCTS (ReST-MCTS-style)", "scheduling"),
+    ("Solver-trained priority", "Zero-shot transfer", "Solver-trained MLP", "scheduling"),
+    ("Solver-trained priority + certified pruning", "Zero-shot transfer", "Solver-trained MLP + certified pruning", "scheduling"),
 ]
 
 
@@ -29,9 +31,12 @@ def build_table5_q2_results(
     best_of_n_dir: Optional[Path] = None,
     rest_mcts_dir: Optional[Path] = None,
     solver_certification_dir: Optional[Path] = None,
+    structured_dir: Optional[Path] = None,
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     method_dirs: Dict[str, Optional[Path]] = {
+        "CP-SAT": structured_dir,
+        "EST / list scheduling heuristic": structured_dir,
         "Direct / CoT": direct_dir,
         "Self-Consistency": self_consistency_dir,
         "Best-of-N": best_of_n_dir,
@@ -42,15 +47,21 @@ def build_table5_q2_results(
         "Solver-trained priority + certified pruning": solver_certification_dir,
     }
     rows: List[Dict[str, object]] = []
-    for method, training_states, source_policy in TABLE5_METHODS:
+    for method, transfer_setting, source_policy, source_kind in TABLE5_METHODS:
         source_dir = method_dirs[method]
-        row = _pending_row(method, training_states, source_dir)
-        if source_dir is not None and source_policy is not None:
-            loaded = _row_from_scheduling_artifacts(method, training_states, source_policy, source_dir, expected_test_count)
+        row = _pending_row(method, transfer_setting, source_dir)
+        if source_dir is not None and source_kind == "structured":
+            loaded = _row_from_structured_artifacts(method, transfer_setting, source_dir)
+            if loaded is not None:
+                row = loaded
+        elif source_dir is not None and source_policy is not None:
+            loaded = _row_from_scheduling_artifacts(method, transfer_setting, source_policy, source_dir, expected_test_count)
+            if loaded is None:
+                loaded = _row_from_native_artifacts(method, transfer_setting, source_dir)
             if loaded is not None:
                 row = loaded
         elif source_dir is not None:
-            loaded = _row_from_native_artifacts(method, training_states, source_dir)
+            loaded = _row_from_native_artifacts(method, transfer_setting, source_dir)
             if loaded is not None:
                 row = loaded
         rows.append(row)
@@ -67,6 +78,7 @@ def build_table5_q2_results(
         "expected_test_count": expected_test_count,
         "gpt_frontier_rank_dir": None if gpt_frontier_rank_dir is None else str(gpt_frontier_rank_dir),
         "target_prm_dir": None if target_prm_dir is None else str(target_prm_dir),
+        "structured_dir": None if structured_dir is None else str(structured_dir),
         "rows": rows,
         "produced_artifacts": [csv_path.name, tex_path.name, manifest_path.name],
     }
@@ -74,10 +86,10 @@ def build_table5_q2_results(
     return manifest
 
 
-def _pending_row(method: str, training_states: str, source_dir: Optional[Path]) -> Dict[str, object]:
+def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path]) -> Dict[str, object]:
     return {
         "Method": method,
-        "Training states": training_states,
+        "Transfer setting": transfer_setting,
         "Success": "--",
         "Gap": "--",
         "LLM calls": "--",
@@ -92,7 +104,7 @@ def _pending_row(method: str, training_states: str, source_dir: Optional[Path]) 
 
 def _row_from_scheduling_artifacts(
     method: str,
-    training_states: str,
+    transfer_setting: str,
     source_policy: str,
     source_dir: Path,
     expected_test_count: int,
@@ -114,7 +126,7 @@ def _row_from_scheduling_artifacts(
     wall_clock = _wall_clock_seconds(source_dir)
     return {
         "Method": method,
-        "Training states": training_states,
+        "Transfer setting": transfer_setting,
         "Success": _fmt_float(_as_float(source_row.get("success")), 4),
         "Gap": _fmt_float(_as_float(source_row.get("gap")), 5),
         "LLM calls": _fmt_count(total_calls) if instance_count else "--",
@@ -131,7 +143,7 @@ def _row_from_scheduling_artifacts(
     }
 
 
-def _row_from_native_artifacts(method: str, training_states: str, source_dir: Path) -> Optional[Dict[str, object]]:
+def _row_from_native_artifacts(method: str, transfer_setting: str, source_dir: Path) -> Optional[Dict[str, object]]:
     table_path = source_dir / "table5_native_row.json"
     if table_path.exists():
         data = json.loads(table_path.read_text(encoding="utf-8"))
@@ -143,7 +155,7 @@ def _row_from_native_artifacts(method: str, training_states: str, source_dir: Pa
         table_path = source_dir / "scheduling_native_q2_table.csv"
     return {
         "Method": method,
-        "Training states": training_states,
+        "Transfer setting": transfer_setting,
         "Success": _fmt_float(_as_float(data.get("success", data.get("Success"))), 4),
         "Gap": _fmt_float(_as_float(data.get("gap", data.get("Gap"))), 5),
         "LLM calls": _fmt_count(_as_float(data.get("llm_calls"))),
@@ -153,6 +165,28 @@ def _row_from_native_artifacts(method: str, training_states: str, source_dir: Pa
         "source_artifact": str(table_path),
         "source_policy": str(data.get("source_policy", "native")),
         "notes": str(data.get("notes", "native protocol row")),
+    }
+
+
+def _row_from_structured_artifacts(method: str, transfer_setting: str, source_dir: Path) -> Optional[Dict[str, object]]:
+    table_path = source_dir / "scheduling_structured_q2_table.csv"
+    if not table_path.exists():
+        return None
+    data = next((row for row in _read_csv(table_path) if row.get("Method") == method), None)
+    if data is None:
+        return None
+    return {
+        "Method": method,
+        "Transfer setting": transfer_setting,
+        "Success": "--" if data.get("success", "") == "" else _fmt_float(_as_float(data.get("success")), 4),
+        "Gap": "--" if data.get("gap", "") == "" else _fmt_float(_as_float(data.get("gap")), 5),
+        "LLM calls": "0",
+        "Tokens": "0",
+        "Wall-clock": _fmt_seconds(_as_float(data.get("wall_clock_seconds"))),
+        "Status": str(data.get("status", "complete")),
+        "source_artifact": str(table_path),
+        "source_policy": "structured",
+        "notes": str(data.get("notes", "structured input reference")),
     }
 
 
@@ -188,9 +222,9 @@ def _latex_table(rows: List[Dict[str, object]]) -> str:
         "\\caption{Q2 end-to-end quality--compute comparison on real-LLM Scheduling.}",
         "\\label{tab:q2_results}",
         "\\small",
-        "\\begin{tabular}{lrrrrrl}",
+        "\\begin{tabular}{llrrrrrl}",
         "\\toprule",
-        "Method & Success $\\uparrow$ & Gap $\\downarrow$ & LLM calls $\\downarrow$ & Tokens $\\downarrow$ & Wall-clock $\\downarrow$ & Status \\\\",
+        "Method & Transfer setting & Success $\\uparrow$ & Gap $\\downarrow$ & LLM calls $\\downarrow$ & Tokens $\\downarrow$ & Wall-clock $\\downarrow$ & Status \\\\",
         "\\midrule",
     ]
     for row in rows:
@@ -198,6 +232,7 @@ def _latex_table(rows: List[Dict[str, object]]) -> str:
             " & ".join(
                 [
                     _latex_escape(str(row["Method"])),
+                    _latex_escape(str(row["Transfer setting"])),
                     str(row["Success"]),
                     str(row["Gap"]),
                     str(row["LLM calls"]),

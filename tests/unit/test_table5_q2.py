@@ -172,6 +172,73 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(by_method["Best-of-N"]["Success"], "0.7000")
             self.assertEqual(by_method["Best-of-N"]["LLM calls"], "800")
 
+    def test_builder_reads_structured_reference_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            structured = root / "structured"
+            structured.mkdir()
+            _write_csv(
+                structured / "scheduling_structured_q2_table.csv",
+                [
+                    {
+                        "Method": "CP-SAT",
+                        "Transfer setting": "Structured-input solver",
+                        "success": "",
+                        "gap": "",
+                        "llm_calls": "0",
+                        "tokens": "0",
+                        "wall_clock_seconds": "0.01",
+                        "status": "partial: 0/100",
+                        "notes": "dependency missing",
+                    },
+                    {
+                        "Method": "EST / list scheduling heuristic",
+                        "Transfer setting": "Structured-input heuristic",
+                        "success": "0.25",
+                        "gap": "0.4",
+                        "llm_calls": "0",
+                        "tokens": "0",
+                        "wall_clock_seconds": "0.02",
+                        "status": "complete",
+                        "notes": "heuristic",
+                    },
+                ],
+            )
+            out = root / "out"
+            build_table5_q2_results(out, solver_prior_dir=root / "missing", structured_dir=structured)
+            by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
+            self.assertEqual(by_method["CP-SAT"]["Success"], "--")
+            self.assertEqual(by_method["CP-SAT"]["Tokens"], "0")
+            self.assertEqual(by_method["EST / list scheduling heuristic"]["Success"], "0.2500")
+            self.assertEqual(by_method["EST / list scheduling heuristic"]["Transfer setting"], "Structured-input heuristic")
+
+    def test_builder_reads_native_tot_row_when_shared_artifact_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            (tot / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": 0.6,
+                        "gap": 0.07,
+                        "llm_calls": 1200,
+                        "tokens": 23000000,
+                        "wall_clock_seconds": 300,
+                        "status": "complete",
+                        "source_policy": "native_tot_bfs",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            build_table5_q2_results(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot)
+            by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
+            self.assertEqual(by_method["Tree of Thoughts"]["Status"], "complete")
+            self.assertEqual(by_method["Tree of Thoughts"]["Tokens"], "23.00M")
+            self.assertEqual(by_method["Tree of Thoughts"]["source_policy"], "native_tot_bfs")
+
 
 def _write_csv(path: Path, rows) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:

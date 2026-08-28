@@ -244,6 +244,7 @@ def main() -> None:
             p.add_argument("--best-of-n-dir", type=Path, default=None)
             p.add_argument("--rest-mcts-dir", type=Path, default=None)
             p.add_argument("--solver-certification-dir", type=Path, default=None)
+            p.add_argument("--structured-dir", type=Path, default=None)
         if name == "run-table6-authority":
             p.add_argument("--train-count", type=int, default=200)
             p.add_argument("--validation-count", type=int, default=50)
@@ -871,6 +872,7 @@ def main() -> None:
                 best_of_n_dir=args.best_of_n_dir,
                 rest_mcts_dir=args.rest_mcts_dir,
                 solver_certification_dir=args.solver_certification_dir,
+                structured_dir=args.structured_dir,
             )
             command_manifest = {
                 "command": args.command,

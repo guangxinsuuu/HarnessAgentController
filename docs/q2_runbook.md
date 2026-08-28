@@ -93,6 +93,12 @@ Structured, native, ToT, and learned-search artifacts also embed
 directory lacks this field, the Q2 readiness audit keeps that row pending until
 the row is rerun with the current code.
 
+The same rule applies to certification artifacts. Older directories that only
+contain `scheduling_certification_table.csv` or summary rows remain historical
+references; they are not promotion-ready until rerun with the current code that
+writes `table6_clean_certification.csv`, `table7_grounding_robustness.csv`,
+per-instance coverage, and the explicit `certification_protocol`.
+
 ## Row Contracts and Commands
 
 ### CP-SAT
@@ -442,8 +448,8 @@ Before promoting either certification table, run:
 ```bash
 python3 -m cgr_exp.cli audit-certification-tables \
   --output-dir runs/certification_tables_readiness \
-  --certification-dir runs/q2_structured_cert_reference_100_seed0 \
-  --authority-dir runs/table7_grounding_robustness_100_seed0 \
+  --certification-dir runs/q2_structured_cert_reference_100_seed0_budget200_protocol_v2 \
+  --authority-dir runs/table7_grounding_robustness_100_seed0_budget200_protocol_v2 \
   --expected-test-count 100 \
   --overwrite
 ```
@@ -451,6 +457,56 @@ python3 -m cgr_exp.cli audit-certification-tables \
 This audit checks table-specific alias files, per-task coverage, the clean
 priority/pruning rows, required robustness conditions, and the certification
 authority protocol.
+
+If the audit is blocked because an old directory is missing
+`table6_clean_certification.csv` or `certification_protocol`, rerun Table 6 into
+a fresh protocol-specific directory:
+
+```bash
+python3 -m cgr_exp.cli run-scheduling-certification \
+  --output-dir runs/q2_structured_cert_reference_100_seed0_budget200_protocol_v2 \
+  --seed 0 \
+  --train-count 200 \
+  --validation-count 50 \
+  --test-count 100 \
+  --job-count 6 \
+  --machine-count 3 \
+  --node-budget 200 \
+  --action-budget 8 \
+  --records-per-instance 60 \
+  --rank-epochs 25 \
+  --useful-action-recall 1.0 \
+  --perturbation mixed \
+  --overwrite
+```
+
+If the audit is blocked because Table 7 authority artifacts are missing, rerun
+the grounding/authority sweep:
+
+```bash
+python3 -m cgr_exp.cli run-table6-authority \
+  --output-dir runs/table7_grounding_robustness_100_seed0_budget200_protocol_v2 \
+  --seed 0 \
+  --train-count 200 \
+  --validation-count 50 \
+  --test-count 100 \
+  --job-count 6 \
+  --machine-count 3 \
+  --node-budget 200 \
+  --action-budget 8 \
+  --records-per-instance 60 \
+  --rank-epochs 25 \
+  --corruption-seeds 0,1,2 \
+  --overwrite
+```
+
+After both finish, rerun:
+
+```bash
+CERTIFICATION_DIR=runs/q2_structured_cert_reference_100_seed0_budget200_protocol_v2 \
+AUTHORITY_DIR=runs/table7_grounding_robustness_100_seed0_budget200_protocol_v2 \
+PYTHON_BIN=.venv/bin/python scripts/run_paper_audits.sh certification
+```
 
 ## Fast Combined Runs
 

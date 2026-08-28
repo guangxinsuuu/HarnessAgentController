@@ -93,6 +93,11 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("q2_learned_search_100_seed0_rest_gate_v2", text)
         self.assertIn("q2_tot_bfs_100_seed0_tot_gate_v2", text)
         self.assertIn("q2_table_current_seed0_protocol_v2_audit", text)
+        self.assertIn("q2_structured_cert_reference_100_seed0_budget200_protocol_v2", text)
+        self.assertIn("table7_grounding_robustness_100_seed0_budget200_protocol_v2", text)
+        self.assertIn("run-scheduling-certification", text)
+        self.assertIn("run-table6-authority", text)
+        self.assertIn("certification_protocol", text)
         self.assertIn("q2_source_ref_verification", text)
         self.assertNotIn("protocol_v2_protocol_v2", text)
 

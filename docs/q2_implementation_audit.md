@@ -19,6 +19,15 @@ logic and the completed run artifact match the claimed scope.
 | Solver prior | `cgr_exp/scheduling_transfer.py` trains only on solver-induced source traces and freezes before target evaluation. | `tests/unit/test_scheduling_transfer.py`; leakage manifests. | `runs/scheduling_table5_prm_rest_cert_100_seed0` complete 100-instance row exists. | Result-ready for shared-replay zero-shot transfer. |
 | Solver prior + certification | `cgr_exp/scheduling_transfer.py` adds certified pruning only for this policy; `table6_authority.py` audits authority boundaries; per-policy on-demand proposal token accounting is now emitted alongside shared-cache tokens. | `tests/unit/test_scheduling_transfer.py`, `tests/unit/test_table6_authority.py`. | `runs/scheduling_table5_prm_rest_cert_100_seed0` complete 100-instance row exists, but it predates the on-demand accounting field. | Shared-replay result-ready; rerun needed for Q2 on-demand token numbers. |
 
+## Token Accounting Rule
+
+`build-table5-q2` prefers `on_demand_total_tokens` when a Scheduling LLM pilot
+artifact contains per-policy proposal accounting. If the artifact predates that
+field, the builder falls back to shared-cache `total_tokens` and writes
+`tokens use shared-cache fallback accounting` in the row notes. Rows with this
+fallback are acceptable for controller-isolation comparisons but should not be
+used as final Q2 end-to-end compute claims.
+
 ## Immediate Run Requirements
 
 To make the Q2 table result-complete without ToT:

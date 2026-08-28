@@ -148,6 +148,7 @@ def main() -> None:
             p.add_argument("--perturbation", default="mixed")
             p.add_argument("--mock", action="store_true", default=False)
             p.add_argument("--include-gpt-value", action="store_true", default=False)
+            p.add_argument("--include-gpt-frontier-ranking", action="store_true", default=False)
         if name == "run-scheduling-diagnosis":
             p.add_argument("--source-count", type=int, default=200)
             p.add_argument("--source-validation-count", type=int, default=50)
@@ -450,6 +451,7 @@ def main() -> None:
                     parallel_episodes=args.parallel_episodes,
                     resume=args.resume,
                     include_gpt_value=args.include_gpt_value,
+                    include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
                 )
             else:
                 metrics = run_scheduling_llm_pilot_from_env(
@@ -471,6 +473,7 @@ def main() -> None:
                     parallel_episodes=args.parallel_episodes,
                     resume=args.resume,
                     include_gpt_value=args.include_gpt_value,
+                    include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
                 )
             manifest = {
                 "command": args.command,
@@ -484,6 +487,7 @@ def main() -> None:
                 "resume": args.resume,
                 "mock": args.mock,
                 "include_gpt_value": args.include_gpt_value,
+                "include_gpt_frontier_ranking": args.include_gpt_frontier_ranking,
                 "live_network_required": metrics["live_network_required"],
                 "training_source": metrics["training_source"],
                 "target_training_trace_count": metrics["target_training_trace_count"],
@@ -510,6 +514,7 @@ def main() -> None:
                 parallel_episodes=args.parallel_episodes,
                 perturbation=args.perturbation,
                 include_gpt_value=args.include_gpt_value,
+                include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
             )
             print(
                 "preflight "

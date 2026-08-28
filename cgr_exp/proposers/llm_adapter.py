@@ -6,7 +6,7 @@ import json
 import os
 import threading
 import time
-from typing import Protocol
+from typing import Sequence, Protocol
 from urllib import error
 from urllib import request
 
@@ -19,6 +19,9 @@ class LLMClient(Protocol):
         ...
 
     def score_state(self, *args, **kwargs):
+        ...
+
+    def score_frontier_states(self, *args, **kwargs):
         ...
 
 
@@ -41,6 +44,10 @@ class MockLLMClient:
     def score_state(self, *args, **kwargs):
         del args, kwargs
         return {"score": 0.0, "input_tokens": 0, "output_tokens": 0, "latency": 0.0}
+
+    def score_frontier_states(self, *args, **kwargs):
+        nodes = kwargs.get("nodes", [])
+        return {"scores": [0.0 for _ in nodes], "input_tokens": 0, "output_tokens": 0, "latency": 0.0}
 
 
 @dataclass(frozen=True)
@@ -73,6 +80,10 @@ class EnvConfiguredLLMClient:
         raise RuntimeError("EnvConfiguredLLMClient is a provider-neutral configuration stub; use a concrete network client outside smoke/CI")
 
     def score_state(self, *args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("EnvConfiguredLLMClient is a provider-neutral configuration stub; use a concrete network client outside smoke/CI")
+
+    def score_frontier_states(self, *args, **kwargs):
         del args, kwargs
         raise RuntimeError("EnvConfiguredLLMClient is a provider-neutral configuration stub; use a concrete network client outside smoke/CI")
 
@@ -191,6 +202,43 @@ class OpenAICompatibleHTTPClient:
             "raw_output": content,
         }
 
+    def score_frontier_states(self, *args, **kwargs):
+        task = kwargs.get("task")
+        nodes = list(kwargs.get("nodes", []))
+        model = kwargs.get("model") or self.model
+        started = time.perf_counter()
+        prompt = self._prompt_for_frontier_scores(task, nodes)
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "Rank search frontier states for Tree-of-Thought style value guidance. Return only JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "response_format": {"type": "json_object"},
+        }
+        req = request.Request(
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(payload, sort_keys=True).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        body = self._post_json(req)
+        content = body["choices"][0]["message"]["content"]
+        scores = _parse_frontier_scores(content, nodes)
+        usage = body.get("usage", {})
+        return {
+            "scores": scores,
+            "input_tokens": int(usage.get("prompt_tokens", 0)),
+            "output_tokens": int(usage.get("completion_tokens", 0)),
+            "latency": time.perf_counter() - started,
+            "raw_output": content,
+        }
+
     def _prompt_for_state_score(self, task, node) -> str:
         if isinstance(task, SchedulingTask) and hasattr(node, "structured_state"):
             scheduled = tuple(node.structured_state.get("scheduled", []))
@@ -230,6 +278,59 @@ class OpenAICompatibleHTTPClient:
                 "instruction": "Return a JSON object with score in [0, 1]. Higher means this state is more promising for reaching the task goal.",
                 "response_schema": {"score": "number between 0 and 1"},
                 "node": _safe_jsonable(node),
+            },
+            sort_keys=True,
+        )
+
+    def _prompt_for_frontier_scores(self, task, nodes: Sequence[object]) -> str:
+        if isinstance(task, SchedulingTask):
+            candidates = []
+            for idx, node in enumerate(nodes):
+                scheduled = tuple(getattr(node, "structured_state", {}).get("scheduled", []))
+                candidates.append(
+                    {
+                        "candidate_id": str(getattr(node, "node_id", f"candidate-{idx}")),
+                        "partial_schedule": list(scheduled),
+                        "machine_loads": getattr(node, "structured_state", {}).get("machine_loads", {}),
+                        "eligible_jobs": task.ready_jobs(scheduled),
+                        "depth": getattr(node, "depth", 0),
+                        "lower_bound": getattr(node, "lower_bound", None),
+                        "incumbent_at_creation": getattr(node, "incumbent_at_creation", None),
+                    }
+                )
+            return json.dumps(
+                {
+                    "task": "precedence_constrained_scheduling_frontier_ranking",
+                    "task_id": task.task_id,
+                    "instruction": (
+                        "Rank all candidate frontier states from most to least promising for finding an optimal or near-optimal "
+                        "complete schedule within the remaining search budget. Return each candidate_id exactly once. "
+                        "Use only the visible scheduling data and candidate states; do not invent hidden oracle labels."
+                    ),
+                    "response_schema": {"ranking": ["candidate_id from most promising to least promising"]},
+                    "jobs": {
+                        job: {
+                            "duration": task.durations[job],
+                            "release_time": task.release_times[job],
+                            "due_date": task.due_dates[job],
+                            "allowed_machines": list(task.allowed[job]),
+                            "predecessors": list(task.predecessors.get(job, ())),
+                        }
+                        for job in task.durations
+                    },
+                    "machines": list(task.machines),
+                    "candidates": candidates,
+                },
+                sort_keys=True,
+            )
+        return json.dumps(
+            {
+                "instruction": "Rank all candidate frontier states from most to least promising. Return each candidate_id exactly once.",
+                "response_schema": {"ranking": ["candidate_id from most promising to least promising"]},
+                "candidates": [
+                    {"candidate_id": str(getattr(node, "node_id", f"candidate-{idx}")), "node": _safe_jsonable(node)}
+                    for idx, node in enumerate(nodes)
+                ],
             },
             sort_keys=True,
         )
@@ -330,6 +431,29 @@ def _safe_jsonable(value):
     if isinstance(value, (list, tuple)):
         return [_safe_jsonable(v) for v in value]
     return repr(value)
+
+
+def _parse_frontier_scores(raw: str, nodes: Sequence[object]) -> list[float]:
+    node_ids = [str(getattr(node, "node_id", f"candidate-{idx}")) for idx, node in enumerate(nodes)]
+    fallback = [float(len(nodes) - idx) for idx in range(len(nodes))]
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return fallback
+    if isinstance(parsed, dict) and isinstance(parsed.get("scores"), dict):
+        score_map = parsed["scores"]
+        scores = []
+        for node_id in node_ids:
+            try:
+                scores.append(float(score_map.get(node_id, 0.0)))
+            except (TypeError, ValueError):
+                scores.append(0.0)
+        return scores
+    ranking = parsed.get("ranking") if isinstance(parsed, dict) else parsed
+    if not isinstance(ranking, list):
+        return fallback
+    rank_map = {str(node_id): float(len(ranking) - idx) for idx, node_id in enumerate(ranking)}
+    return [rank_map.get(node_id, 0.0) for node_id in node_ids]
 
 
 class RealLLMProposerAdapter:

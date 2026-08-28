@@ -264,6 +264,47 @@ class LLMAdapterTest(unittest.TestCase):
         self.assertIn("eligible_jobs", prompt)
         self.assertNotIn("best_descendant_objective", prompt)
 
+    def test_openai_compatible_http_client_scores_scheduling_frontier_ranking(self) -> None:
+        requests = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "choices": [{"message": {"content": '{"ranking":["b","a"]}'}}],
+                        "usage": {"prompt_tokens": 31, "completion_tokens": 5},
+                    }
+                ).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            requests.append((request, timeout))
+            return FakeResponse()
+
+        task = generate_scheduling_fixture(random.Random(27), "sched-frontier", job_count=4, machine_count=2)
+        root = task.root_node()
+        a = root.with_updates(node_id="a")
+        b = root.with_updates(node_id="b")
+        client = OpenAICompatibleHTTPClient(
+            base_url="https://llm.example/v1",
+            api_key="secret-key",
+            model="test-model",
+            urlopen=fake_urlopen,
+        )
+        response = client.score_frontier_states(task=task, nodes=[a, b], model="test-model")
+        self.assertEqual(response["scores"], [1.0, 2.0])
+        self.assertEqual(response["input_tokens"], 31)
+        body = json.loads(requests[0][0].data.decode("utf-8"))
+        prompt = json.loads(body["messages"][1]["content"])
+        self.assertEqual(prompt["task"], "precedence_constrained_scheduling_frontier_ranking")
+        self.assertEqual(len(prompt["candidates"]), 2)
+        self.assertNotIn("best_descendant_objective", prompt)
+
     def test_openai_compatible_http_client_retries_timeout(self) -> None:
         calls = {"count": 0}
 

@@ -262,6 +262,29 @@ class RealLLMValuePolicy:
         return float(response.get("score", 0.0))
 
 
+class RealLLMFrontierRankingPolicy:
+    name = "real_llm_frontier_ranking"
+
+    def __init__(self, task: SchedulingTask, client, model: str):
+        self.task = task
+        self.client = client
+        self.model = model
+        self.cost = CostLedger()
+
+    def score(self, node: SearchNode) -> float:
+        return self.score_frontier([node])[0]
+
+    def score_frontier(self, frontier: Sequence[SearchNode]) -> List[float]:
+        response = self.client.score_frontier_states(task=self.task, nodes=list(frontier), model=self.model)
+        self.cost = self.cost + CostLedger(
+            evaluation_calls=1,
+            input_tokens=int(response.get("input_tokens", 0)),
+            output_tokens=int(response.get("output_tokens", 0)),
+            wall_clock_seconds=float(response.get("latency", 0.0)),
+        )
+        return [float(score) for score in response.get("scores", [])]
+
+
 def make_level2_scheduling_episodes(tasks: Sequence[SchedulingTask], seed: int = 0, perturbation: str = "mixed") -> List[Level2SchedulingEpisode]:
     rng = random.Random(seed)
     episodes = []
@@ -477,6 +500,7 @@ def run_scheduling_llm_pilot_from_env(
     parallel_episodes: int = 1,
     resume: bool = False,
     include_gpt_value: bool = False,
+    include_gpt_frontier_ranking: bool = False,
 ) -> Dict[str, object]:
     client = OpenAICompatibleHTTPClient.from_env()
     client.timeout = timeout
@@ -499,6 +523,7 @@ def run_scheduling_llm_pilot_from_env(
         parallel_episodes=parallel_episodes,
         resume=resume,
         include_gpt_value=include_gpt_value,
+        include_gpt_frontier_ranking=include_gpt_frontier_ranking,
     )
 
 
@@ -517,6 +542,7 @@ def preflight_scheduling_llm_pilot(
     parallel_episodes: int = 1,
     perturbation: str = "mixed",
     include_gpt_value: bool = False,
+    include_gpt_frontier_ranking: bool = False,
     env=None,
 ) -> Dict[str, object]:
     source = os.environ if env is None else env
@@ -530,6 +556,9 @@ def preflight_scheduling_llm_pilot(
     policy_names = ["Random", "Hand heuristic", "Solver-trained MLP", "Oracle"]
     if include_gpt_value:
         policy_names.insert(2, "GPT-value / ToT-style")
+    if include_gpt_frontier_ranking:
+        insert_at = 3 if include_gpt_value else 2
+        policy_names.insert(insert_at, "GPT-frontier-rank / ToT-style")
     method_count = len(policy_names)
     completed_renderings = {rendering_id for rendering_id, count in completed_counts.items() if count >= method_count}
     remaining = [episode for episode in episodes if episode.rendering_id not in completed_renderings]
@@ -555,8 +584,10 @@ def preflight_scheduling_llm_pilot(
         "method_count": method_count,
         "policy_names": policy_names,
         "include_gpt_value": include_gpt_value,
+        "include_gpt_frontier_ranking": include_gpt_frontier_ranking,
         "worst_case_request_count_upper_bound": worst_case_proposal_calls,
         "worst_case_value_request_count_upper_bound": len(remaining) * node_budget if include_gpt_value else 0,
+        "worst_case_frontier_ranking_request_count_upper_bound": len(remaining) * node_budget if include_gpt_frontier_ranking else 0,
         "estimated_prompt_tokens_per_request": avg_prompt_tokens,
         "estimated_prompt_tokens_upper_bound": int(worst_case_proposal_calls * avg_prompt_tokens),
         "resume_safe": True,
@@ -586,6 +617,7 @@ def run_scheduling_llm_pilot(
     parallel_episodes: int = 1,
     resume: bool = False,
     include_gpt_value: bool = False,
+    include_gpt_frontier_ranking: bool = False,
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     instances = generate_scheduling_micro_instances(train_count, validation_count, test_count, seed, job_count, machine_count)
@@ -615,6 +647,11 @@ def run_scheduling_llm_pilot(
     if include_gpt_value:
         policy_names.insert(2, "GPT-value / ToT-style")
         value_policy_factory = lambda episode, idx: RealLLMValuePolicy(episode.hidden_task, client, model)
+    frontier_ranking_policy_factory = None
+    if include_gpt_frontier_ranking:
+        insert_at = 3 if include_gpt_value else 2
+        policy_names.insert(insert_at, "GPT-frontier-rank / ToT-style")
+        frontier_ranking_policy_factory = lambda episode, idx: RealLLMFrontierRankingPolicy(episode.hidden_task, client, model)
     table_rows, per_instance_rows, proposal_cache_rows, proposal_state_rows = _evaluate_level2_transfer(
         episodes,
         ranker,
@@ -626,6 +663,7 @@ def run_scheduling_llm_pilot(
         proposal_adapter_factory=lambda: RealLLMProposerAdapter(client=client, model=model, prompt_template_version="scheduling-level2-v1", temperature=0.0, top_p=1.0),
         proposal_model=model,
         real_value_policy_factory=value_policy_factory,
+        real_frontier_ranking_policy_factory=frontier_ranking_policy_factory,
         checkpoint_dir=out_dir,
         output_prefix="scheduling_llm_pilot",
         batch_size=batch_size,
@@ -648,6 +686,7 @@ def run_scheduling_llm_pilot(
         "parallel_episodes": max(1, int(parallel_episodes)),
         "resume": resume,
         "include_gpt_value": include_gpt_value,
+        "include_gpt_frontier_ranking": include_gpt_frontier_ranking,
         "model": model,
         "live_network_required": not isinstance(client, ScriptedSchedulingClient),
         "training_source": "level1_solver_traces_only",
@@ -724,6 +763,21 @@ class ScriptedSchedulingClient:
             "output_tokens": max(1, self.output_tokens // 4),
             "latency": 0.0,
             "raw_output": json.dumps({"score": score}),
+        }
+
+    def score_frontier_states(self, *args, **kwargs):
+        del args
+        nodes = list(kwargs.get("nodes", []))
+        scores = []
+        for node in nodes:
+            scheduled = tuple(node.structured_state.get("scheduled", []))
+            scores.append(float(len(scheduled)))
+        return {
+            "scores": scores,
+            "input_tokens": self.input_tokens + 10 * len(nodes),
+            "output_tokens": max(1, len(nodes)),
+            "latency": 0.0,
+            "raw_output": json.dumps({"scores": {getattr(node, "node_id", str(idx)): score for idx, (node, score) in enumerate(zip(nodes, scores))}}),
         }
 
 
@@ -933,6 +987,7 @@ def _evaluate_level2_transfer(
     resume: bool = False,
     progress_label: str | None = None,
     real_value_policy_factory=None,
+    real_frontier_ranking_policy_factory=None,
 ) -> tuple[List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]]]:
     all_policies = {
         "Random": lambda episode, idx: RandomPolicy(seed + idx),
@@ -943,6 +998,8 @@ def _evaluate_level2_transfer(
     }
     if real_value_policy_factory is not None:
         all_policies["GPT-value / ToT-style"] = real_value_policy_factory
+    if real_frontier_ranking_policy_factory is not None:
+        all_policies["GPT-frontier-rank / ToT-style"] = real_frontier_ranking_policy_factory
     selected_names = tuple(policy_names) if policy_names is not None else tuple(all_policies)
     policies = {name: all_policies[name] for name in selected_names}
     by_policy: Dict[str, List[Dict[str, object]]] = {name: [] for name in policies}
@@ -1065,7 +1122,7 @@ def _evaluate_one_level2_episode(
         )
         if name == "Oracle":
             oracle_success = result.best_objective == result.optimum
-        value_cost = policy.cost if isinstance(policy, (SimulatedLLMValuePolicy, RealLLMValuePolicy)) else CostLedger()
+        value_cost = policy.cost if isinstance(policy, (SimulatedLLMValuePolicy, RealLLMValuePolicy, RealLLMFrontierRankingPolicy)) else CostLedger()
         episode_rows.append(
             {
                 "Policy": name,
@@ -1177,7 +1234,12 @@ def _run_frontier_search_with_ranking_diagnostics(
         if not frontier:
             break
 
-        scores = [float(policy.score(node)) for node in frontier]
+        if hasattr(policy, "score_frontier"):
+            scores = [float(score) for score in policy.score_frontier(frontier)]
+            if len(scores) != len(frontier):
+                scores = [float(policy.score(node)) for node in frontier]
+        else:
+            scores = [float(policy.score(node)) for node in frontier]
         selected_index = max(range(len(frontier)), key=lambda i: (scores[i], frontier[i].node_id))
         ranking_records.append(_frontier_ranking_record(task, frontier, scores, selected_index, oracle_value_cache))
         node = frontier.pop(selected_index)

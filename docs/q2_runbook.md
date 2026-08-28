@@ -196,7 +196,8 @@ Completion evidence:
 - manifest contains `native_tot_protocol` with propose/evaluate/select.
 
 Older `GPT-frontier-rank / ToT-style` controller-isolation artifacts should not
-be used as this strict native ToT row.
+be used as this strict native ToT row. `build-table5-q2` only promotes the ToT
+row from native `run-scheduling-tot-q2` artifacts.
 
 ### Target-PRM Priority
 

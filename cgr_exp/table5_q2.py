@@ -14,7 +14,7 @@ TABLE5_METHODS = [
     ("Direct / CoT", "Frozen", None, "native"),
     ("Self-Consistency", "Frozen", None, "native"),
     ("Best-of-N", "Frozen", None, "native"),
-    ("Tree of Thoughts", "Online", "GPT-frontier-rank / ToT-style", "scheduling"),
+    ("Tree of Thoughts", "Online", None, "native"),
     ("Target-PRM priority", "In-domain trained", "Target-PRM", "scheduling"),
     ("PRM-guided MCTS (ReST-MCTS-style)", "In-domain trained", "PRM-guided MCTS (ReST-MCTS-style)", "scheduling"),
     ("Solver-trained priority", "Zero-shot transfer", "Solver-trained MLP", "scheduling"),

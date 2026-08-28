@@ -34,6 +34,12 @@ audit marks each row's `result_ready` and `compute_ready` status and lists
 blockers such as missing artifacts, partial checkpoints, missing token
 accounting, or shared-cache fallback accounting.
 
+The Q2 table builder treats `Tree of Thoughts` as a native protocol row and
+only promotes artifacts produced by `run-scheduling-tot-q2`. Older
+`GPT-frontier-rank / ToT-style` rows from `run-scheduling-llm-pilot` are
+controller-isolation diagnostics and remain pending for the strict ToT table
+row.
+
 ## Immediate Run Requirements
 
 To make the Q2 table result-complete without ToT:

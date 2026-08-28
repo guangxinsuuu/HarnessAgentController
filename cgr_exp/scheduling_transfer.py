@@ -678,6 +678,7 @@ def run_scheduling_llm_pilot(
             max_records=records_per_instance,
             proposal_adapter_factory=lambda: RealLLMProposerAdapter(client=client, model=model, prompt_template_version="scheduling-level2-v1", temperature=0.0, top_p=1.0),
             proposal_model=model,
+            parallel_episodes=parallel_episodes,
         )
         target_prm_pairs = make_scheduling_ranking_pairs(target_prm_records, max_pairs_per_task=40, seed=seed + 9200)
         target_prm_ranker = _train_ranker(target_prm_pairs, rank_epochs, seed + 9300)
@@ -983,30 +984,83 @@ def collect_real_level2_trace_records(
     max_records: int,
     proposal_adapter_factory,
     proposal_model: str,
+    parallel_episodes: int = 1,
 ) -> tuple[List[object], List[Dict[str, object]], List[Dict[str, object]]]:
     records = []
     proposal_cache_rows = []
     proposal_state_rows = []
-    for idx, episode in enumerate(episodes):
-        cache = SharedSchedulingProposalCache(
-            episode,
-            seed=seed + idx * 1009,
-            proposal_k=action_budget,
-            node_budget=node_budget,
-            useful_action_recall=1.0,
-            model=proposal_model,
-            adapter=proposal_adapter_factory(),
-        )
-        records.extend(_collect_policy_trace_records(episode, cache, seed + idx, node_budget, action_budget, max_records))
-        proposal_cache_rows.append({"task_id": episode.hidden_task_id, "rendering_id": episode.rendering_id, "perturbation": episode.perturbation, **cache.stats()})
-        proposal_state_rows.extend(cache.state_rows())
-        print(
-            f"[target-prm-train] {idx + 1}/{len(episodes)} episodes, "
-            f"records={len(records)}, states={sum(int(row['state_count']) for row in proposal_cache_rows)}, "
-            f"tokens={sum(int(row['total_tokens']) for row in proposal_cache_rows)}",
-            flush=True,
-        )
+    parallel = max(1, int(parallel_episodes))
+    completed = 0
+    for start in range(0, len(episodes), parallel):
+        window = list(enumerate(episodes[start : start + parallel], start=start))
+        window_results = {}
+        if parallel == 1:
+            idx, episode = window[0]
+            window_results[idx] = _collect_one_real_level2_trace_episode(
+                idx,
+                episode,
+                seed,
+                node_budget,
+                action_budget,
+                max_records,
+                proposal_adapter_factory,
+                proposal_model,
+            )
+        else:
+            with ThreadPoolExecutor(max_workers=min(parallel, len(window))) as executor:
+                futures = {
+                    executor.submit(
+                        _collect_one_real_level2_trace_episode,
+                        idx,
+                        episode,
+                        seed,
+                        node_budget,
+                        action_budget,
+                        max_records,
+                        proposal_adapter_factory,
+                        proposal_model,
+                    ): idx
+                    for idx, episode in window
+                }
+                for future in as_completed(futures):
+                    window_results[futures[future]] = future.result()
+        for idx, _episode in sorted(window, key=lambda item: item[0]):
+            episode_records, cache_row, state_rows = window_results[idx]
+            records.extend(episode_records)
+            proposal_cache_rows.append(cache_row)
+            proposal_state_rows.extend(state_rows)
+            completed += 1
+            print(
+                f"[target-prm-train] {completed}/{len(episodes)} episodes, "
+                f"records={len(records)}, states={sum(int(row['state_count']) for row in proposal_cache_rows)}, "
+                f"tokens={sum(int(row['total_tokens']) for row in proposal_cache_rows)}",
+                flush=True,
+            )
     return records, proposal_cache_rows, proposal_state_rows
+
+
+def _collect_one_real_level2_trace_episode(
+    idx: int,
+    episode: Level2SchedulingEpisode,
+    seed: int,
+    node_budget: int,
+    action_budget: int,
+    max_records: int,
+    proposal_adapter_factory,
+    proposal_model: str,
+) -> tuple[List[object], Dict[str, object], List[Dict[str, object]]]:
+    cache = SharedSchedulingProposalCache(
+        episode,
+        seed=seed + idx * 1009,
+        proposal_k=action_budget,
+        node_budget=node_budget,
+        useful_action_recall=1.0,
+        model=proposal_model,
+        adapter=proposal_adapter_factory(),
+    )
+    records = _collect_policy_trace_records(episode, cache, seed + idx, node_budget, action_budget, max_records)
+    cache_row = {"task_id": episode.hidden_task_id, "rendering_id": episode.rendering_id, "perturbation": episode.perturbation, **cache.stats()}
+    return records, cache_row, cache.state_rows()
 
 
 def _collect_policy_trace_records(

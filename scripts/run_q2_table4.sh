@@ -1,0 +1,202 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+MODE="${1:-all}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+MODEL="${CGR_LLM_MODEL:-gpt-4o-mini}"
+SEED="${SEED:-0}"
+TRAIN_COUNT="${TRAIN_COUNT:-200}"
+VALIDATION_COUNT="${VALIDATION_COUNT:-50}"
+TEST_COUNT="${TEST_COUNT:-100}"
+JOB_COUNT="${JOB_COUNT:-6}"
+MACHINE_COUNT="${MACHINE_COUNT:-3}"
+NODE_BUDGET="${NODE_BUDGET:-80}"
+ACTION_BUDGET="${ACTION_BUDGET:-6}"
+RECORDS_PER_INSTANCE="${RECORDS_PER_INSTANCE:-60}"
+RANK_EPOCHS="${RANK_EPOCHS:-25}"
+TIMEOUT="${TIMEOUT:-300}"
+NATIVE_PARALLEL_EPISODES="${NATIVE_PARALLEL_EPISODES:-8}"
+SEARCH_PARALLEL_EPISODES="${SEARCH_PARALLEL_EPISODES:-6}"
+TOT_PARALLEL_EPISODES="${TOT_PARALLEL_EPISODES:-6}"
+BATCH_SIZE="${BATCH_SIZE:-4}"
+SAMPLE_COUNT="${SAMPLE_COUNT:-8}"
+TARGET_PRM_TRAIN_COUNT="${TARGET_PRM_TRAIN_COUNT:-100}"
+TOT_BREADTH="${TOT_BREADTH:-5}"
+TOT_VALUE_SAMPLES="${TOT_VALUE_SAMPLES:-3}"
+PERTURBATION="${PERTURBATION:-mixed}"
+
+STRUCTURED_DIR="${STRUCTURED_DIR:-runs/q2_structured_100_seed0}"
+NATIVE_DIR="${NATIVE_DIR:-runs/q2_native_llm_baselines_100_seed0}"
+LEARNED_DIR="${LEARNED_DIR:-runs/q2_learned_search_100_seed0}"
+TOT_DIR="${TOT_DIR:-runs/q2_tot_bfs_100_seed0}"
+TABLE_DIR="${TABLE_DIR:-runs/q2_table_current_seed0}"
+AUDIT_DIR="${AUDIT_DIR:-runs/q2_table_current_seed0_audit}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/run_q2_table4.sh [all|structured|llm|native|learned|tot|build|audit]
+
+Environment:
+  CGR_LLM_API_KEY must be set for llm/native/learned/tot/all.
+  CGR_LLM_MODEL defaults to gpt-4o-mini.
+
+The script never sets or prints API keys.
+EOF
+}
+
+require_llm_key() {
+  if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
+    print -u2 "missing CGR_LLM_API_KEY"
+    exit 2
+  fi
+}
+
+run_structured() {
+  "${PYTHON_BIN}" -m cgr_exp.cli run-scheduling-structured-q2 \
+    --output-dir "${STRUCTURED_DIR}" \
+    --seed "${SEED}" \
+    --train-count "${TRAIN_COUNT}" \
+    --validation-count "${VALIDATION_COUNT}" \
+    --test-count "${TEST_COUNT}" \
+    --job-count "${JOB_COUNT}" \
+    --machine-count "${MACHINE_COUNT}" \
+    --cpsat-time-limit-seconds 5 \
+    --overwrite
+}
+
+run_native() {
+  require_llm_key
+  "${PYTHON_BIN}" -m cgr_exp.cli run-scheduling-native-q2 \
+    --output-dir "${NATIVE_DIR}" \
+    --seed "${SEED}" \
+    --train-count "${TRAIN_COUNT}" \
+    --validation-count "${VALIDATION_COUNT}" \
+    --test-count "${TEST_COUNT}" \
+    --job-count "${JOB_COUNT}" \
+    --machine-count "${MACHINE_COUNT}" \
+    --model "${MODEL}" \
+    --timeout "${TIMEOUT}" \
+    --methods direct,self_consistency,best_of_n \
+    --sample-count "${SAMPLE_COUNT}" \
+    --parallel-episodes "${NATIVE_PARALLEL_EPISODES}" \
+    --resume
+}
+
+run_learned() {
+  require_llm_key
+  "${PYTHON_BIN}" -m cgr_exp.cli run-scheduling-llm-pilot \
+    --output-dir "${LEARNED_DIR}" \
+    --seed "${SEED}" \
+    --train-count "${TRAIN_COUNT}" \
+    --validation-count "${VALIDATION_COUNT}" \
+    --test-count "${TEST_COUNT}" \
+    --job-count "${JOB_COUNT}" \
+    --machine-count "${MACHINE_COUNT}" \
+    --node-budget "${NODE_BUDGET}" \
+    --action-budget "${ACTION_BUDGET}" \
+    --records-per-instance "${RECORDS_PER_INSTANCE}" \
+    --rank-epochs "${RANK_EPOCHS}" \
+    --model "${MODEL}" \
+    --timeout "${TIMEOUT}" \
+    --perturbation "${PERTURBATION}" \
+    --batch-size "${BATCH_SIZE}" \
+    --parallel-episodes "${SEARCH_PARALLEL_EPISODES}" \
+    --include-target-prm \
+    --include-rest-mcts \
+    --include-solver-certification \
+    --target-prm-train-count "${TARGET_PRM_TRAIN_COUNT}" \
+    --resume
+}
+
+run_tot() {
+  require_llm_key
+  "${PYTHON_BIN}" -m cgr_exp.cli run-scheduling-tot-q2 \
+    --output-dir "${TOT_DIR}" \
+    --seed "${SEED}" \
+    --train-count "${TRAIN_COUNT}" \
+    --validation-count "${VALIDATION_COUNT}" \
+    --test-count "${TEST_COUNT}" \
+    --job-count "${JOB_COUNT}" \
+    --machine-count "${MACHINE_COUNT}" \
+    --node-budget "${NODE_BUDGET}" \
+    --action-budget "${ACTION_BUDGET}" \
+    --breadth "${TOT_BREADTH}" \
+    --value-samples "${TOT_VALUE_SAMPLES}" \
+    --model "${MODEL}" \
+    --timeout "${TIMEOUT}" \
+    --parallel-episodes "${TOT_PARALLEL_EPISODES}" \
+    --perturbation "${PERTURBATION}" \
+    --resume
+}
+
+build_table() {
+  "${PYTHON_BIN}" -m cgr_exp.cli build-table4-q2 \
+    --output-dir "${TABLE_DIR}" \
+    --expected-test-count "${TEST_COUNT}" \
+    --structured-dir "${STRUCTURED_DIR}" \
+    --direct-dir "${NATIVE_DIR}" \
+    --self-consistency-dir "${NATIVE_DIR}" \
+    --best-of-n-dir "${NATIVE_DIR}" \
+    --tot-dir "${TOT_DIR}" \
+    --target-prm-dir "${LEARNED_DIR}" \
+    --rest-mcts-dir "${LEARNED_DIR}" \
+    --solver-prior-dir "${LEARNED_DIR}" \
+    --solver-certification-dir "${LEARNED_DIR}" \
+    --overwrite
+}
+
+audit_table() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-table4-q2 \
+    --output-dir "${AUDIT_DIR}" \
+    --expected-test-count "${TEST_COUNT}" \
+    --structured-dir "${STRUCTURED_DIR}" \
+    --direct-dir "${NATIVE_DIR}" \
+    --self-consistency-dir "${NATIVE_DIR}" \
+    --best-of-n-dir "${NATIVE_DIR}" \
+    --tot-dir "${TOT_DIR}" \
+    --target-prm-dir "${LEARNED_DIR}" \
+    --rest-mcts-dir "${LEARNED_DIR}" \
+    --solver-prior-dir "${LEARNED_DIR}" \
+    --solver-certification-dir "${LEARNED_DIR}" \
+    --overwrite
+}
+
+run_llm_parallel() {
+  require_llm_key
+  run_native &
+  native_pid=$!
+  run_learned &
+  learned_pid=$!
+  run_tot &
+  tot_pid=$!
+  failed=0
+  wait "${native_pid}" || failed=1
+  wait "${learned_pid}" || failed=1
+  wait "${tot_pid}" || failed=1
+  if [[ "${failed}" -ne 0 ]]; then
+    print -u2 "one or more Q2 LLM jobs failed"
+    exit 1
+  fi
+}
+
+case "${MODE}" in
+  all)
+    run_structured
+    run_llm_parallel
+    build_table
+    audit_table
+    ;;
+  structured) run_structured ;;
+  llm) run_llm_parallel ;;
+  native) run_native ;;
+  learned) run_learned ;;
+  tot) run_tot ;;
+  build) build_table ;;
+  audit) audit_table ;;
+  -h|--help|help) usage ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

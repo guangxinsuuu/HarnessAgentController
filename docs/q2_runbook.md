@@ -374,6 +374,18 @@ avoids.
 
 ## Fast Combined Runs
 
+The checked-in helper script mirrors the commands below:
+
+```bash
+scripts/run_q2_table4.sh all
+```
+
+It never sets or prints API keys. Set `CGR_LLM_API_KEY` and optionally
+`CGR_LLM_MODEL` in your shell first. `scripts/run_q2_table4.sh llm` runs the
+native frozen baselines, learned-search rows, and strict ToT BFS row as
+separate background jobs, while each runner still uses its own
+`--parallel-episodes` setting internally.
+
 Native frozen baselines can run together:
 
 ```bash

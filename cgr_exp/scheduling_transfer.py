@@ -110,6 +110,7 @@ def _learned_search_protocol_manifest(
             "official_primitive": "MCTS selection/expansion/evaluation/backup guided by process reward estimates",
             "training_distribution": "same target LLM-induced PRM as Target-PRM",
             "inference": "PUCT/UCB-style frontier scoring with persistent visit/value backups",
+            "selection_score": "Q(node) + prior_weight * PRM_prior(node) + exploration * PRM_prior(node) * sqrt(parent_visits + 1) / (1 + node_visits)",
             "mcts_components": [
                 "selection",
                 "expansion",
@@ -528,6 +529,7 @@ class PRMGuidedMCTSStylePolicy:
             "backup_updates": self.total_backups,
             "visited_node_count": len(self.visits),
             "prior_cache_size": len(self.prior_cache),
+            "selection_score": "Q(node) + prior_weight * PRM_prior(node) + exploration * PRM_prior(node) * sqrt(parent_visits + 1) / (1 + node_visits)",
             "exploration": self.exploration,
             "prior_weight": self.prior_weight,
             "full_iterative_self_training": False,
@@ -1698,35 +1700,37 @@ def _evaluate_one_level2_episode(
 def _summarize_policy_rows(by_policy: Dict[str, List[Dict[str, object]]]) -> List[Dict[str, object]]:
     table_rows = []
     for name, rows in by_policy.items():
-        table_rows.append(
-            {
-                "Policy": name,
-                "success": _mean(1.0 if _as_bool(row["success"]) else 0.0 for row in rows),
-                "gap": _mean(float(row["gap"]) for row in rows),
-                "nodes_mean": _mean(float(row["nodes"]) for row in rows),
-                "proposal_calls_mean": _mean(float(row["proposal_calls"]) for row in rows),
-                "on_demand_proposal_calls": sum(int(row.get("on_demand_proposal_calls", row["proposal_calls"])) for row in rows),
-                "on_demand_proposal_tokens": sum(int(row.get("on_demand_proposal_tokens", row["proposal_tokens"])) for row in rows),
-                "value_calls": sum(int(row["value_calls"]) for row in rows),
-                "proposal_tokens": sum(int(row["proposal_tokens"]) for row in rows),
-                "value_tokens": sum(int(row["value_tokens"]) for row in rows),
-                "total_tokens": sum(int(row["total_tokens"]) for row in rows),
-                "on_demand_total_tokens": sum(int(row.get("on_demand_total_tokens", row["total_tokens"])) for row in rows),
-                "false_prunes": sum(int(row["false_prunes"]) for row in rows),
-                "frontier_decisions": sum(int(row["frontier_decisions"]) for row in rows),
-                "frontier_top1_accuracy": _weighted_mean(rows, "frontier_top1_accuracy", "frontier_decisions"),
-                "pairwise_accuracy": _weighted_mean(rows, "pairwise_accuracy", "frontier_decisions"),
-                "selection_regret_mean": _weighted_mean(rows, "selection_regret_mean", "frontier_decisions"),
-                "mcts_selection_calls": sum(int(row.get("mcts_selection_calls", 0)) for row in rows),
-                "mcts_expansion_observations": sum(int(row.get("mcts_expansion_observations", 0)) for row in rows),
-                "mcts_prior_evaluations": sum(int(row.get("mcts_prior_evaluations", 0)) for row in rows),
-                "mcts_leaf_value_evaluations": sum(int(row.get("mcts_leaf_value_evaluations", 0)) for row in rows),
-                "mcts_backup_updates": sum(int(row.get("mcts_backup_updates", 0)) for row in rows),
-                "budget_failures": sum(1 for row in rows if row.get("failure_reason") == "budget"),
-                "proposal_support_failures": sum(1 for row in rows if row.get("failure_reason") == "proposal_support"),
-                "ranking_failures": sum(1 for row in rows if row.get("failure_reason") == "ranking"),
-            }
-        )
+        summary = {
+            "Policy": name,
+            "success": _mean(1.0 if _as_bool(row["success"]) else 0.0 for row in rows),
+            "gap": _mean(float(row["gap"]) for row in rows),
+            "nodes_mean": _mean(float(row["nodes"]) for row in rows),
+            "proposal_calls_mean": _mean(float(row["proposal_calls"]) for row in rows),
+            "on_demand_proposal_calls": sum(int(row.get("on_demand_proposal_calls", row["proposal_calls"])) for row in rows),
+            "on_demand_proposal_tokens": sum(int(row.get("on_demand_proposal_tokens", row["proposal_tokens"])) for row in rows),
+            "value_calls": sum(int(row["value_calls"]) for row in rows),
+            "proposal_tokens": sum(int(row["proposal_tokens"]) for row in rows),
+            "value_tokens": sum(int(row["value_tokens"]) for row in rows),
+            "total_tokens": sum(int(row["total_tokens"]) for row in rows),
+            "on_demand_total_tokens": sum(int(row.get("on_demand_total_tokens", row["total_tokens"])) for row in rows),
+            "false_prunes": sum(int(row["false_prunes"]) for row in rows),
+            "frontier_decisions": sum(int(row["frontier_decisions"]) for row in rows),
+            "frontier_top1_accuracy": _weighted_mean(rows, "frontier_top1_accuracy", "frontier_decisions"),
+            "pairwise_accuracy": _weighted_mean(rows, "pairwise_accuracy", "frontier_decisions"),
+            "selection_regret_mean": _weighted_mean(rows, "selection_regret_mean", "frontier_decisions"),
+            "mcts_selection_calls": sum(int(row.get("mcts_selection_calls", 0)) for row in rows),
+            "mcts_expansion_observations": sum(int(row.get("mcts_expansion_observations", 0)) for row in rows),
+            "mcts_prior_evaluations": sum(int(row.get("mcts_prior_evaluations", 0)) for row in rows),
+            "mcts_leaf_value_evaluations": sum(int(row.get("mcts_leaf_value_evaluations", 0)) for row in rows),
+            "mcts_backup_updates": sum(int(row.get("mcts_backup_updates", 0)) for row in rows),
+            "budget_failures": sum(1 for row in rows if row.get("failure_reason") == "budget"),
+            "proposal_support_failures": sum(1 for row in rows if row.get("failure_reason") == "proposal_support"),
+            "ranking_failures": sum(1 for row in rows if row.get("failure_reason") == "ranking"),
+        }
+        diagnostics = [str(row.get("policy_diagnostics", "")) for row in rows if str(row.get("policy_diagnostics", ""))]
+        if diagnostics:
+            summary["policy_diagnostics"] = diagnostics[0]
+        table_rows.append(summary)
     return table_rows
 
 

@@ -422,6 +422,12 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                     invalid.append("Tree of Thoughts manifest must exclude oracle future labels")
                 if str(protocol.get("search")) != "breadth-first frontier search":
                     invalid.append("Tree of Thoughts manifest must declare breadth-first frontier search")
+                if "greedy top-b" not in str(protocol.get("method_select", "")):
+                    invalid.append("Tree of Thoughts manifest method_select must declare greedy top-b selection")
+                if _as_float(protocol.get("n_select_sample")) <= 0:
+                    invalid.append("Tree of Thoughts manifest must declare positive n_select_sample")
+                if _as_float(protocol.get("n_evaluate_sample")) <= 0:
+                    invalid.append("Tree of Thoughts manifest must declare positive n_evaluate_sample")
             alignment = tot_manifest.get("method_alignment")
             if not isinstance(alignment, Mapping) or method not in alignment:
                 invalid.append(f"scheduling_tot_q2_manifest.json missing Q2 method alignment for {method}")
@@ -485,6 +491,8 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                         invalid.append("ReST-MCTS-style protocol must declare MCTS selection, expansion, simulation/evaluation, and backpropagation")
                     if "PRM" not in str(policy_protocol.get("process_reward_guidance", "")):
                         invalid.append("ReST-MCTS-style protocol must declare PRM process reward guidance")
+                    if "PRM_prior" not in str(policy_protocol.get("selection_score", "")):
+                        invalid.append("ReST-MCTS-style protocol must declare PRM-guided PUCT/UCB selection score")
                     table_rows = _read_csv(source_dir / "scheduling_llm_pilot_table.csv")
                     policy_name = str(row.get("source_policy", ""))
                     source_policy_row = next((item for item in table_rows if str(item.get("Policy")) == policy_name), {})
@@ -498,6 +506,9 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                         invalid.append("ReST-MCTS-style table row must record positive MCTS simulation/evaluation calls")
                     if _as_float(source_policy_row.get("mcts_backup_updates")) <= 0:
                         invalid.append("ReST-MCTS-style table row must record positive MCTS backpropagation updates")
+                    diagnostics_raw = str(source_policy_row.get("policy_diagnostics", ""))
+                    if "PRM_prior" not in diagnostics_raw:
+                        invalid.append("ReST-MCTS-style diagnostics must record the PRM-guided PUCT/UCB selection score")
         label_manifest, label_error = _read_json_manifest_for_audit(source_dir / "target_prm_label_manifest.json")
         if label_error:
             invalid.append(f"target_prm_label_manifest.json {label_error}")

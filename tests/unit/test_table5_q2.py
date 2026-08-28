@@ -1099,6 +1099,64 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
             self.assertIn("missing official BFS entrypoints", audit_rows["Tree of Thoughts"]["result_blockers"])
 
+    def test_readiness_audit_rejects_tot_manifest_without_greedy_selection_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            (tot / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": 0.6,
+                        "gap": 0.07,
+                        "llm_calls": 1200,
+                        "tokens": 23000000,
+                        "wall_clock_seconds": 300,
+                        "status": "complete",
+                        "source_policy": "native_tot_bfs",
+                        "tot_generate_events": 1,
+                        "tot_evaluate_events": 1,
+                        "tot_select_events": 1,
+                        "tot_value_sample_count": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_trace.jsonl").write_text(
+                "\n".join(
+                    [
+                        json.dumps({"event": "generate", "rendering_id": "r0"}),
+                        json.dumps({"event": "evaluate_select", "rendering_id": "r0", "value_samples": [{"sample_index": 0, "scores": [1.0]}]}),
+                        json.dumps({"event": "finish", "rendering_id": "r0"}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "splits": {"test": 1},
+                        "native_tot_protocol": {
+                            "official_entrypoints": ["method_generate", "method_evaluate", "method_select"],
+                            "oracle_future_labels_exposed": False,
+                            "search": "breadth-first frontier search",
+                            "method_select": "sample one candidate",
+                        },
+                        "method_alignment": q2_method_contracts(["Tree of Thoughts"]),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
+            self.assertIn("method_select must declare greedy top-b selection", audit_rows["Tree of Thoughts"]["result_blockers"])
+            self.assertIn("positive n_select_sample", audit_rows["Tree of Thoughts"]["result_blockers"])
+            self.assertIn("positive n_evaluate_sample", audit_rows["Tree of Thoughts"]["result_blockers"])
+
     def test_readiness_audit_reports_malformed_tot_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1675,6 +1733,9 @@ def _write_tot_manifest(path: Path, test_count: int) -> None:
                     "official_entrypoints": ["method_generate", "method_evaluate", "method_select"],
                     "oracle_future_labels_exposed": False,
                     "search": "breadth-first frontier search",
+                    "method_select": "greedy top-b by averaged value samples",
+                    "n_select_sample": 2,
+                    "n_evaluate_sample": 2,
                 },
                 "method_alignment": q2_method_contracts(["Tree of Thoughts"]),
             }
@@ -1755,6 +1816,7 @@ def _write_learned_metrics(path: Path, methods: list[str], policies: list[str]) 
                 "training_distribution": "same target LLM-induced PRM as Target-PRM",
                 "mcts_components": ["selection", "expansion", "simulation/evaluation", "backpropagation"],
                 "process_reward_guidance": "target PRM prior and leaf value estimates",
+                "selection_score": "Q(node) + prior_weight * PRM_prior(node) + exploration * PRM_prior(node) * sqrt(parent_visits + 1) / (1 + node_visits)",
                 "full_iterative_self_training": False,
                 "oracle_future_labels_exposed": False,
             }
@@ -1808,6 +1870,11 @@ def _write_solver_table_artifacts(path: Path, policy: str, task_ids: list[str]) 
                 "mcts_prior_evaluations": "10",
                 "mcts_leaf_value_evaluations": "10",
                 "mcts_backup_updates": "10",
+                "policy_diagnostics": json.dumps(
+                    {
+                        "selection_score": "Q(node) + prior_weight * PRM_prior(node) + exploration * PRM_prior(node) * sqrt(parent_visits + 1) / (1 + node_visits)"
+                    }
+                ),
             }
         )
     _write_csv(

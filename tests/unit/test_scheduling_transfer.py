@@ -593,6 +593,7 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertGreater(rest_row["mcts_prior_evaluations"], 0)
             self.assertGreater(rest_row["mcts_leaf_value_evaluations"], 0)
             self.assertGreater(rest_row["mcts_backup_updates"], 0)
+            self.assertIn("PRM_prior", rest_row["policy_diagnostics"])
             cert_protocol = metrics["learned_search_protocol"]["policies"]["Solver-trained MLP + certified pruning"]
             self.assertEqual(cert_protocol["pruning_authority"], "verified lower-bound/feasibility logic only")
             self.assertFalse(cert_protocol["learned_score_authorizes_pruning"])
@@ -718,6 +719,7 @@ class SchedulingTransferTest(unittest.TestCase):
         diagnostics = policy.diagnostics()
         self.assertTrue(diagnostics["mcts_components_observed"]["selection"])
         self.assertTrue(diagnostics["mcts_components_observed"]["process_reward_guidance"])
+        self.assertIn("PRM_prior", diagnostics["selection_score"])
         self.assertGreater(diagnostics["selection_calls"], 0)
         self.assertGreater(diagnostics["prior_evaluations"], 0)
 

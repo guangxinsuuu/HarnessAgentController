@@ -932,6 +932,54 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
             self.assertIn("overlaps held-out evaluation tasks", audit_rows["Target-PRM priority"]["result_blockers"])
 
+    def test_readiness_audit_rejects_target_prm_claiming_zero_shot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prm = root / "prm"
+            prm.mkdir()
+            _write_csv(
+                prm / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "Target-PRM",
+                        "success": "0.84",
+                        "gap": "0.09",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                        "on_demand_total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(prm / "scheduling_llm_pilot_per_instance.csv", [{"Policy": "Target-PRM", "task_id": "heldout-0"}])
+            (prm / "target_prm_ranker.json").write_text("{}", encoding="utf-8")
+            (prm / "target_prm_trace_records.jsonl").write_text(json.dumps({"task_id": "train-0"}) + "\n", encoding="utf-8")
+            (prm / "target_prm_train_pairs.jsonl").write_text(json.dumps({"left": 0, "right": 1}) + "\n", encoding="utf-8")
+            (prm / "scheduling_llm_pilot_metrics.json").write_text(
+                json.dumps(
+                    {
+                        "q2_method_alignment": {"Target-PRM priority": {}},
+                        "learned_search_protocol": {
+                            "policies": {
+                                "Target-PRM": {
+                                    "training_distribution": "target LLM-induced Scheduling trajectories from disjoint training instances",
+                                    "zero_shot_transfer": True,
+                                }
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", target_prm_dir=prm, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
+            self.assertIn("Target-PRM protocol must not claim zero-shot transfer", audit_rows["Target-PRM priority"]["result_blockers"])
+
     def test_readiness_audit_rejects_rest_mcts_manifest_claiming_full_self_training(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1015,6 +1063,54 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Solver-trained priority"]["result_ready"], "False")
             self.assertIn("scheduling_llm_pilot_metrics.json malformed json", audit_rows["Solver-trained priority"]["result_blockers"])
 
+    def test_readiness_audit_rejects_solver_prior_without_zero_shot_protocol(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solver = root / "solver"
+            solver.mkdir()
+            _write_csv(
+                solver / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "Solver-trained MLP",
+                        "success": "0.89",
+                        "gap": "0.02",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                        "on_demand_total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(solver / "scheduling_llm_pilot_per_instance.csv", [{"Policy": "Solver-trained MLP", "task_id": "heldout-0"}])
+            (solver / "scheduling_llm_pilot_ranker.json").write_text("{}", encoding="utf-8")
+            (solver / "scheduling_llm_pilot_metrics.json").write_text(
+                json.dumps(
+                    {
+                        "q2_method_alignment": {"Solver-trained priority": {}},
+                        "semantic_state_schema": {"oracle_labels_in_inference_features": False},
+                        "learned_search_protocol": {
+                            "policies": {
+                                "Solver-trained MLP": {
+                                    "training_distribution": "target LLM-induced Scheduling trajectories",
+                                    "zero_shot_transfer": False,
+                                }
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=solver, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Solver-trained priority"]["result_ready"], "False")
+            self.assertIn("Solver-trained MLP protocol must declare zero-shot transfer", audit_rows["Solver-trained priority"]["result_blockers"])
+            self.assertIn("source-only solver training", audit_rows["Solver-trained priority"]["result_blockers"])
+
 
 def _write_csv(path: Path, rows) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -1064,12 +1160,34 @@ def _write_structured_metrics(path: Path, methods: list[str], test_count: int) -
 def _write_learned_metrics(path: Path, methods: list[str], policies: list[str]) -> None:
     policy_protocols = {}
     for policy in policies:
-        policy_protocols[policy] = {
-            "training_distribution": "source solver-induced Scheduling trajectories",
-            "learned_score_authorizes_pruning": False,
-            "pruning_authority": "verified lower-bound/feasibility logic only",
-            "full_iterative_self_training": False,
-        }
+        if policy == "Target-PRM":
+            policy_protocols[policy] = {
+                "training_distribution": "target LLM-induced Scheduling trajectories from disjoint training instances",
+                "zero_shot_transfer": False,
+                "oracle_future_labels_exposed": False,
+            }
+        elif policy == "PRM-guided MCTS (ReST-MCTS-style)":
+            policy_protocols[policy] = {
+                "training_distribution": "same target LLM-induced PRM as Target-PRM",
+                "full_iterative_self_training": False,
+                "oracle_future_labels_exposed": False,
+            }
+        elif policy == "Solver-trained MLP":
+            policy_protocols[policy] = {
+                "training_distribution": "solver-induced Scheduling source trajectories only",
+                "zero_shot_transfer": True,
+                "oracle_future_labels_exposed": False,
+            }
+        elif policy == "Solver-trained MLP + certified pruning":
+            policy_protocols[policy] = {
+                "training_distribution": "same solver-induced source controller as Solver-trained MLP",
+                "zero_shot_transfer": True,
+                "learned_score_authorizes_pruning": False,
+                "pruning_authority": "verified lower-bound/feasibility logic only",
+                "oracle_future_labels_exposed": False,
+            }
+        else:
+            policy_protocols[policy] = {}
     (path / "scheduling_llm_pilot_metrics.json").write_text(
         json.dumps(
             {

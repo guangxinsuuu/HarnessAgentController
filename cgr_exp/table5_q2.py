@@ -414,8 +414,18 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             source_policy = str(row.get("source_policy", ""))
             if not isinstance(protocol_by_policy, Mapping) or source_policy not in protocol_by_policy:
                 invalid.append(f"scheduling_llm_pilot_metrics.json missing learned search protocol for {source_policy}")
-            elif method == "PRM-guided MCTS (ReST-MCTS-style)" and protocol_by_policy[source_policy].get("full_iterative_self_training") is not False:
-                invalid.append("ReST-MCTS-style manifest must not claim full iterative self-training")
+            else:
+                policy_protocol = protocol_by_policy[source_policy]
+                if method == "Target-PRM priority":
+                    if policy_protocol.get("zero_shot_transfer") is not False:
+                        invalid.append("Target-PRM protocol must not claim zero-shot transfer")
+                    if "target LLM-induced" not in str(policy_protocol.get("training_distribution", "")):
+                        invalid.append("Target-PRM protocol must declare target LLM-induced training distribution")
+                if method == "PRM-guided MCTS (ReST-MCTS-style)":
+                    if policy_protocol.get("full_iterative_self_training") is not False:
+                        invalid.append("ReST-MCTS-style manifest must not claim full iterative self-training")
+                    if "target LLM-induced" not in str(policy_protocol.get("training_distribution", "")):
+                        invalid.append("ReST-MCTS-style protocol must use the target PRM training distribution")
         for filename in ("target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
             path = source_dir / filename
             if path.exists() and path.stat().st_size > 0:
@@ -441,8 +451,14 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
             if method == "Solver-trained priority":
                 protocols = learned_manifest.get("learned_search_protocol")
                 protocol_by_policy = protocols.get("policies") if isinstance(protocols, Mapping) else None
-                if not isinstance(protocol_by_policy, Mapping) or "Solver-trained MLP" not in protocol_by_policy:
+                solver_protocol = protocol_by_policy.get("Solver-trained MLP") if isinstance(protocol_by_policy, Mapping) else None
+                if not isinstance(solver_protocol, Mapping):
                     invalid.append("scheduling_llm_pilot_metrics.json missing solver-trained MLP protocol")
+                else:
+                    if solver_protocol.get("zero_shot_transfer") is not True:
+                        invalid.append("Solver-trained MLP protocol must declare zero-shot transfer")
+                    if str(solver_protocol.get("training_distribution")) != "solver-induced Scheduling source trajectories only":
+                        invalid.append("Solver-trained MLP protocol must declare source-only solver training")
             if method == "Solver-trained priority + certified pruning":
                 protocols = learned_manifest.get("learned_search_protocol")
                 protocol_by_policy = protocols.get("policies") if isinstance(protocols, Mapping) else None
@@ -450,6 +466,10 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 if not isinstance(cert_protocol, Mapping):
                     invalid.append("scheduling_llm_pilot_metrics.json missing certified pruning protocol")
                 else:
+                    if cert_protocol.get("zero_shot_transfer") is not True:
+                        invalid.append("certified pruning protocol must declare zero-shot transfer")
+                    if str(cert_protocol.get("training_distribution")) != "same solver-induced source controller as Solver-trained MLP":
+                        invalid.append("certified pruning protocol must reuse source-only solver controller")
                     if cert_protocol.get("learned_score_authorizes_pruning") is not False:
                         invalid.append("certified pruning protocol must not let learned score authorize pruning")
                     if str(cert_protocol.get("pruning_authority")) != "verified lower-bound/feasibility logic only":

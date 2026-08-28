@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import tempfile
 import unittest
@@ -537,6 +538,52 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertGreaterEqual(certified["false_prunes"], 0)
             self.assertIn("on_demand_total_tokens", certified)
             self.assertLessEqual(certified["on_demand_total_tokens"], certified["total_tokens"])
+
+    def test_scheduling_llm_pilot_resume_requires_each_requested_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            kwargs = dict(
+                client=ScriptedSchedulingClient(model="mock-scheduling"),
+                model="mock-scheduling",
+                seed=36,
+                train_count=8,
+                validation_count=3,
+                test_count=2,
+                job_count=5,
+                machine_count=2,
+                node_budget=35,
+                action_budget=5,
+                records_per_instance=10,
+                rank_epochs=4,
+                perturbation="canonical",
+                batch_size=1,
+            )
+            run_scheduling_llm_pilot(root, **kwargs)
+            per_instance_path = root / "scheduling_llm_pilot_per_instance.csv"
+            with per_instance_path.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+            first_rendering = rows[0]["rendering_id"]
+            first_random = next(row for row in rows if row["rendering_id"] == first_rendering and row["Policy"] == "Random")
+            corrupted_rows = [
+                row
+                for row in rows
+                if not (row["rendering_id"] == first_rendering and row["Policy"] == "Oracle")
+            ]
+            corrupted_rows.append(dict(first_random))
+            with per_instance_path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(corrupted_rows)
+
+            run_scheduling_llm_pilot(root, **kwargs, resume=True)
+            with per_instance_path.open(newline="", encoding="utf-8") as handle:
+                resumed_rows = list(csv.DictReader(handle))
+            policies_by_rendering = {}
+            for row in resumed_rows:
+                policies_by_rendering.setdefault(row["rendering_id"], []).append(row["Policy"])
+            self.assertEqual(set(policies_by_rendering), {row["rendering_id"] for row in rows})
+            for policy_names in policies_by_rendering.values():
+                self.assertEqual(sorted(policy_names), ["Hand heuristic", "Oracle", "Random", "Solver-trained MLP"])
 
     def test_prm_guided_mcts_policy_tracks_visits_and_backups(self) -> None:
         class ConstantRanker:

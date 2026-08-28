@@ -1305,15 +1305,29 @@ def _evaluate_level2_transfer(
     proposal_state_rows = []
     completed_renderings = set()
     if checkpoint_dir is not None and output_prefix is not None and resume:
-        per_instance_rows = _read_csv_rows(checkpoint_dir / f"{output_prefix}_per_instance.csv")
+        existing_per_instance_rows = _read_csv_rows(checkpoint_dir / f"{output_prefix}_per_instance.csv")
         proposal_cache_rows = _read_csv_rows(checkpoint_dir / f"{output_prefix}_proposal_cache.csv")
         proposal_state_rows = _read_jsonl_rows(checkpoint_dir / "proposal_cache.jsonl")
-        counts: Dict[str, int] = {}
-        for row in per_instance_rows:
-            if row.get("Policy") in policies:
-                counts[str(row.get("rendering_id"))] = counts.get(str(row.get("rendering_id")), 0) + 1
-                by_policy[str(row["Policy"])].append(_coerce_result_row(row))
-        completed_renderings = {rendering_id for rendering_id, count in counts.items() if count >= len(policies)}
+        requested_policy_names = set(policies)
+        rows_by_rendering: Dict[str, Dict[str, Dict[str, object]]] = {}
+        for row in existing_per_instance_rows:
+            policy = str(row.get("Policy", ""))
+            if policy not in requested_policy_names:
+                continue
+            rendering_id = str(row.get("rendering_id"))
+            rows_by_rendering.setdefault(rendering_id, {})[policy] = row
+        completed_renderings = {
+            rendering_id
+            for rendering_id, rows_by_policy in rows_by_rendering.items()
+            if requested_policy_names.issubset(rows_by_policy)
+        }
+        per_instance_rows = []
+        for row in existing_per_instance_rows:
+            policy = str(row.get("Policy", ""))
+            rendering_id = str(row.get("rendering_id"))
+            if rendering_id in completed_renderings and policy in requested_policy_names:
+                per_instance_rows.append(row)
+                by_policy[policy].append(_coerce_result_row(row))
         if progress_label and completed_renderings:
             print(f"[{progress_label}] resumed {len(completed_renderings)}/{len(episodes)} completed episodes", flush=True)
     flush_every = max(1, int(batch_size))

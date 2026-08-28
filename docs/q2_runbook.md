@@ -17,6 +17,11 @@ export CGR_LLM_MODEL="gpt-4o-mini"
 Do not commit API keys or run outputs. `runs/*`, `.env*`, `.venv/`, and
 editable-install metadata are ignored.
 
+`--resume` is policy-set aware for Scheduling transfer runs: an episode is
+skipped only when the checkpoint already contains every policy requested by the
+current command. If a previous partial run is missing one requested policy row,
+that rendering is rerun instead of being silently promoted.
+
 ## Row Contracts and Commands
 
 ### CP-SAT

@@ -194,6 +194,8 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
         "Source URL": row.get("Source URL", ""),
         "Claim scope": row.get("Claim scope", ""),
         "Required wording": row.get("Required wording", ""),
+        "source_artifact": row.get("source_artifact", ""),
+        "source_policy": row.get("source_policy", ""),
         "Status": status,
         "result_ready": not result_blockers,
         "compute_ready": not compute_blockers,

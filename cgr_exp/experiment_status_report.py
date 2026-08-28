@@ -93,8 +93,8 @@ def _render_markdown(
         "",
         f"Machine audit: `{q2_readiness}`.",
         "",
-        "| Row | Implementation status | Current promotion status |",
-        "| --- | --- | --- |",
+        "| Row | Source artifact | Implementation status | Current promotion status | Compute status |",
+        "| --- | --- | --- | --- | --- |",
     ]
     for method in _q2_order(q2_rows, q2_matrix_rows):
         audit = q2_status.get(method, {})
@@ -104,8 +104,10 @@ def _render_markdown(
             + " | ".join(
                 [
                     _escape(method),
+                    _escape(_source_artifact_status(audit)),
                     _escape(_implementation_status(impl)),
                     _escape(_promotion_status(audit)),
+                    _escape(_compute_status(audit)),
                 ]
             )
             + " |"
@@ -178,7 +180,19 @@ def _q2_order(q2_rows: Iterable[Mapping[str, str]], q2_matrix_rows: Iterable[Map
 
 
 def _status_map(rows: Iterable[Mapping[str, str]], *, method_key: str, ready_key: str, blocker_key: str) -> Dict[str, Dict[str, str]]:
-    return {str(row.get(method_key, "")): {"ready": str(row.get(ready_key, "")), "blockers": str(row.get(blocker_key, "")), "status": str(row.get("Status", ""))} for row in rows}
+    mapped: Dict[str, Dict[str, str]] = {}
+    for row in rows:
+        method = str(row.get(method_key, ""))
+        mapped[method] = {
+            "ready": str(row.get(ready_key, "")),
+            "blockers": str(row.get(blocker_key, "")),
+            "status": str(row.get("Status", "")),
+            "compute_ready": str(row.get("compute_ready", "")),
+            "compute_blockers": str(row.get("compute_blockers", "")),
+            "source_artifact": str(row.get("source_artifact", "")),
+            "source_policy": str(row.get("source_policy", "")),
+        }
+    return mapped
 
 
 def _implementation_status(row: Mapping[str, str]) -> str:
@@ -198,6 +212,26 @@ def _promotion_status(row: Mapping[str, str]) -> str:
         return f"Blocked: {blockers}"
     status = str(row.get("status", row.get("Status", ""))).strip()
     return f"Blocked: {status}" if status else "Blocked: readiness evidence missing"
+
+
+def _source_artifact_status(row: Mapping[str, str]) -> str:
+    artifact = str(row.get("source_artifact", "")).strip()
+    policy = str(row.get("source_policy", "")).strip()
+    if not artifact:
+        return "missing"
+    if policy:
+        return f"{artifact} ({policy})"
+    return artifact
+
+
+def _compute_status(row: Mapping[str, str]) -> str:
+    ready = str(row.get("compute_ready", "")).lower() == "true"
+    blockers = str(row.get("compute_blockers", "")).strip()
+    if ready:
+        return "Ready."
+    if blockers:
+        return f"Blocked: {blockers}"
+    return "Blocked: compute evidence missing"
 
 
 def _q4_summary(rows: List[Dict[str, str]]) -> str:

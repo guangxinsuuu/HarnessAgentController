@@ -1568,6 +1568,8 @@ class Table5Q2Test(unittest.TestCase):
             audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", target_prm_dir=prm)
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
             self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
+            self.assertIn("prm/scheduling_llm_pilot_table.csv", audit_rows["Target-PRM priority"]["source_artifact"])
+            self.assertEqual(audit_rows["Target-PRM priority"]["source_policy"], "Target-PRM")
             self.assertIn("target_prm_ranker.json", audit_rows["Target-PRM priority"]["result_blockers"])
 
     def test_readiness_audit_rejects_target_prm_training_eval_overlap(self) -> None:

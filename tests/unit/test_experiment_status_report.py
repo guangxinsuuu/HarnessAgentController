@@ -17,7 +17,20 @@ class ExperimentStatusReportTest(unittest.TestCase):
             q4 = root / "q4.csv"
             cert = root / "cert.csv"
             matrix = root / "matrix.csv"
-            _write_csv(q2, [{"Method": "Direct / CoT", "result_ready": "False", "result_blockers": "pending; artifact missing"}])
+            _write_csv(
+                q2,
+                [
+                    {
+                        "Method": "Direct / CoT",
+                        "source_artifact": "runs/q2_native_llm_baselines_100_seed0",
+                        "source_policy": "",
+                        "result_ready": "False",
+                        "compute_ready": "False",
+                        "result_blockers": "pending; artifact missing",
+                        "compute_blockers": "missing token accounting",
+                    }
+                ],
+            )
             _write_csv(q4, [{"Method": "Native agent rerun", "result_ready": "False", "result_blockers": "pending"}])
             _write_csv(cert, [{"Table": "Table 6 clean certification", "result_ready": "True", "result_blockers": ""}])
             _write_csv(
@@ -35,7 +48,9 @@ class ExperimentStatusReportTest(unittest.TestCase):
             self.assertEqual(manifest["certification_ready_rows"], 1)
             text = (root / "out" / "current_experiment_status.md").read_text(encoding="utf-8")
             self.assertIn("Direct / CoT", text)
+            self.assertIn("runs/q2_native_llm_baselines_100_seed0", text)
             self.assertIn("Blocked: pending; artifact missing", text)
+            self.assertIn("Blocked: missing token accounting", text)
             self.assertIn("All Q4 tau/tau2 rows remain pending", text)
             saved = json.loads((root / "out" / "current_experiment_status.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["artifact"], "current_experiment_status")

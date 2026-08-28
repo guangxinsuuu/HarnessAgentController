@@ -33,3 +33,43 @@ the original tau-bench protocol or the current tau2/tau3 successor protocol.
 - No tau-bench row should be reported until a native adapter can load tasks,
   execute tool calls, preserve tool state, and emit official pass/tool-call/token
   metrics.
+
+## Table Assembly
+
+The repository can now build and audit a conservative Q4 table shell, but it
+does not generate native tau-bench trajectories by itself.
+
+```bash
+python3 -m cgr_exp.cli build-table-q4-tau \
+  --output-dir runs/q4_tau_table_current \
+  --expected-test-count 100 \
+  --native-dir runs/q4_tau_native \
+  --best-of-n-dir runs/q4_tau_best_of_n \
+  --value-guided-dir runs/q4_tau_value_guided \
+  --target-prm-dir runs/q4_tau_target_prm \
+  --solver-controller-dir runs/q4_tau_solver_controller \
+  --overwrite
+
+python3 -m cgr_exp.cli audit-table-q4-tau \
+  --output-dir runs/q4_tau_table_current_audit \
+  --expected-test-count 100 \
+  --native-dir runs/q4_tau_native \
+  --best-of-n-dir runs/q4_tau_best_of_n \
+  --value-guided-dir runs/q4_tau_value_guided \
+  --target-prm-dir runs/q4_tau_target_prm \
+  --solver-controller-dir runs/q4_tau_solver_controller \
+  --overwrite
+```
+
+Each row directory must contain native tau/tau2 evidence before the row is
+marked ready:
+
+- `q4_tau_manifest.json`: declares `benchmark` as `tau-bench`, `tau2-bench`, or
+  `tau3-bench`; sets `native_protocol_preserved = true`; records the official
+  source URL; and lists the covered methods.
+- `q4_tau_per_instance.csv`: one held-out task row per evaluated instance, with
+  `task_id` or `instance_id` coverage matching `--expected-test-count`.
+- `q4_tau_row.json` or `q4_tau_table.csv`: aggregate `pass^1`, `pass^4`,
+  `violations`, `tool_calls`, `tokens`, `wall_clock_seconds`, and `status`.
+
+Rows without this evidence remain pending by construction.

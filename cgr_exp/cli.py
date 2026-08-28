@@ -28,6 +28,7 @@ from cgr_exp.scheduling_transfer import (
     run_scheduling_zero_shot_transfer,
 )
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
+from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
 from cgr_exp.table6_authority import run_table6_authority_experiment
 
 COMMANDS = [
@@ -59,6 +60,8 @@ COMMANDS = [
     "build-table5-q2",
     "audit-table4-q2",
     "audit-table5-q2",
+    "build-table-q4-tau",
+    "audit-table-q4-tau",
     "run-table6-authority",
 ]
 
@@ -248,6 +251,13 @@ def main() -> None:
             p.add_argument("--rest-mcts-dir", type=Path, default=None)
             p.add_argument("--solver-certification-dir", type=Path, default=None)
             p.add_argument("--structured-dir", type=Path, default=None)
+        if name in ("build-table-q4-tau", "audit-table-q4-tau"):
+            p.add_argument("--expected-test-count", type=int, default=100)
+            p.add_argument("--native-dir", type=Path, default=None)
+            p.add_argument("--best-of-n-dir", type=Path, default=None)
+            p.add_argument("--value-guided-dir", type=Path, default=None)
+            p.add_argument("--target-prm-dir", type=Path, default=None)
+            p.add_argument("--solver-controller-dir", type=Path, default=None)
         if name == "run-table6-authority":
             p.add_argument("--train-count", type=int, default=200)
             p.add_argument("--validation-count", type=int, default=50)
@@ -936,6 +946,49 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table5_q2_readiness.csv'}")
+            return
+        if args.command == "build-table-q4-tau":
+            manifest = build_q4_tau_results(
+                args.output_dir,
+                expected_test_count=args.expected_test_count,
+                native_dir=args.native_dir,
+                best_of_n_dir=args.best_of_n_dir,
+                value_guided_dir=args.value_guided_dir,
+                target_prm_dir=args.target_prm_dir,
+                solver_controller_dir=args.solver_controller_dir,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "expected_test_count": args.expected_test_count,
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q4_tau_results.csv'}")
+            return
+        if args.command == "audit-table-q4-tau":
+            manifest = audit_q4_tau_readiness(
+                args.output_dir,
+                expected_test_count=args.expected_test_count,
+                native_dir=args.native_dir,
+                best_of_n_dir=args.best_of_n_dir,
+                value_guided_dir=args.value_guided_dir,
+                target_prm_dir=args.target_prm_dir,
+                solver_controller_dir=args.solver_controller_dir,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "expected_test_count": args.expected_test_count,
+                "all_rows_result_ready": manifest["readiness"]["all_rows_result_ready"],
+                "produced_artifacts": manifest["readiness"]["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q4_tau_readiness.csv'}")
             return
         if args.command == "run-table6-authority":
             corruption_seeds = tuple(int(part) for part in args.corruption_seeds.split(",") if part.strip())

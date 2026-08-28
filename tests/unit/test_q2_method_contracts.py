@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from cgr_exp.q2_method_contracts import Q2_METHOD_CONTRACTS, q2_method_contract
 from cgr_exp.table5_q2 import TABLE5_METHODS
@@ -27,6 +28,21 @@ class Q2MethodContractsTest(unittest.TestCase):
         contract = q2_method_contract("Best-of-N")
         self.assertIn("lowest verified objective selects the final sample", contract["implemented_scope"])
         self.assertIn("strong verifier-selected variant; table notes must disclose this", contract["non_claims"])
+
+    def test_source_alignment_matrix_mentions_core_external_sources(self) -> None:
+        text = Path("docs/q2_source_alignment_matrix.md").read_text(encoding="utf-8")
+        for needle in (
+            "https://github.com/google/or-tools",
+            "https://github.com/princeton-nlp/tree-of-thought-llm",
+            "https://github.com/openai/prm800k",
+            "https://github.com/THUDM/ReST-MCTS",
+            "method_generate",
+            "method_evaluate",
+            "method_select",
+            "step-level correctness labels",
+            "selection, expansion, simulation, and backpropagation",
+        ):
+            self.assertIn(needle, text)
 
 
 if __name__ == "__main__":

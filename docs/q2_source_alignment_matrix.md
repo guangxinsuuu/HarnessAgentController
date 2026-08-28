@@ -21,8 +21,7 @@ style baselines that must not be described as full official replications.
   - Released examples place labels under `label.steps[].completions[].rating`.
 - ReST-MCTS*: `https://github.com/THUDM/ReST-MCTS`
   - README describes process-reward-guided tree search plus self-training.
-  - `MCTS/mcts.py` implements MCTS rounds with selection, expansion,
-    simulation, and backpropagation.
+  - `MCTS/mcts.py` implements MCTS rounds with selection, expansion, simulation, and backpropagation.
 
 ## Row-by-Row Alignment
 

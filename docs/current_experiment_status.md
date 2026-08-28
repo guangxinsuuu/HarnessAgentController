@@ -15,7 +15,7 @@ Machine audit: `runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readines
 
 | Row | Implementation status | Current promotion status |
 | --- | --- | --- |
-| CP-SAT | Implemented. structured SchedulingTask input; integer start/end variables; optional machine intervals with NoOverlap; release time and precedence constraints; local makespan plus total tardiness objective | Blocked: invalid artifacts: scheduling_structured_q2_metrics.json missing source_evidence for CP-SAT |
+| CP-SAT | Implemented. structured SchedulingTask input; integer start/end variables; optional machine intervals with NoOverlap; release time and precedence constraints; local makespan plus total tardiness objective | Ready in current audit. |
 | EST / list scheduling heuristic | Implemented. structured SchedulingTask input; ready-job dispatch by earliest feasible start/finish; tardiness and due-date tie breaks | Ready in current audit. |
 | Direct / CoT | Implemented. one native complete-schedule LLM sample; step-by-step reasoning requested inside JSON; typed action parsing and verifier validation | Blocked: pending; artifact missing |
 | Self-Consistency | Implemented. multiple complete-schedule samples; aggregation by canonical final job order; tie-breaking by earliest valid sample rather than verified objective | Blocked: pending; artifact missing |

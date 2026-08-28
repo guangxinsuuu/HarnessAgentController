@@ -893,6 +893,45 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
             self.assertIn("target_prm_ranker.json", audit_rows["Target-PRM priority"]["result_blockers"])
 
+    def test_readiness_audit_rejects_target_prm_training_eval_overlap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prm = root / "prm"
+            prm.mkdir()
+            _write_csv(
+                prm / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "Target-PRM",
+                        "success": "0.84",
+                        "gap": "0.09",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                        "on_demand_total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(
+                prm / "scheduling_llm_pilot_per_instance.csv",
+                [{"Policy": "Target-PRM", "task_id": "heldout-0"}],
+            )
+            (prm / "target_prm_ranker.json").write_text("{}", encoding="utf-8")
+            (prm / "target_prm_trace_records.jsonl").write_text(
+                json.dumps({"task_id": "heldout-0", "split": "target_train"}) + "\n",
+                encoding="utf-8",
+            )
+            (prm / "target_prm_train_pairs.jsonl").write_text(json.dumps({"left": 0, "right": 1}) + "\n", encoding="utf-8")
+            _write_learned_metrics(prm, ["Target-PRM priority"], ["Target-PRM"])
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", target_prm_dir=prm, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
+            self.assertIn("overlaps held-out evaluation tasks", audit_rows["Target-PRM priority"]["result_blockers"])
+
     def test_readiness_audit_rejects_rest_mcts_manifest_claiming_full_self_training(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

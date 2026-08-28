@@ -243,6 +243,20 @@ def _task_ids_for_row(row: Mapping[str, object]) -> List[str]:
     return _unique_task_ids(_read_csv(source_dir / "scheduling_llm_pilot_per_instance.csv"), method_key="Policy", method_value=source_policy)
 
 
+def _target_prm_eval_overlap(source_dir: Path, row: Mapping[str, object]) -> List[str]:
+    records, error = _read_jsonl_for_audit(source_dir / "target_prm_trace_records.jsonl")
+    if error or not records:
+        return []
+    train_ids = {str(record.get("task_id")) for record in records if record.get("task_id") not in (None, "")}
+    eval_ids = set(_task_ids_for_row(row))
+    if not eval_ids:
+        metrics, _manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_llm_pilot_metrics.json")
+        split_manifest = metrics.get("split_manifest") if isinstance(metrics, Mapping) else None
+        if isinstance(split_manifest, Mapping):
+            eval_ids = {str(task_id) for task_id in split_manifest.get("test", [])}
+    return sorted(train_ids & eval_ids)
+
+
 def _unique_task_ids(rows: List[Mapping[str, object]], method_key: str = "", method_value: str = "") -> List[str]:
     task_ids = set()
     for row in rows:
@@ -410,6 +424,9 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                     invalid.append(f"{filename} {error}")
                 elif not rows:
                     invalid.append(f"{filename} empty jsonl")
+        overlap = _target_prm_eval_overlap(source_dir, row)
+        if overlap:
+            invalid.append("target_prm_trace_records.jsonl overlaps held-out evaluation tasks: " + ", ".join(overlap[:5]))
     if method in {"Solver-trained priority", "Solver-trained priority + certified pruning"}:
         learned_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_llm_pilot_metrics.json")
         if manifest_error:

@@ -149,6 +149,8 @@ def main() -> None:
             p.add_argument("--mock", action="store_true", default=False)
             p.add_argument("--include-gpt-value", action="store_true", default=False)
             p.add_argument("--include-gpt-frontier-ranking", action="store_true", default=False)
+            p.add_argument("--include-target-prm", action="store_true", default=False)
+            p.add_argument("--target-prm-train-count", type=int, default=100)
         if name == "run-scheduling-diagnosis":
             p.add_argument("--source-count", type=int, default=200)
             p.add_argument("--source-validation-count", type=int, default=50)
@@ -452,6 +454,8 @@ def main() -> None:
                     resume=args.resume,
                     include_gpt_value=args.include_gpt_value,
                     include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
+                    include_target_prm=args.include_target_prm,
+                    target_prm_train_count=args.target_prm_train_count,
                 )
             else:
                 metrics = run_scheduling_llm_pilot_from_env(
@@ -474,6 +478,8 @@ def main() -> None:
                     resume=args.resume,
                     include_gpt_value=args.include_gpt_value,
                     include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
+                    include_target_prm=args.include_target_prm,
+                    target_prm_train_count=args.target_prm_train_count,
                 )
             manifest = {
                 "command": args.command,
@@ -488,6 +494,9 @@ def main() -> None:
                 "mock": args.mock,
                 "include_gpt_value": args.include_gpt_value,
                 "include_gpt_frontier_ranking": args.include_gpt_frontier_ranking,
+                "include_target_prm": args.include_target_prm,
+                "target_prm_train_count": metrics.get("target_prm_train_count", 0),
+                "target_prm_pair_count": metrics.get("target_prm_pair_count", 0),
                 "live_network_required": metrics["live_network_required"],
                 "training_source": metrics["training_source"],
                 "target_training_trace_count": metrics["target_training_trace_count"],
@@ -515,6 +524,8 @@ def main() -> None:
                 perturbation=args.perturbation,
                 include_gpt_value=args.include_gpt_value,
                 include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
+                include_target_prm=args.include_target_prm,
+                target_prm_train_count=args.target_prm_train_count,
             )
             print(
                 "preflight "

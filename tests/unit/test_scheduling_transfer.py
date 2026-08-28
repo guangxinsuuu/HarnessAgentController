@@ -471,6 +471,41 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertGreater(value_row["total_tokens"], value_row["proposal_tokens"])
             self.assertLessEqual(value_row["value_calls"], 3 * 50)
 
+    def test_scheduling_llm_pilot_can_include_target_prm_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metrics = run_scheduling_llm_pilot(
+                root,
+                client=ScriptedSchedulingClient(model="mock-scheduling"),
+                model="mock-scheduling",
+                seed=29,
+                train_count=8,
+                validation_count=3,
+                test_count=3,
+                job_count=5,
+                machine_count=2,
+                node_budget=50,
+                action_budget=5,
+                records_per_instance=10,
+                rank_epochs=4,
+                perturbation="canonical",
+                batch_size=1,
+                include_target_prm=True,
+                target_prm_train_count=4,
+            )
+            self.assertIn("Target-PRM", metrics["methods"])
+            self.assertEqual(metrics["target_prm_train_count"], 4)
+            self.assertGreater(metrics["target_prm_trace_record_count"], 0)
+            self.assertGreater(metrics["target_prm_pair_count"], 0)
+            for name in (
+                "target_prm_ranker.json",
+                "target_prm_trace_records.jsonl",
+                "target_prm_train_pairs.jsonl",
+                "target_prm_training_proposal_cache.csv",
+                "target_prm_training_proposal_states.jsonl",
+            ):
+                self.assertTrue((root / name).exists(), name)
+
     def test_fewshot_curve_writes_regime_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             metrics = run_scheduling_fewshot_curve(

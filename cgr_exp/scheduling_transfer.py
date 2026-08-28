@@ -501,6 +501,8 @@ def run_scheduling_llm_pilot_from_env(
     resume: bool = False,
     include_gpt_value: bool = False,
     include_gpt_frontier_ranking: bool = False,
+    include_target_prm: bool = False,
+    target_prm_train_count: int = 100,
 ) -> Dict[str, object]:
     client = OpenAICompatibleHTTPClient.from_env()
     client.timeout = timeout
@@ -524,6 +526,8 @@ def run_scheduling_llm_pilot_from_env(
         resume=resume,
         include_gpt_value=include_gpt_value,
         include_gpt_frontier_ranking=include_gpt_frontier_ranking,
+        include_target_prm=include_target_prm,
+        target_prm_train_count=target_prm_train_count,
     )
 
 
@@ -543,6 +547,8 @@ def preflight_scheduling_llm_pilot(
     perturbation: str = "mixed",
     include_gpt_value: bool = False,
     include_gpt_frontier_ranking: bool = False,
+    include_target_prm: bool = False,
+    target_prm_train_count: int = 100,
     env=None,
 ) -> Dict[str, object]:
     source = os.environ if env is None else env
@@ -559,6 +565,9 @@ def preflight_scheduling_llm_pilot(
     if include_gpt_frontier_ranking:
         insert_at = 3 if include_gpt_value else 2
         policy_names.insert(insert_at, "GPT-frontier-rank / ToT-style")
+    if include_target_prm:
+        insert_at = policy_names.index("Solver-trained MLP")
+        policy_names.insert(insert_at, "Target-PRM")
     method_count = len(policy_names)
     completed_renderings = {rendering_id for rendering_id, count in completed_counts.items() if count >= method_count}
     remaining = [episode for episode in episodes if episode.rendering_id not in completed_renderings]
@@ -585,9 +594,12 @@ def preflight_scheduling_llm_pilot(
         "policy_names": policy_names,
         "include_gpt_value": include_gpt_value,
         "include_gpt_frontier_ranking": include_gpt_frontier_ranking,
+        "include_target_prm": include_target_prm,
+        "target_prm_train_count": target_prm_train_count if include_target_prm else 0,
         "worst_case_request_count_upper_bound": worst_case_proposal_calls,
         "worst_case_value_request_count_upper_bound": len(remaining) * node_budget if include_gpt_value else 0,
         "worst_case_frontier_ranking_request_count_upper_bound": len(remaining) * node_budget if include_gpt_frontier_ranking else 0,
+        "target_prm_training_request_count_upper_bound": target_prm_train_count * node_budget if include_target_prm else 0,
         "estimated_prompt_tokens_per_request": avg_prompt_tokens,
         "estimated_prompt_tokens_upper_bound": int(worst_case_proposal_calls * avg_prompt_tokens),
         "resume_safe": True,
@@ -618,6 +630,8 @@ def run_scheduling_llm_pilot(
     resume: bool = False,
     include_gpt_value: bool = False,
     include_gpt_frontier_ranking: bool = False,
+    include_target_prm: bool = False,
+    target_prm_train_count: int = 100,
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     instances = generate_scheduling_micro_instances(train_count, validation_count, test_count, seed, job_count, machine_count)
@@ -641,6 +655,32 @@ def run_scheduling_llm_pilot(
         seed=seed,
         ranking_records=source_test_records,
     )
+    target_prm_ranker = None
+    target_prm_records = []
+    target_prm_pairs = []
+    target_prm_cache_rows = []
+    target_prm_state_rows = []
+    if include_target_prm:
+        target_prm_instances = generate_scheduling_micro_instances(
+            target_prm_train_count,
+            0,
+            0,
+            seed + 50000,
+            job_count,
+            machine_count,
+        )
+        target_prm_episodes = make_level2_scheduling_episodes(target_prm_instances["train"], seed=seed + 9000, perturbation=perturbation)
+        target_prm_records, target_prm_cache_rows, target_prm_state_rows = collect_real_level2_trace_records(
+            target_prm_episodes,
+            seed=seed + 9100,
+            node_budget=node_budget,
+            action_budget=action_budget,
+            max_records=records_per_instance,
+            proposal_adapter_factory=lambda: RealLLMProposerAdapter(client=client, model=model, prompt_template_version="scheduling-level2-v1", temperature=0.0, top_p=1.0),
+            proposal_model=model,
+        )
+        target_prm_pairs = make_scheduling_ranking_pairs(target_prm_records, max_pairs_per_task=40, seed=seed + 9200)
+        target_prm_ranker = _train_ranker(target_prm_pairs, rank_epochs, seed + 9300)
     episodes = make_level2_scheduling_episodes(instances["test"], seed=seed + 7000, perturbation=perturbation)
     policy_names = ["Random", "Hand heuristic", "Solver-trained MLP", "Oracle"]
     value_policy_factory = None
@@ -652,6 +692,11 @@ def run_scheduling_llm_pilot(
         insert_at = 3 if include_gpt_value else 2
         policy_names.insert(insert_at, "GPT-frontier-rank / ToT-style")
         frontier_ranking_policy_factory = lambda episode, idx: RealLLMFrontierRankingPolicy(episode.hidden_task, client, model)
+    extra_policy_factories = {}
+    if include_target_prm and target_prm_ranker is not None:
+        insert_at = policy_names.index("Solver-trained MLP")
+        policy_names.insert(insert_at, "Target-PRM")
+        extra_policy_factories["Target-PRM"] = lambda episode, idx: SchedulingMLPPolicy(episode.hidden_task, target_prm_ranker)
     table_rows, per_instance_rows, proposal_cache_rows, proposal_state_rows = _evaluate_level2_transfer(
         episodes,
         ranker,
@@ -664,6 +709,7 @@ def run_scheduling_llm_pilot(
         proposal_model=model,
         real_value_policy_factory=value_policy_factory,
         real_frontier_ranking_policy_factory=frontier_ranking_policy_factory,
+        extra_policy_factories=extra_policy_factories,
         checkpoint_dir=out_dir,
         output_prefix="scheduling_llm_pilot",
         batch_size=batch_size,
@@ -687,6 +733,10 @@ def run_scheduling_llm_pilot(
         "resume": resume,
         "include_gpt_value": include_gpt_value,
         "include_gpt_frontier_ranking": include_gpt_frontier_ranking,
+        "include_target_prm": include_target_prm,
+        "target_prm_train_count": target_prm_train_count if include_target_prm else 0,
+        "target_prm_trace_record_count": len(target_prm_records),
+        "target_prm_pair_count": len(target_prm_pairs),
         "model": model,
         "live_network_required": not isinstance(client, ScriptedSchedulingClient),
         "training_source": "level1_solver_traces_only",
@@ -715,6 +765,12 @@ def run_scheduling_llm_pilot(
     _write_level2_episodes(out_dir / "scheduling_llm_pilot_episodes.jsonl", episodes)
     ranker_json = ranker.to_json()
     (out_dir / "scheduling_llm_pilot_ranker.json").write_text(ranker_json, encoding="utf-8")
+    if include_target_prm and target_prm_ranker is not None:
+        (out_dir / "target_prm_ranker.json").write_text(target_prm_ranker.to_json(), encoding="utf-8")
+        _write_trace_records(out_dir / "target_prm_trace_records.jsonl", target_prm_records)
+        _write_pairs(out_dir / "target_prm_train_pairs.jsonl", target_prm_pairs)
+        _write_csv(out_dir / "target_prm_training_proposal_cache.csv", target_prm_cache_rows)
+        _write_jsonl(out_dir / "target_prm_training_proposal_states.jsonl", target_prm_state_rows)
     (out_dir / "scheduling_llm_pilot_leakage_manifest.json").write_text(json.dumps(metrics["semantic_state_schema"], indent=2, sort_keys=True), encoding="utf-8")
     (out_dir / "scheduling_llm_pilot_metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
     _write_transfer_audit_artifacts(
@@ -919,6 +975,40 @@ def collect_level2_trace_records(
     return records
 
 
+def collect_real_level2_trace_records(
+    episodes: Sequence[Level2SchedulingEpisode],
+    seed: int,
+    node_budget: int,
+    action_budget: int,
+    max_records: int,
+    proposal_adapter_factory,
+    proposal_model: str,
+) -> tuple[List[object], List[Dict[str, object]], List[Dict[str, object]]]:
+    records = []
+    proposal_cache_rows = []
+    proposal_state_rows = []
+    for idx, episode in enumerate(episodes):
+        cache = SharedSchedulingProposalCache(
+            episode,
+            seed=seed + idx * 1009,
+            proposal_k=action_budget,
+            node_budget=node_budget,
+            useful_action_recall=1.0,
+            model=proposal_model,
+            adapter=proposal_adapter_factory(),
+        )
+        records.extend(_collect_policy_trace_records(episode, cache, seed + idx, node_budget, action_budget, max_records))
+        proposal_cache_rows.append({"task_id": episode.hidden_task_id, "rendering_id": episode.rendering_id, "perturbation": episode.perturbation, **cache.stats()})
+        proposal_state_rows.extend(cache.state_rows())
+        print(
+            f"[target-prm-train] {idx + 1}/{len(episodes)} episodes, "
+            f"records={len(records)}, states={sum(int(row['state_count']) for row in proposal_cache_rows)}, "
+            f"tokens={sum(int(row['total_tokens']) for row in proposal_cache_rows)}",
+            flush=True,
+        )
+    return records, proposal_cache_rows, proposal_state_rows
+
+
 def _collect_policy_trace_records(
     episode: Level2SchedulingEpisode,
     proposer: SimulatedLLMSchedulingProposer,
@@ -988,6 +1078,7 @@ def _evaluate_level2_transfer(
     progress_label: str | None = None,
     real_value_policy_factory=None,
     real_frontier_ranking_policy_factory=None,
+    extra_policy_factories: Dict[str, object] | None = None,
 ) -> tuple[List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]], List[Dict[str, object]]]:
     all_policies = {
         "Random": lambda episode, idx: RandomPolicy(seed + idx),
@@ -1000,6 +1091,8 @@ def _evaluate_level2_transfer(
         all_policies["GPT-value / ToT-style"] = real_value_policy_factory
     if real_frontier_ranking_policy_factory is not None:
         all_policies["GPT-frontier-rank / ToT-style"] = real_frontier_ranking_policy_factory
+    if extra_policy_factories:
+        all_policies.update(extra_policy_factories)
     selected_names = tuple(policy_names) if policy_names is not None else tuple(all_policies)
     policies = {name: all_policies[name] for name in selected_names}
     by_policy: Dict[str, List[Dict[str, object]]] = {name: [] for name in policies}

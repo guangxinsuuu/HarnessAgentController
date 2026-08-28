@@ -82,7 +82,7 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
     },
     "Best-of-N": {
         "reference": "test-time sampling with verifier/reward selection",
-        "source_url": "",
+        "source_url": "https://arxiv.org/abs/2408.03314",
         "claim_scope": "native_adaptation",
         "official_reproduction": False,
         "required_table_wording": "Best-of-N + verifier",

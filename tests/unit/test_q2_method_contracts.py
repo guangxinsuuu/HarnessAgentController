@@ -52,6 +52,19 @@ class Q2MethodContractsTest(unittest.TestCase):
             if source_kind in {"structured", "native", "scheduling"} and contract["claim_scope"] != "ours":
                 self.assertFalse(contract["official_reproduction"], method)
 
+    def test_paper_or_github_baselines_have_source_urls(self) -> None:
+        source_required = {
+            "CP-SAT",
+            "Direct / CoT",
+            "Self-Consistency",
+            "Best-of-N",
+            "Tree of Thoughts",
+            "Target-PRM priority",
+            "PRM-guided MCTS (ReST-MCTS-style)",
+        }
+        for method in source_required:
+            self.assertTrue(q2_method_contract(method)["source_url"], method)
+
     def test_solver_rows_are_marked_as_ours(self) -> None:
         for method in ("Solver-trained priority", "Solver-trained priority + certified pruning"):
             contract = q2_method_contract(method)
@@ -65,6 +78,7 @@ class Q2MethodContractsTest(unittest.TestCase):
             "https://github.com/princeton-nlp/tree-of-thought-llm",
             "https://github.com/openai/prm800k",
             "https://github.com/THUDM/ReST-MCTS",
+            "https://arxiv.org/abs/2408.03314",
             "method_generate",
             "method_evaluate",
             "method_select",

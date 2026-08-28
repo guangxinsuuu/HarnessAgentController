@@ -19,6 +19,11 @@ style baselines that must not be described as full official replications.
   - README describes PRM800K as a process supervision dataset with 800,000
     step-level correctness labels.
   - Released examples place labels under `label.steps[].completions[].rating`.
+- Best-of-N / test-time compute scaling: `https://arxiv.org/abs/2408.03314`
+  - The Q2 row uses the generic Best-of-N primitive from test-time scaling:
+    independently sample multiple complete answers and select the best one
+    under a verifier/reward. Because the local verifier sees the structured
+    Scheduling objective, the row must be disclosed as `Best-of-N + verifier`.
 - ReST-MCTS*: `https://github.com/THUDM/ReST-MCTS`
   - README describes process-reward-guided tree search plus self-training.
   - `MCTS/mcts.py` implements MCTS rounds with selection, expansion, simulation, and backpropagation.

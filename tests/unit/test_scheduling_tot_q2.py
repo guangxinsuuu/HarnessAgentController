@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,11 +41,25 @@ class SchedulingToTQ2Test(unittest.TestCase):
             self.assertGreater(int(table[0]["tokens"]), 0)
             self.assertEqual(metrics["native_tot_protocol"]["method_select"], "greedy top-b by averaged value samples")
             self.assertTrue((root / "table5_native_row.json").exists())
+            trace = _read_jsonl(root / "scheduling_tot_q2_trace.jsonl")
+            events = {row["event"] for row in trace}
+            self.assertIn("generate", events)
+            self.assertIn("evaluate_select", events)
+            evaluate_events = [row for row in trace if row["event"] == "evaluate_select"]
+            self.assertTrue(evaluate_events)
+            self.assertIn("selected_ids", evaluate_events[0])
+            self.assertIn("value_samples", evaluate_events[0])
+            self.assertIn("scheduling_tot_q2_trace.jsonl", metrics["produced_artifacts"])
 
 
 def _read_csv(path: Path):
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+def _read_jsonl(path: Path):
+    with path.open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
 
 
 if __name__ == "__main__":

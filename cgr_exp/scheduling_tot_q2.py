@@ -79,9 +79,12 @@ def run_scheduling_tot_q2(
     instances = generate_scheduling_micro_instances(train_count, validation_count, test_count, seed, job_count, machine_count)
     episodes = make_level2_scheduling_episodes(instances["test"], seed=seed + 7000, perturbation=perturbation)
     per_instance_path = out_dir / "scheduling_tot_q2_per_instance.csv"
+    trace_path = out_dir / "scheduling_tot_q2_trace.jsonl"
     existing = _read_csv_rows(per_instance_path) if resume else []
     if not resume and per_instance_path.exists():
         per_instance_path.unlink()
+    if not resume and trace_path.exists():
+        trace_path.unlink()
     completed = {str(row.get("rendering_id")) for row in existing}
     pending = [(idx, episode) for idx, episode in enumerate(episodes) if episode.rendering_id not in completed]
     started = time.perf_counter()
@@ -89,9 +92,11 @@ def run_scheduling_tot_q2(
     workers = max(1, int(parallel_episodes))
     if workers == 1:
         for done, (idx, episode) in enumerate(pending, start=1):
-            row = _run_one_tot_episode(client, model, idx, episode, seed, node_budget, action_budget, breadth, value_samples)
+            row, trace_events = _run_one_tot_episode(client, model, idx, episode, seed, node_budget, action_budget, breadth, value_samples)
             new_rows.append(row)
             _append_csv_row(per_instance_path, row)
+            for event in trace_events:
+                _append_jsonl_row(trace_path, event)
             print(f"[scheduling-tot-q2] {done}/{len(pending)} episodes, tokens={row['total_tokens']}", flush=True)
     else:
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -100,9 +105,11 @@ def run_scheduling_tot_q2(
                 for idx, episode in pending
             }
             for done, future in enumerate(as_completed(futures), start=1):
-                row = future.result()
+                row, trace_events = future.result()
                 new_rows.append(row)
                 _append_csv_row(per_instance_path, row)
+                for event in trace_events:
+                    _append_jsonl_row(trace_path, event)
                 print(f"[scheduling-tot-q2] {done}/{len(pending)} episodes, tokens={row['total_tokens']}", flush=True)
     rows = [*_coerce_rows(existing), *new_rows]
     rows.sort(key=lambda row: int(row["task_index"]))
@@ -132,6 +139,7 @@ def run_scheduling_tot_q2(
         "produced_artifacts": [
             "scheduling_tot_q2_table.csv",
             "scheduling_tot_q2_per_instance.csv",
+            "scheduling_tot_q2_trace.jsonl",
             "scheduling_tot_q2_manifest.json",
             "table5_native_row.json",
         ],
@@ -151,7 +159,7 @@ def _run_one_tot_episode(
     action_budget: int,
     breadth: int,
     value_samples: int,
-) -> Dict[str, object]:
+) -> tuple[Dict[str, object], List[Dict[str, object]]]:
     del seed
     task = episode.hidden_task
     verifier = Level1SchedulingVerifier()
@@ -168,6 +176,8 @@ def _run_one_tot_episode(
     value_latency = 0.0
     started = time.perf_counter()
     optimum = task.exhaustive_oracle()
+    trace_events: List[Dict[str, object]] = []
+    level = 0
     while frontier and expanded < node_budget:
         next_frontier: List[SearchNode] = []
         for node in frontier[: max(1, breadth)]:
@@ -178,26 +188,50 @@ def _run_one_tot_episode(
                 value = node.objective_if_complete
                 if value is not None and (incumbent is None or value < incumbent):
                     incumbent = value
+                trace_events.append(_tot_trace_event(episode, task_index, level, "complete", node=node, incumbent=incumbent))
                 continue
-            for child_idx, action in enumerate(proposer.propose(task, node, action_budget, budget_state=budget)):
+            before_calls = len(proposer.call_records)
+            proposed_actions = proposer.propose(task, node, action_budget, budget_state=budget)
+            proposal_record = proposer.call_records[-1] if len(proposer.call_records) > before_calls else {}
+            proposal_children = []
+            invalid_children = 0
+            for child_idx, action in enumerate(proposed_actions):
                 verified = verifier.verify(task, node, action)
                 budget.charge_verifier()
                 if not verified.feasible:
+                    invalid_children += 1
                     continue
                 child = verifier.make_child(task, node.with_updates(incumbent_at_creation=incumbent), action, verified, child_idx)
                 generated += 1
+                proposal_children.append(child)
                 if child.completion_status == CompletionStatus.COMPLETE:
                     value = child.objective_if_complete
                     if value is not None and (incumbent is None or value < incumbent):
                         incumbent = value
                 else:
                     next_frontier.append(child)
+            trace_events.append(
+                _tot_trace_event(
+                    episode,
+                    task_index,
+                    level,
+                    "generate",
+                    node=node,
+                    record=proposal_record,
+                    proposed_actions=[_safe_action(action) for action in proposed_actions],
+                    child_ids=[child.node_id for child in proposal_children],
+                    invalid_children=invalid_children,
+                    incumbent=incumbent,
+                )
+            )
         if not next_frontier:
             break
         score_sums = [0.0 for _ in next_frontier]
-        for _sample in range(max(1, value_samples)):
+        value_sample_records = []
+        for sample_idx in range(max(1, value_samples)):
             response = client.score_frontier_states(task=task, nodes=next_frontier, model=model)
             scores = [float(score) for score in response.get("scores", [])]
+            fallback_used = len(scores) != len(next_frontier)
             if len(scores) != len(next_frontier):
                 scores = [float(len(next_frontier) - idx) for idx in range(len(next_frontier))]
             for idx, score in enumerate(scores):
@@ -206,14 +240,39 @@ def _run_one_tot_episode(
             value_input_tokens += int(response.get("input_tokens", 0))
             value_output_tokens += int(response.get("output_tokens", 0))
             value_latency += float(response.get("latency", 0.0))
+            value_sample_records.append(
+                {
+                    "sample_index": sample_idx,
+                    "scores": scores,
+                    "fallback_used": fallback_used,
+                    "input_tokens": int(response.get("input_tokens", 0)),
+                    "output_tokens": int(response.get("output_tokens", 0)),
+                    "latency": float(response.get("latency", 0.0)),
+                    "raw_output": str(response.get("raw_output", "")),
+                }
+            )
         ranked = sorted(range(len(next_frontier)), key=lambda idx: (score_sums[idx] / max(1, value_samples), next_frontier[idx].node_id), reverse=True)
         frontier = [next_frontier[idx] for idx in ranked[: max(1, breadth)]]
+        trace_events.append(
+            _tot_trace_event(
+                episode,
+                task_index,
+                level,
+                "evaluate_select",
+                candidate_ids=[node.node_id for node in next_frontier],
+                averaged_scores=[score_sums[idx] / max(1, value_samples) for idx in range(len(next_frontier))],
+                selected_ids=[node.node_id for node in frontier],
+                value_samples=value_sample_records,
+                incumbent=incumbent,
+            )
+        )
+        level += 1
     proposal_calls = len(proposer.call_records)
     proposal_input_tokens = sum(int(record.get("input_tokens", 0)) for record in proposer.call_records)
     proposal_output_tokens = sum(int(record.get("output_tokens", 0)) for record in proposer.call_records)
     proposal_latency = sum(float(record.get("latency", 0.0)) for record in proposer.call_records)
     total_tokens = proposal_input_tokens + proposal_output_tokens + value_input_tokens + value_output_tokens
-    return {
+    row = {
         "Method": "Tree of Thoughts / GPT-frontier-rank",
         "Transfer setting": "Online",
         "task_index": task_index,
@@ -236,6 +295,30 @@ def _run_one_tot_episode(
         "status": "complete",
         "notes": "ToT BFS propose/value/select; value scores averaged across samples",
     }
+    trace_events.append(_tot_trace_event(episode, task_index, level, "finish", row=row))
+    return row, trace_events
+
+
+def _tot_trace_event(episode: Level2SchedulingEpisode, task_index: int, level: int, event: str, **kwargs) -> Dict[str, object]:
+    payload = {
+        "task_index": task_index,
+        "task_id": episode.hidden_task_id,
+        "rendering_id": episode.rendering_id,
+        "perturbation": episode.perturbation,
+        "level": level,
+        "event": event,
+    }
+    payload.update(kwargs)
+    if "node" in payload:
+        node = payload.pop("node")
+        payload["node_id"] = getattr(node, "node_id", "")
+        payload["depth"] = getattr(node, "depth", 0)
+        payload["partial_schedule"] = list(getattr(node, "structured_state", {}).get("scheduled", []))
+    return payload
+
+
+def _safe_action(action) -> Dict[str, object]:
+    return action.to_dict() if hasattr(action, "to_dict") else {"action": str(action)}
 
 
 def _summarize(rows: Sequence[Dict[str, object]], expected_count: int, wall_clock_seconds: float) -> Dict[str, object]:
@@ -294,6 +377,11 @@ def _append_csv_row(path: Path, row: Dict[str, object]) -> None:
         if not exists:
             writer.writeheader()
         writer.writerow(row)
+
+
+def _append_jsonl_row(path: Path, row: Dict[str, object]) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 def _coerce_rows(rows: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:

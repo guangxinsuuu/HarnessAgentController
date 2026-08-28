@@ -120,6 +120,8 @@ Current local status:
 
 - `run-scheduling-tot-q2` implements a native ToT BFS row with
   propose/evaluate/select, configurable breadth, and averaged LLM value samples.
+- It writes `scheduling_tot_q2_trace.jsonl` with generation, value-sampling,
+  averaged score, and top-b selection events for protocol audit.
 - Older `GPT-frontier-rank / ToT-style` runs are still online frontier-ranking
   diagnostics and should not be mixed with this stricter native ToT row.
 

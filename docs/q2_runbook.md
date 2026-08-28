@@ -191,6 +191,7 @@ Completion evidence:
 
 - `scheduling_tot_q2_table.csv`
 - `scheduling_tot_q2_per_instance.csv`
+- `scheduling_tot_q2_trace.jsonl`
 - `table5_native_row.json`
 - manifest contains `native_tot_protocol` with propose/evaluate/select.
 

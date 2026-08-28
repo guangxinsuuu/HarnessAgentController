@@ -451,7 +451,7 @@ class Table5Q2Test(unittest.TestCase):
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
             self.assertEqual(audit_rows["Self-Consistency"]["result_ready"], "False")
             self.assertIn("must declare multiple independent samples", audit_rows["Self-Consistency"]["result_blockers"])
-            self.assertIn("selection_rule=majority_job_order_then_objective", audit_rows["Self-Consistency"]["result_blockers"])
+            self.assertIn("selection_rule=majority_job_order_then_first_valid", audit_rows["Self-Consistency"]["result_blockers"])
 
     def test_readiness_audit_rejects_best_of_n_below_declared_sample_count(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1641,7 +1641,7 @@ def _write_native_manifest(path: Path, methods: list[str], test_count: int) -> N
         sample_count = 1 if method == "Direct / CoT" else 8
         selection_rule = {
             "Direct / CoT": "first_valid",
-            "Self-Consistency": "majority_job_order_then_objective",
+            "Self-Consistency": "majority_job_order_then_first_valid",
             "Best-of-N": "best_verified_objective",
         }[method]
         method_protocols[method] = {

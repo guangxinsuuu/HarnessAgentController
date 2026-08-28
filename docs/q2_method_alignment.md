@@ -80,11 +80,11 @@ Scheduling adaptation:
 
 - Generate `N` complete schedule samples with the same prompt family as Direct.
 - Group valid outputs by canonical final job order.
-- Choose the majority group; use verified objective only as a tie-break inside
-  majority-equivalent groups.
+- Choose the majority group; break ties by the earliest valid sample rather
+  than by verified objective.
 
 This is distinct from Best-of-N because objective minimization is not the
-primary selection rule.
+selection rule, including in all-distinct final-answer cases.
 
 ### Best-of-N
 

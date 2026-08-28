@@ -155,7 +155,8 @@ python3 -m cgr_exp.cli run-scheduling-native-q2 \
 ```
 
 Completion evidence is the same native audit artifact set. The selection rule
-is majority canonical final job order, with objective used only as a tie-break.
+is majority canonical final job order, with the earliest valid sample used to
+break ties so the row does not become verifier-selected Best-of-N.
 
 ### Best-of-N
 

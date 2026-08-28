@@ -61,7 +61,7 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
             "consistency-based selection",
         ],
         "local_promotion_gates": [
-            "selection_rule majority_job_order_then_objective",
+            "selection_rule majority_job_order_then_first_valid",
             "multiple samples per held-out task",
             "not Best-of-N objective selection",
         ],

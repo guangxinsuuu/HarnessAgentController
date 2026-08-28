@@ -71,7 +71,7 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
         "implemented_scope": [
             "multiple complete-schedule samples",
             "aggregation by canonical final job order",
-            "verified objective used only as a tie-break within selected answers",
+            "tie-breaking by earliest valid sample rather than verified objective",
         ],
         "source_primitives": [
             "multiple independent reasoning paths",

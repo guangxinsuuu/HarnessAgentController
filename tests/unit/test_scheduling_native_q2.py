@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cgr_exp.scheduling_native_q2 import run_scheduling_native_q2
+from cgr_exp.scheduling_native_q2 import _select_sample, run_scheduling_native_q2
 from cgr_exp.scheduling_transfer import ScriptedSchedulingClient
 
 
@@ -51,7 +51,7 @@ class SchedulingNativeQ2Test(unittest.TestCase):
             self.assertEqual(metrics["live_network_required"], False)
             native_protocol = metrics["native_protocol"]["methods"]
             self.assertEqual(native_protocol["Direct / CoT"]["sample_count"], 1)
-            self.assertEqual(native_protocol["Self-Consistency"]["selection_rule"], "majority_job_order_then_objective")
+            self.assertEqual(native_protocol["Self-Consistency"]["selection_rule"], "majority_job_order_then_first_valid")
             self.assertEqual(native_protocol["Best-of-N"]["verifier_role"], "filter invalid complete schedules and select minimum verified objective")
             self.assertFalse(native_protocol["Best-of-N"]["oracle_future_labels_exposed"])
             alignment = metrics["method_alignment"]
@@ -165,6 +165,14 @@ class SchedulingNativeQ2Test(unittest.TestCase):
                 methods=("direct",),
             )
             self.assertEqual(len(_read_csv(out / "scheduling_native_q2_per_instance.csv")), 2)
+
+    def test_self_consistency_tie_break_does_not_use_verified_objective(self) -> None:
+        samples = [
+            {"sample_index": 0, "valid_complete": True, "objective": 30.0, "job_order": ("a", "b")},
+            {"sample_index": 1, "valid_complete": True, "objective": 10.0, "job_order": ("b", "a")},
+        ]
+        chosen = _select_sample(samples, "majority_job_order_then_first_valid")
+        self.assertEqual(chosen["sample_index"], 0)
 
 
 def _read_csv(path: Path):

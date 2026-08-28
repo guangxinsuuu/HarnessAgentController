@@ -620,7 +620,7 @@ def _native_protocol_blockers(method: str, method_protocol: object) -> List[str]
     invalid = []
     expected_selection = {
         "Direct / CoT": "first_valid",
-        "Self-Consistency": "majority_job_order_then_objective",
+        "Self-Consistency": "majority_job_order_then_first_valid",
         "Best-of-N": "best_verified_objective",
     }[method]
     if str(method_protocol.get("selection_rule", "")) != expected_selection:

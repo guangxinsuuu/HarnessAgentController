@@ -61,8 +61,10 @@ matrix generation together with the source-evidence and table-readiness audits.
 - Direct / CoT must declare `selection_rule = first_valid`, exclude oracle
   future labels, and provide exactly one sample per held-out task.
 - Self-Consistency must declare
-  `selection_rule = majority_job_order_then_objective`, exclude oracle future
-  labels, and provide multiple independent samples per held-out task.
+  `selection_rule = majority_job_order_then_first_valid`, exclude oracle
+  future labels, provide multiple independent samples per held-out task, and
+  avoid verified-objective tie-breaking that would collapse ties into
+  Best-of-N.
 - Best-of-N must declare `selection_rule = best_verified_objective`, disclose
   verifier objective selection, exclude oracle future labels, and provide the
   declared number of samples per held-out task.

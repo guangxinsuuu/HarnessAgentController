@@ -31,7 +31,7 @@ NATIVE_METHODS = {
         "training_states": "native parallel sampling",
         "sample_count": 8,
         "temperature": 0.7,
-        "selection": "majority_job_order_then_objective",
+        "selection": "majority_job_order_then_first_valid",
         "official_primitive": "sample multiple reasoning paths and aggregate final answers",
     },
     "best_of_n": {
@@ -381,12 +381,12 @@ def _select_sample(samples: Sequence[Dict[str, object]], selection: str) -> Dict
         return dict(samples[0]) if samples else {"sample_index": ""}
     if selection == "best_verified_objective":
         return min(valid, key=lambda sample: (float(sample["objective"]), int(sample["sample_index"])))
-    if selection == "majority_job_order_then_objective":
+    if selection == "majority_job_order_then_first_valid":
         counts: Dict[tuple[str, ...], int] = {}
         for sample in valid:
             key = tuple(sample["job_order"])
             counts[key] = counts.get(key, 0) + 1
-        return min(valid, key=lambda sample: (-counts[tuple(sample["job_order"])], float(sample["objective"]), int(sample["sample_index"])))
+        return min(valid, key=lambda sample: (-counts[tuple(sample["job_order"])], int(sample["sample_index"])))
     return min(valid, key=lambda sample: int(sample["sample_index"]))
 
 

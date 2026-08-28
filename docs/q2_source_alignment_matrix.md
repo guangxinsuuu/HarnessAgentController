@@ -23,6 +23,28 @@ style baselines that must not be described as full official replications.
   - README describes process-reward-guided tree search plus self-training.
   - `MCTS/mcts.py` implements MCTS rounds with selection, expansion, simulation, and backpropagation.
 
+## Machine-Checked Source Primitive Contract
+
+Each Q2 artifact must now carry the `source_primitives` field from
+`cgr_exp/q2_method_contracts.py` inside its method-alignment manifest. The
+Table 4 audit rejects completed rows whose artifact does not declare the
+expected primitives for that method. This is intentionally stricter than a row
+name match: old or ad hoc artifacts cannot populate a baseline row unless they
+also declare the official-method primitive that the local Scheduling adaptation
+implements.
+
+Examples:
+
+- Tree of Thoughts requires `method_generate`, `method_evaluate`,
+  `method_select`, breadth-first search, and greedy top-b selection.
+- PRM-style rows require intermediate-step/process-supervision primitives, not
+  terminal outcome labels.
+- ReST-MCTS-style requires MCTS selection, expansion, simulation/evaluation,
+  backpropagation, and process reward guidance; full iterative self-training is
+  explicitly outside the current local row.
+- Solver-prior rows require solver-induced source trajectories, frozen
+  zero-shot transfer, and feature-schema evidence excluding oracle labels.
+
 ## Row-by-Row Alignment
 
 | Q2 row | Original-method primitive | Local implementation | Alignment status | Required wording |

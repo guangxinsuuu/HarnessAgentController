@@ -1690,9 +1690,13 @@ class Table5Q2Test(unittest.TestCase):
                         "supervision": "outcome_only",
                         "label_source": "terminal_success",
                         "terminal_outcome_only": True,
+                        "uses_intermediate_states": False,
                         "oracle_labels_in_inference_features": False,
                         "target_pair_count": 1,
                         "process_label_record_count": 1,
+                        "finite_best_descendant_labels": 1,
+                        "max_record_depth": 0,
+                        "frontier_parent_group_count": 0,
                     }
                 ),
                 encoding="utf-8",
@@ -1704,6 +1708,9 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
             self.assertIn("must declare target_process_frontier_ranking supervision", audit_rows["Target-PRM priority"]["result_blockers"])
             self.assertIn("must not be terminal outcome only", audit_rows["Target-PRM priority"]["result_blockers"])
+            self.assertIn("must declare intermediate state supervision", audit_rows["Target-PRM priority"]["result_blockers"])
+            self.assertIn("must include non-root intermediate states", audit_rows["Target-PRM priority"]["result_blockers"])
+            self.assertIn("must record frontier parent groups", audit_rows["Target-PRM priority"]["result_blockers"])
 
     def test_readiness_audit_rejects_rest_mcts_manifest_claiming_full_self_training(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2246,6 +2253,8 @@ def _write_target_prm_label_manifest(path: Path) -> None:
                 "target_pair_count": 1,
                 "finite_best_descendant_labels": 1,
                 "infeasible_best_descendant_labels": 0,
+                "max_record_depth": 1,
+                "frontier_parent_group_count": 1,
                 "oracle_labels_in_inference_features": False,
             }
         ),

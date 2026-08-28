@@ -106,10 +106,12 @@ Required local semantics before promoting to a strict ToT row:
 - Aggregate repeated value/vote samples when configured.
 - Greedily select the top frontier states for the next step.
 
-The current `GPT-frontier-rank / ToT-style` row is a useful online LLM
-frontier-ranking baseline, but it should remain `ToT-style` unless the BFS
-generate/evaluate/select protocol above is enabled and recorded in the
-manifest.
+Current local status:
+
+- `run-scheduling-tot-q2` implements a native ToT BFS row with
+  propose/evaluate/select, configurable breadth, and averaged LLM value samples.
+- Older `GPT-frontier-rank / ToT-style` runs are still online frontier-ranking
+  diagnostics and should not be mixed with this stricter native ToT row.
 
 ## Target-Domain Learned Search
 

@@ -18,6 +18,7 @@ from cgr_exp.scheduling_outcome_prm import run_scheduling_outcome_prm
 from cgr_exp.scheduling_policy_diagnosis import run_scheduling_policy_diagnosis
 from cgr_exp.scheduling_representation import run_scheduling_representation_ablation
 from cgr_exp.scheduling_structured_q2 import run_scheduling_structured_q2
+from cgr_exp.scheduling_tot_q2 import run_scheduling_tot_q2, run_scheduling_tot_q2_from_env
 from cgr_exp.scheduling_transfer import (
     ScriptedSchedulingClient,
     preflight_scheduling_llm_pilot,
@@ -41,6 +42,7 @@ COMMANDS = [
     "run-scheduling-llm-pilot",
     "run-scheduling-native-q2",
     "run-scheduling-structured-q2",
+    "run-scheduling-tot-q2",
     "run-scheduling-outcome-prm",
     "diagnose-scheduling-policy",
     "run-scheduling-diagnosis",
@@ -185,6 +187,22 @@ def main() -> None:
             p.add_argument("--job-count", type=int, default=6)
             p.add_argument("--machine-count", type=int, default=3)
             p.add_argument("--cpsat-time-limit-seconds", type=float, default=5.0)
+        if name == "run-scheduling-tot-q2":
+            p.add_argument("--model", default=None)
+            p.add_argument("--train-count", type=int, default=200)
+            p.add_argument("--validation-count", type=int, default=50)
+            p.add_argument("--test-count", type=int, default=100)
+            p.add_argument("--job-count", type=int, default=6)
+            p.add_argument("--machine-count", type=int, default=3)
+            p.add_argument("--node-budget", type=int, default=80)
+            p.add_argument("--action-budget", type=int, default=6)
+            p.add_argument("--breadth", type=int, default=5)
+            p.add_argument("--value-samples", type=int, default=3)
+            p.add_argument("--timeout", type=float, default=120.0)
+            p.add_argument("--parallel-episodes", type=int, default=1)
+            p.add_argument("--resume", action="store_true", default=False)
+            p.add_argument("--perturbation", default="mixed")
+            p.add_argument("--mock", action="store_true", default=False)
         if name == "run-scheduling-outcome-prm":
             p.add_argument("--source-run-dir", type=Path, required=True)
             p.add_argument("--train-count", type=int, default=200)
@@ -665,6 +683,64 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'scheduling_structured_q2_table.csv'}")
+            return
+        if args.command == "run-scheduling-tot-q2":
+            if args.mock:
+                metrics = run_scheduling_tot_q2(
+                    args.output_dir,
+                    client=ScriptedSchedulingClient(model=args.model or "mock-scheduling"),
+                    model=args.model or "mock-scheduling",
+                    seed=args.seed,
+                    train_count=args.train_count,
+                    validation_count=args.validation_count,
+                    test_count=args.test_count,
+                    job_count=args.job_count,
+                    machine_count=args.machine_count,
+                    node_budget=args.node_budget,
+                    action_budget=args.action_budget,
+                    breadth=args.breadth,
+                    value_samples=args.value_samples,
+                    perturbation=args.perturbation,
+                    parallel_episodes=args.parallel_episodes,
+                    resume=args.resume,
+                )
+            else:
+                metrics = run_scheduling_tot_q2_from_env(
+                    args.output_dir,
+                    model=args.model,
+                    seed=args.seed,
+                    train_count=args.train_count,
+                    validation_count=args.validation_count,
+                    test_count=args.test_count,
+                    job_count=args.job_count,
+                    machine_count=args.machine_count,
+                    node_budget=args.node_budget,
+                    action_budget=args.action_budget,
+                    breadth=args.breadth,
+                    value_samples=args.value_samples,
+                    timeout=args.timeout,
+                    perturbation=args.perturbation,
+                    parallel_episodes=args.parallel_episodes,
+                    resume=args.resume,
+                )
+            manifest = {
+                "command": args.command,
+                "seed": args.seed,
+                "model": metrics["model"],
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "breadth": args.breadth,
+                "value_samples": args.value_samples,
+                "parallel_episodes": args.parallel_episodes,
+                "resume": args.resume,
+                "mock": args.mock,
+                "live_network_required": metrics["live_network_required"],
+                "native_tot_protocol": metrics["native_tot_protocol"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'scheduling_tot_q2_table.csv'}")
             return
         if args.command == "run-scheduling-outcome-prm":
             metrics = run_scheduling_outcome_prm(

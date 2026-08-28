@@ -37,6 +37,8 @@ class Table5Q2Test(unittest.TestCase):
                 [{"Policy": "Solver-trained MLP", "task_id": f"t{i}"} for i in range(100)],
             )
             _write_csv(solver / "timing_metrics.csv", [{"component": "proposal_cache", "wall_clock_seconds": "3600", "call_count": "1"}])
+            (solver / "scheduling_llm_pilot_ranker.json").write_text("{}", encoding="utf-8")
+            _write_learned_metrics(solver, ["Solver-trained priority"], ["Solver-trained MLP"])
 
             gpt = root / "gpt"
             gpt.mkdir()
@@ -278,6 +280,7 @@ class Table5Q2Test(unittest.TestCase):
                 json.dumps({"Method": "Direct / CoT", "task_id": "t0"}) + "\n",
                 encoding="utf-8",
             )
+            _write_native_manifest(native, ["Direct / CoT"], test_count=1)
             out = root / "out"
             audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", direct_dir=native, expected_test_count=1)
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
@@ -313,6 +316,40 @@ class Table5Q2Test(unittest.TestCase):
             audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
             self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
             self.assertIn("partial task coverage: 2/3", audit_rows["Direct / CoT"]["result_blockers"])
+
+    def test_readiness_audit_rejects_native_manifest_without_method_protocol(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Best-of-N",
+                        "success": 0.45,
+                        "gap": 0.2,
+                        "llm_calls": 100,
+                        "tokens": 1000,
+                        "wall_clock_seconds": 10,
+                        "status": "complete",
+                        "source_policy": "native",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_samples.jsonl").write_text(
+                json.dumps({"Method": "Best-of-N", "task_id": "t0"}) + "\n",
+                encoding="utf-8",
+            )
+            (native / "scheduling_native_q2_manifest.json").write_text(
+                json.dumps({"splits": {"test": 1}, "native_protocol": {"methods": {}}}),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", best_of_n_dir=native, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Best-of-N"]["result_ready"], "False")
+            self.assertIn("missing native protocol for Best-of-N", audit_rows["Best-of-N"]["result_blockers"])
 
     def test_readiness_audit_rejects_native_samples_without_matching_method(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -515,6 +552,40 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
             self.assertIn("partial finish coverage: 2/3", audit_rows["Tree of Thoughts"]["result_blockers"])
 
+    def test_readiness_audit_rejects_tot_manifest_without_official_entrypoints(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            (tot / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": 0.6,
+                        "gap": 0.07,
+                        "llm_calls": 1200,
+                        "tokens": 23000000,
+                        "wall_clock_seconds": 300,
+                        "status": "complete",
+                        "source_policy": "native_tot_bfs",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_trace.jsonl").write_text(
+                json.dumps({"event": "finish", "rendering_id": "r0"}) + "\n",
+                encoding="utf-8",
+            )
+            (tot / "scheduling_tot_q2_manifest.json").write_text(
+                json.dumps({"splits": {"test": 1}, "native_tot_protocol": {"official_entrypoints": ["method_generate"]}}),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Tree of Thoughts"]["result_ready"], "False")
+            self.assertIn("missing official BFS entrypoints", audit_rows["Tree of Thoughts"]["result_blockers"])
+
     def test_readiness_audit_flags_pending_and_shared_cache_fallback_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -541,6 +612,7 @@ class Table5Q2Test(unittest.TestCase):
                 [{"Policy": "Solver-trained MLP", "task_id": f"t{i}"} for i in range(100)],
             )
             (solver / "scheduling_llm_pilot_ranker.json").write_text("{}", encoding="utf-8")
+            _write_learned_metrics(solver, ["Solver-trained priority"], ["Solver-trained MLP"])
             out = root / "out"
             manifest = audit_table5_q2_readiness(out, solver_prior_dir=solver, expected_test_count=100)
             readiness = manifest["readiness"]
@@ -613,6 +685,55 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
             self.assertIn("target_prm_ranker.json", audit_rows["Target-PRM priority"]["result_blockers"])
 
+    def test_readiness_audit_rejects_rest_mcts_manifest_claiming_full_self_training(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rest = root / "rest"
+            rest.mkdir()
+            _write_csv(
+                rest / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "PRM-guided MCTS (ReST-MCTS-style)",
+                        "success": "0.84",
+                        "gap": "0.09",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                        "on_demand_total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(
+                rest / "scheduling_llm_pilot_per_instance.csv",
+                [{"Policy": "PRM-guided MCTS (ReST-MCTS-style)", "task_id": "t0"}],
+            )
+            for name in ("target_prm_ranker.json", "target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
+                (rest / name).write_text("{}\n", encoding="utf-8")
+            (rest / "scheduling_llm_pilot_metrics.json").write_text(
+                json.dumps(
+                    {
+                        "q2_method_alignment": {"PRM-guided MCTS (ReST-MCTS-style)": {}},
+                        "learned_search_protocol": {
+                            "policies": {
+                                "PRM-guided MCTS (ReST-MCTS-style)": {
+                                    "full_iterative_self_training": True,
+                                }
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", rest_mcts_dir=rest, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "False")
+            self.assertIn("must not claim full iterative self-training", audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_blockers"])
+
 
 def _write_csv(path: Path, rows) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -624,3 +745,42 @@ def _write_csv(path: Path, rows) -> None:
 def _read_csv(path: Path):
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+def _write_native_manifest(path: Path, methods: list[str], test_count: int) -> None:
+    method_protocols = {}
+    for method in methods:
+        method_protocols[method] = {
+            "sample_count": 1,
+            "verifier_role": (
+                "filter invalid complete schedules and select minimum verified objective"
+                if method == "Best-of-N"
+                else "validate complete schedules for metrics"
+            ),
+            "oracle_future_labels_exposed": False,
+        }
+    (path / "scheduling_native_q2_manifest.json").write_text(
+        json.dumps({"splits": {"test": test_count}, "native_protocol": {"methods": method_protocols}}),
+        encoding="utf-8",
+    )
+
+
+def _write_learned_metrics(path: Path, methods: list[str], policies: list[str]) -> None:
+    policy_protocols = {}
+    for policy in policies:
+        policy_protocols[policy] = {
+            "training_distribution": "source solver-induced Scheduling trajectories",
+            "learned_score_authorizes_pruning": False,
+            "pruning_authority": "verified lower-bound/feasibility logic only",
+            "full_iterative_self_training": False,
+        }
+    (path / "scheduling_llm_pilot_metrics.json").write_text(
+        json.dumps(
+            {
+                "q2_method_alignment": {method: {} for method in methods},
+                "semantic_state_schema": {"oracle_labels_in_inference_features": False},
+                "learned_search_protocol": {"policies": policy_protocols},
+            }
+        ),
+        encoding="utf-8",
+    )

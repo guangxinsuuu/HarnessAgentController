@@ -204,22 +204,24 @@ def _missing_required_artifacts(row: Mapping[str, object]) -> List[str]:
     artifact = Path(artifact_value)
     source_dir = _artifact_run_root(method, artifact)
     required_by_method = {
-        "Direct / CoT": ["scheduling_native_q2_samples.jsonl"],
-        "Self-Consistency": ["scheduling_native_q2_samples.jsonl"],
-        "Best-of-N": ["scheduling_native_q2_samples.jsonl"],
-        "Tree of Thoughts": ["scheduling_tot_q2_trace.jsonl"],
+        "Direct / CoT": ["scheduling_native_q2_samples.jsonl", "scheduling_native_q2_manifest.json"],
+        "Self-Consistency": ["scheduling_native_q2_samples.jsonl", "scheduling_native_q2_manifest.json"],
+        "Best-of-N": ["scheduling_native_q2_samples.jsonl", "scheduling_native_q2_manifest.json"],
+        "Tree of Thoughts": ["scheduling_tot_q2_trace.jsonl", "scheduling_tot_q2_manifest.json"],
         "Target-PRM priority": [
+            "scheduling_llm_pilot_metrics.json",
             "target_prm_ranker.json",
             "target_prm_trace_records.jsonl",
             "target_prm_train_pairs.jsonl",
         ],
         "PRM-guided MCTS (ReST-MCTS-style)": [
+            "scheduling_llm_pilot_metrics.json",
             "target_prm_ranker.json",
             "target_prm_trace_records.jsonl",
             "target_prm_train_pairs.jsonl",
         ],
-        "Solver-trained priority": ["scheduling_llm_pilot_ranker.json"],
-        "Solver-trained priority + certified pruning": ["scheduling_llm_pilot_ranker.json"],
+        "Solver-trained priority": ["scheduling_llm_pilot_metrics.json", "scheduling_llm_pilot_ranker.json"],
+        "Solver-trained priority + certified pruning": ["scheduling_llm_pilot_metrics.json", "scheduling_llm_pilot_ranker.json"],
     }
     missing = []
     for filename in required_by_method.get(method, []):
@@ -248,6 +250,19 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
     source_dir = _artifact_run_root(method, Path(artifact_value))
     invalid = []
     if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
+        native_manifest = _read_json_manifest(source_dir / "scheduling_native_q2_manifest.json")
+        if native_manifest:
+            protocol = native_manifest.get("native_protocol")
+            if not isinstance(protocol, Mapping):
+                invalid.append("scheduling_native_q2_manifest.json missing native_protocol")
+            else:
+                methods = protocol.get("methods")
+                if not isinstance(methods, Mapping) or method not in methods:
+                    invalid.append(f"scheduling_native_q2_manifest.json missing native protocol for {method}")
+                elif method == "Best-of-N":
+                    verifier_role = str(methods[method].get("verifier_role", ""))
+                    if "select minimum verified objective" not in verifier_role:
+                        invalid.append("Best-of-N manifest does not disclose verifier objective selection")
         sample_path = source_dir / "scheduling_native_q2_samples.jsonl"
         if sample_path.exists() and sample_path.stat().st_size > 0:
             samples, error = _read_jsonl_for_audit(sample_path)
@@ -263,6 +278,20 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 if len(task_ids) < expected_count:
                     invalid.append(f"scheduling_native_q2_samples.jsonl partial task coverage: {len(task_ids)}/{expected_count}")
     if method == "Tree of Thoughts":
+        tot_manifest = _read_json_manifest(source_dir / "scheduling_tot_q2_manifest.json")
+        if tot_manifest:
+            protocol = tot_manifest.get("native_tot_protocol")
+            if not isinstance(protocol, Mapping):
+                invalid.append("scheduling_tot_q2_manifest.json missing native_tot_protocol")
+            else:
+                entrypoints = protocol.get("official_entrypoints")
+                expected_entrypoints = ["method_generate", "method_evaluate", "method_select"]
+                if entrypoints != expected_entrypoints:
+                    invalid.append("Tree of Thoughts manifest missing official BFS entrypoints")
+                if protocol.get("oracle_future_labels_exposed") is not False:
+                    invalid.append("Tree of Thoughts manifest must exclude oracle future labels")
+                if str(protocol.get("search")) != "breadth-first frontier search":
+                    invalid.append("Tree of Thoughts manifest must declare breadth-first frontier search")
         trace_path = source_dir / "scheduling_tot_q2_trace.jsonl"
         if trace_path.exists() and trace_path.stat().st_size > 0:
             trace, error = _read_jsonl_for_audit(trace_path)
@@ -278,6 +307,18 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 if len(renderings) < expected_count:
                     invalid.append(f"scheduling_tot_q2_trace.jsonl partial finish coverage: {len(renderings)}/{expected_count}")
     if method in {"Target-PRM priority", "PRM-guided MCTS (ReST-MCTS-style)"}:
+        learned_manifest = _read_json_manifest(source_dir / "scheduling_llm_pilot_metrics.json")
+        if learned_manifest:
+            alignment = learned_manifest.get("q2_method_alignment")
+            if not isinstance(alignment, Mapping) or method not in alignment:
+                invalid.append(f"scheduling_llm_pilot_metrics.json missing Q2 method alignment for {method}")
+            protocols = learned_manifest.get("learned_search_protocol")
+            protocol_by_policy = protocols.get("policies") if isinstance(protocols, Mapping) else None
+            source_policy = str(row.get("source_policy", ""))
+            if not isinstance(protocol_by_policy, Mapping) or source_policy not in protocol_by_policy:
+                invalid.append(f"scheduling_llm_pilot_metrics.json missing learned search protocol for {source_policy}")
+            elif method == "PRM-guided MCTS (ReST-MCTS-style)" and protocol_by_policy[source_policy].get("full_iterative_self_training") is not False:
+                invalid.append("ReST-MCTS-style manifest must not claim full iterative self-training")
         for filename in ("target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
             path = source_dir / filename
             if path.exists() and path.stat().st_size > 0:
@@ -286,6 +327,31 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                     invalid.append(f"{filename} {error}")
                 elif not rows:
                     invalid.append(f"{filename} empty jsonl")
+    if method in {"Solver-trained priority", "Solver-trained priority + certified pruning"}:
+        learned_manifest = _read_json_manifest(source_dir / "scheduling_llm_pilot_metrics.json")
+        if learned_manifest:
+            alignment = learned_manifest.get("q2_method_alignment")
+            if not isinstance(alignment, Mapping) or method not in alignment:
+                invalid.append(f"scheduling_llm_pilot_metrics.json missing Q2 method alignment for {method}")
+            schema = learned_manifest.get("semantic_state_schema")
+            if not isinstance(schema, Mapping) or schema.get("oracle_labels_in_inference_features") is not False:
+                invalid.append("scheduling_llm_pilot_metrics.json must exclude oracle labels from inference features")
+            if method == "Solver-trained priority":
+                protocols = learned_manifest.get("learned_search_protocol")
+                protocol_by_policy = protocols.get("policies") if isinstance(protocols, Mapping) else None
+                if not isinstance(protocol_by_policy, Mapping) or "Solver-trained MLP" not in protocol_by_policy:
+                    invalid.append("scheduling_llm_pilot_metrics.json missing solver-trained MLP protocol")
+            if method == "Solver-trained priority + certified pruning":
+                protocols = learned_manifest.get("learned_search_protocol")
+                protocol_by_policy = protocols.get("policies") if isinstance(protocols, Mapping) else None
+                cert_protocol = protocol_by_policy.get("Solver-trained MLP + certified pruning") if isinstance(protocol_by_policy, Mapping) else None
+                if not isinstance(cert_protocol, Mapping):
+                    invalid.append("scheduling_llm_pilot_metrics.json missing certified pruning protocol")
+                else:
+                    if cert_protocol.get("learned_score_authorizes_pruning") is not False:
+                        invalid.append("certified pruning protocol must not let learned score authorize pruning")
+                    if str(cert_protocol.get("pruning_authority")) != "verified lower-bound/feasibility logic only":
+                        invalid.append("certified pruning protocol must declare verified pruning authority")
     return invalid
 
 
@@ -314,6 +380,16 @@ def _expected_count_from_row(row: Mapping[str, object]) -> Optional[int]:
             if test_count > 0:
                 return int(test_count)
     return None
+
+
+def _read_json_manifest(path: Path) -> Dict[str, object]:
+    if not path.exists() or path.stat().st_size == 0:
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path]) -> Dict[str, object]:

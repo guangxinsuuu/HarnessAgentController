@@ -96,6 +96,9 @@ def _grounding_robustness_row(source_dir: Optional[Path], expected_test_count: i
             missing = sorted(required_conditions - conditions)
             if missing:
                 blockers.append(f"table7 robustness conditions missing: {', '.join(missing)}")
+        table_rows = _read_csv(source_dir / "table7_grounding_robustness.csv") if source_dir is not None else []
+        if table_rows:
+            blockers.extend(_table7_authority_runtime_blockers(table_rows))
         task_ids = _unique_ids(source_dir / "table6_authority_per_instance.csv", "task_id") if source_dir is not None else []
         if len(task_ids) < expected_test_count:
             blockers.append(f"table6_authority_per_instance.csv partial task coverage: {len(task_ids)}/{expected_test_count}")
@@ -115,6 +118,27 @@ def _protocol_blockers(protocol: object) -> List[str]:
     for key, expected in CERTIFICATION_PROTOCOL_REQUIRED.items():
         if protocol.get(key) != expected:
             blockers.append(f"certification_protocol {key} must be {expected}")
+    return blockers
+
+
+def _table7_authority_runtime_blockers(rows: List[Mapping[str, str]]) -> List[str]:
+    blockers: List[str] = []
+    by_condition = {str(row.get("Condition", "")): row for row in rows}
+    clean = by_condition.get("Clean certified")
+    if clean and _as_float(clean.get("Semantic false prune")) != 0.0:
+        blockers.append("Clean certified row must have zero semantic false prune")
+    learned = by_condition.get("Learned-score pruning clean")
+    if learned and _as_float(learned.get("Learned-score prunes")) <= 0:
+        blockers.append("Learned-score pruning clean row must trigger positive learned-score prunes")
+    uncertain_rows = [row for row in rows if str(row.get("Condition", "")).startswith("Uncertain-only")]
+    for row in uncertain_rows:
+        condition = str(row.get("Condition", "Uncertain-only"))
+        if _as_float(row.get("Verified FP count")) != 0.0:
+            blockers.append(f"{condition} row must not convert uncertain constraints into verified false positives")
+        if _as_float(row.get("Verified infeasible rejections")) != 0.0:
+            blockers.append(f"{condition} row must not reject actions using uncertain-only constraints")
+        if _as_float(row.get("Learned-score prunes")) != 0.0:
+            blockers.append(f"{condition} row must not use learned-score pruning")
     return blockers
 
 

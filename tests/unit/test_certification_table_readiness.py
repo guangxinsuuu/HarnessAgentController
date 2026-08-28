@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -76,6 +78,76 @@ class CertificationTableReadinessTest(unittest.TestCase):
             row = next(row for row in manifest["rows"] if row["Table"] == "Table 6 clean certification")
             self.assertFalse(row["result_ready"])
             self.assertIn("partial task coverage: 2/3", row["result_blockers"])
+
+    def test_audit_rejects_authority_rows_without_required_runtime_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            auth = root / "auth"
+            auth.mkdir()
+            (auth / "table6_authority_metrics.json").write_text(
+                json.dumps(
+                    {
+                        "benchmark": "table6_authority_separation",
+                        "certification_protocol": {
+                            "pruning_authority": "verified lower-bound/feasibility logic only",
+                            "learned_score_authority": "ranking only",
+                            "learned_score_can_prune": False,
+                            "uncertain_constraints_can_prune": False,
+                            "oracle_labels_in_inference_features": False,
+                        },
+                        "table7_robustness_conditions": [
+                            "Clean certified",
+                            "Verified FN 1%",
+                            "Verified FN 20%",
+                            "Verified FP 0.5%",
+                            "Verified FP 5%",
+                            "Uncertain-only 20%",
+                            "Learned-score pruning clean",
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            _write_csv(
+                auth / "table7_grounding_robustness.csv",
+                [
+                    {
+                        "Condition": "Clean certified",
+                        "Semantic false prune": "0",
+                        "Verified FP count": "0",
+                        "Verified infeasible rejections": "0",
+                        "Learned-score prunes": "0",
+                    },
+                    {
+                        "Condition": "Uncertain-only 20%",
+                        "Semantic false prune": "0",
+                        "Verified FP count": "1",
+                        "Verified infeasible rejections": "1",
+                        "Learned-score prunes": "0",
+                    },
+                    {
+                        "Condition": "Learned-score pruning clean",
+                        "Semantic false prune": "0",
+                        "Verified FP count": "0",
+                        "Verified infeasible rejections": "0",
+                        "Learned-score prunes": "0",
+                    },
+                ],
+            )
+            _write_csv(auth / "table6_authority_per_instance.csv", [{"task_id": "t0"}])
+            manifest = audit_certification_tables(root / "audit", authority_dir=auth, expected_test_count=1)
+            row = next(row for row in manifest["rows"] if row["Table"] == "Table 7 grounding robustness")
+            self.assertFalse(row["result_ready"])
+            self.assertIn("Uncertain-only 20% row must not convert uncertain constraints", row["result_blockers"])
+            self.assertIn("Uncertain-only 20% row must not reject actions", row["result_blockers"])
+            self.assertIn("Learned-score pruning clean row must trigger positive learned-score prunes", row["result_blockers"])
+
+
+def _write_csv(path: Path, rows) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 if __name__ == "__main__":

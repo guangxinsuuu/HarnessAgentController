@@ -142,6 +142,30 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(by_method["Direct / CoT"]["Status"], "complete")
             self.assertEqual(by_method["Direct / CoT"]["Tokens"], "1.20M")
 
+    def test_builder_rejects_native_row_json_with_wrong_method(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "wrong"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Self-Consistency",
+                        "success": 0.8,
+                        "gap": 0.1,
+                        "llm_calls": 800,
+                        "tokens": 1200000,
+                        "wall_clock_seconds": 61,
+                        "status": "complete",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            build_table5_q2_results(out, solver_prior_dir=root / "missing_solver", direct_dir=native)
+            by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
+            self.assertEqual(by_method["Direct / CoT"]["Status"], "pending")
+
     def test_builder_reads_native_method_from_aggregate_table(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -345,6 +369,31 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(by_method["Tree of Thoughts"]["Status"], "complete")
             self.assertEqual(by_method["Tree of Thoughts"]["Tokens"], "23.00M")
             self.assertEqual(by_method["Tree of Thoughts"]["source_policy"], "native_tot_bfs")
+
+    def test_builder_rejects_controller_diagnostic_as_native_tot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tot = root / "tot"
+            tot.mkdir()
+            (tot / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Tree of Thoughts",
+                        "success": 0.6,
+                        "gap": 0.07,
+                        "llm_calls": 1200,
+                        "tokens": 23000000,
+                        "wall_clock_seconds": 300,
+                        "status": "complete",
+                        "source_policy": "GPT-frontier-rank / ToT-style",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = root / "out"
+            build_table5_q2_results(out, solver_prior_dir=root / "missing", gpt_frontier_rank_dir=tot)
+            by_method = {row["Method"]: row for row in _read_csv(out / "table5_q2_results.csv")}
+            self.assertEqual(by_method["Tree of Thoughts"]["Status"], "pending")
 
     def test_readiness_audit_rejects_tot_trace_without_finish_event(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -335,6 +335,12 @@ def _row_from_native_artifacts(method: str, transfer_setting: str, source_dir: P
             if data is None:
                 return None
             table_path = source_dir / "scheduling_native_q2_table.csv"
+    declared_method = str(data.get("Method", method))
+    if declared_method and declared_method != method:
+        return None
+    source_policy = str(data.get("source_policy", "native"))
+    if method == "Tree of Thoughts" and source_policy != "native_tot_bfs":
+        return None
     return {
         "Method": method,
         "Transfer setting": transfer_setting,
@@ -345,7 +351,7 @@ def _row_from_native_artifacts(method: str, transfer_setting: str, source_dir: P
         "Wall-clock": _fmt_seconds(_as_float(data.get("wall_clock_seconds"))),
         "Status": str(data.get("status", "complete")),
         "source_artifact": str(table_path),
-        "source_policy": str(data.get("source_policy", "native")),
+        "source_policy": source_policy,
         "notes": str(data.get("notes", "native protocol row")),
     }
 

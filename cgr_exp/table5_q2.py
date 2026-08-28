@@ -467,6 +467,19 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                         invalid.append("ReST-MCTS-style protocol must declare MCTS selection, expansion, simulation/evaluation, and backpropagation")
                     if "PRM" not in str(policy_protocol.get("process_reward_guidance", "")):
                         invalid.append("ReST-MCTS-style protocol must declare PRM process reward guidance")
+                    table_rows = _read_csv(source_dir / "scheduling_llm_pilot_table.csv")
+                    policy_name = str(row.get("source_policy", ""))
+                    source_policy_row = next((item for item in table_rows if str(item.get("Policy")) == policy_name), {})
+                    if _as_float(source_policy_row.get("mcts_selection_calls")) <= 0:
+                        invalid.append("ReST-MCTS-style table row must record positive MCTS selection calls")
+                    if _as_float(source_policy_row.get("mcts_expansion_observations")) <= 0:
+                        invalid.append("ReST-MCTS-style table row must record positive MCTS expansion observations")
+                    if _as_float(source_policy_row.get("mcts_prior_evaluations")) <= 0:
+                        invalid.append("ReST-MCTS-style table row must record positive PRM prior evaluations")
+                    if _as_float(source_policy_row.get("mcts_leaf_value_evaluations")) <= 0:
+                        invalid.append("ReST-MCTS-style table row must record positive MCTS simulation/evaluation calls")
+                    if _as_float(source_policy_row.get("mcts_backup_updates")) <= 0:
+                        invalid.append("ReST-MCTS-style table row must record positive MCTS backpropagation updates")
         for filename in ("target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
             path = source_dir / filename
             if path.exists() and path.stat().st_size > 0:

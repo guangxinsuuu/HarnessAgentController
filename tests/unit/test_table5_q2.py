@@ -1274,6 +1274,43 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "False")
             self.assertIn("must declare MCTS selection, expansion, simulation/evaluation, and backpropagation", audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_blockers"])
 
+    def test_readiness_audit_rejects_rest_mcts_without_runtime_mcts_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rest = root / "rest"
+            rest.mkdir()
+            _write_csv(
+                rest / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "PRM-guided MCTS (ReST-MCTS-style)",
+                        "success": "0.84",
+                        "gap": "0.09",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                        "on_demand_total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(
+                rest / "scheduling_llm_pilot_per_instance.csv",
+                [{"Policy": "PRM-guided MCTS (ReST-MCTS-style)", "task_id": "t0"}],
+            )
+            for name in ("target_prm_ranker.json", "target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
+                (rest / name).write_text("{}\n", encoding="utf-8")
+            _write_learned_metrics(rest, ["PRM-guided MCTS (ReST-MCTS-style)"], ["PRM-guided MCTS (ReST-MCTS-style)"])
+
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", rest_mcts_dir=rest, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "False")
+            self.assertIn("must record positive MCTS selection calls", audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_blockers"])
+            self.assertIn("must record positive MCTS backpropagation updates", audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_blockers"])
+
     def test_readiness_audit_reports_malformed_learned_metrics_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1512,22 +1549,31 @@ def _write_learned_metrics(path: Path, methods: list[str], policies: list[str]) 
 
 def _write_solver_table_artifacts(path: Path, policy: str, task_ids: list[str]) -> None:
     (path / "scheduling_llm_pilot_ranker.json").write_text("{}", encoding="utf-8")
+    row = {
+        "Policy": policy,
+        "success": "0.89",
+        "gap": "0.02",
+        "nodes_mean": "80",
+        "proposal_calls_mean": "80",
+        "value_calls": "0",
+        "proposal_tokens": "1000",
+        "value_tokens": "0",
+        "total_tokens": "1000",
+        "on_demand_total_tokens": "1000",
+    }
+    if policy == "PRM-guided MCTS (ReST-MCTS-style)":
+        row.update(
+            {
+                "mcts_selection_calls": "10",
+                "mcts_expansion_observations": "10",
+                "mcts_prior_evaluations": "10",
+                "mcts_leaf_value_evaluations": "10",
+                "mcts_backup_updates": "10",
+            }
+        )
     _write_csv(
         path / "scheduling_llm_pilot_table.csv",
-        [
-            {
-                "Policy": policy,
-                "success": "0.89",
-                "gap": "0.02",
-                "nodes_mean": "80",
-                "proposal_calls_mean": "80",
-                "value_calls": "0",
-                "proposal_tokens": "1000",
-                "value_tokens": "0",
-                "total_tokens": "1000",
-                "on_demand_total_tokens": "1000",
-            }
-        ],
+        [row],
     )
     _write_csv(path / "scheduling_llm_pilot_per_instance.csv", [{"Policy": policy, "task_id": task_id} for task_id in task_ids])
 

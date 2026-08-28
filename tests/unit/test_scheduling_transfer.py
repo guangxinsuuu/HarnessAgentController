@@ -577,6 +577,12 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertGreater(metrics["target_prm_trace_record_count"], 0)
             rest_protocol = metrics["learned_search_protocol"]["policies"]["PRM-guided MCTS (ReST-MCTS-style)"]
             self.assertFalse(rest_protocol["full_iterative_self_training"])
+            rest_row = metrics["methods"]["PRM-guided MCTS (ReST-MCTS-style)"]
+            self.assertGreater(rest_row["mcts_selection_calls"], 0)
+            self.assertGreater(rest_row["mcts_expansion_observations"], 0)
+            self.assertGreater(rest_row["mcts_prior_evaluations"], 0)
+            self.assertGreater(rest_row["mcts_leaf_value_evaluations"], 0)
+            self.assertGreater(rest_row["mcts_backup_updates"], 0)
             cert_protocol = metrics["learned_search_protocol"]["policies"]["Solver-trained MLP + certified pruning"]
             self.assertEqual(cert_protocol["pruning_authority"], "verified lower-bound/feasibility logic only")
             self.assertFalse(cert_protocol["learned_score_authorizes_pruning"])
@@ -698,6 +704,11 @@ class SchedulingTransferTest(unittest.TestCase):
         self.assertEqual(len(second_scores), len(children))
         self.assertGreater(policy.total_backups, 0)
         self.assertGreater(sum(policy.visits.values()), 0)
+        diagnostics = policy.diagnostics()
+        self.assertTrue(diagnostics["mcts_components_observed"]["selection"])
+        self.assertTrue(diagnostics["mcts_components_observed"]["process_reward_guidance"])
+        self.assertGreater(diagnostics["selection_calls"], 0)
+        self.assertGreater(diagnostics["prior_evaluations"], 0)
 
     def test_prm_guided_mcts_policy_backs_up_observed_expansion(self) -> None:
         class ConstantRanker:
@@ -713,6 +724,10 @@ class SchedulingTransferTest(unittest.TestCase):
         self.assertIsNone(policy.last_selected)
         self.assertEqual(policy.visits[root.node_id], 1)
         self.assertGreater(policy.value_sum[root.node_id], 0.0)
+        diagnostics = policy.diagnostics()
+        self.assertTrue(diagnostics["mcts_components_observed"]["expansion"])
+        self.assertTrue(diagnostics["mcts_components_observed"]["simulation/evaluation"])
+        self.assertTrue(diagnostics["mcts_components_observed"]["backpropagation"])
         for child in children:
             self.assertIn(child.node_id, policy.node_cache)
 

@@ -434,12 +434,19 @@ class PRMGuidedMCTSStylePolicy:
         self.value_sum: Dict[str, float] = {}
         self.node_cache: Dict[str, SearchNode] = {}
         self.last_selected: SearchNode | None = None
+        self.score_frontier_calls = 0
+        self.total_selections = 0
+        self.expansion_observations = 0
+        self.prior_evaluations = 0
+        self.leaf_evaluations = 0
+        self.expanded_value_evaluations = 0
         self.total_backups = 0
 
     def score(self, node: SearchNode) -> float:
         return self.score_frontier([node])[0]
 
     def score_frontier(self, frontier: Sequence[SearchNode]) -> List[float]:
+        self.score_frontier_calls += 1
         if self.last_selected is not None:
             self._backup(self.last_selected, self._leaf_value(self.last_selected))
         self.last_selected = None
@@ -449,9 +456,11 @@ class PRMGuidedMCTSStylePolicy:
         if frontier:
             selected_index = max(range(len(frontier)), key=lambda idx: (scores[idx], frontier[idx].node_id))
             self.last_selected = frontier[selected_index]
+            self.total_selections += 1
         return scores
 
     def observe_expansion(self, node: SearchNode, children: Sequence[SearchNode]) -> None:
+        self.expansion_observations += 1
         self.node_cache[node.node_id] = node
         for child in children:
             self.node_cache[child.node_id] = child
@@ -470,11 +479,13 @@ class PRMGuidedMCTSStylePolicy:
 
     def _prior(self, node: SearchNode) -> float:
         if node.node_id not in self.prior_cache:
+            self.prior_evaluations += 1
             raw = self.ranker.score(scheduling_feature_vector(self.task, node))
             self.prior_cache[node.node_id] = 1.0 / (1.0 + math.exp(-float(raw)))
         return self.prior_cache[node.node_id]
 
     def _leaf_value(self, node: SearchNode) -> float:
+        self.leaf_evaluations += 1
         if node.completion_status == CompletionStatus.COMPLETE and node.objective_if_complete is not None:
             optimum = max(1.0, self.task.exhaustive_oracle())
             return 1.0 / (1.0 + max(0.0, float(node.objective_if_complete) - optimum) / optimum)
@@ -484,6 +495,7 @@ class PRMGuidedMCTSStylePolicy:
         return 0.5 * self._prior(node) + 0.5 * bound_value
 
     def _expanded_value(self, node: SearchNode, children: Sequence[SearchNode]) -> float:
+        self.expanded_value_evaluations += 1
         if not children:
             return self._leaf_value(node)
         return max(self._leaf_value(child) for child in children)
@@ -496,6 +508,30 @@ class PRMGuidedMCTSStylePolicy:
             self.total_backups += 1
             parent_id = current.parent_id
             current = self.node_cache.get(parent_id) if parent_id else None
+
+    def diagnostics(self) -> Dict[str, object]:
+        return {
+            "policy_family": "PRM-guided MCTS (ReST-MCTS-style)",
+            "mcts_components_observed": {
+                "selection": self.total_selections > 0,
+                "expansion": self.expansion_observations > 0,
+                "simulation/evaluation": self.leaf_evaluations > 0 or self.expanded_value_evaluations > 0,
+                "backpropagation": self.total_backups > 0,
+                "process_reward_guidance": self.prior_evaluations > 0,
+            },
+            "score_frontier_calls": self.score_frontier_calls,
+            "selection_calls": self.total_selections,
+            "expansion_observations": self.expansion_observations,
+            "prior_evaluations": self.prior_evaluations,
+            "leaf_value_evaluations": self.leaf_evaluations,
+            "expanded_value_evaluations": self.expanded_value_evaluations,
+            "backup_updates": self.total_backups,
+            "visited_node_count": len(self.visits),
+            "prior_cache_size": len(self.prior_cache),
+            "exploration": self.exploration,
+            "prior_weight": self.prior_weight,
+            "full_iterative_self_training": False,
+        }
 
 
 def make_level2_scheduling_episodes(tasks: Sequence[SchedulingTask], seed: int = 0, perturbation: str = "mixed") -> List[Level2SchedulingEpisode]:
@@ -1605,6 +1641,7 @@ def _evaluate_one_level2_episode(
         if name == "Oracle":
             oracle_success = result.best_objective == result.optimum
         value_cost = policy.cost if isinstance(policy, (SimulatedLLMValuePolicy, RealLLMValuePolicy, RealLLMFrontierRankingPolicy)) else CostLedger()
+        policy_diagnostics = _policy_diagnostics(policy)
         episode_rows.append(
             {
                 "Policy": name,
@@ -1628,6 +1665,12 @@ def _evaluate_one_level2_episode(
                 "frontier_top1_accuracy": ranking["frontier_top1_accuracy"],
                 "pairwise_accuracy": ranking["pairwise_accuracy"],
                 "selection_regret_mean": ranking["selection_regret_mean"],
+                "policy_diagnostics": json.dumps(policy_diagnostics, sort_keys=True),
+                "mcts_selection_calls": int(policy_diagnostics.get("selection_calls", 0)),
+                "mcts_expansion_observations": int(policy_diagnostics.get("expansion_observations", 0)),
+                "mcts_prior_evaluations": int(policy_diagnostics.get("prior_evaluations", 0)),
+                "mcts_leaf_value_evaluations": int(policy_diagnostics.get("leaf_value_evaluations", 0)),
+                "mcts_backup_updates": int(policy_diagnostics.get("backup_updates", 0)),
             }
         )
     if oracle_success is None and "Oracle" in policies:
@@ -1667,12 +1710,25 @@ def _summarize_policy_rows(by_policy: Dict[str, List[Dict[str, object]]]) -> Lis
                 "frontier_top1_accuracy": _weighted_mean(rows, "frontier_top1_accuracy", "frontier_decisions"),
                 "pairwise_accuracy": _weighted_mean(rows, "pairwise_accuracy", "frontier_decisions"),
                 "selection_regret_mean": _weighted_mean(rows, "selection_regret_mean", "frontier_decisions"),
+                "mcts_selection_calls": sum(int(row.get("mcts_selection_calls", 0)) for row in rows),
+                "mcts_expansion_observations": sum(int(row.get("mcts_expansion_observations", 0)) for row in rows),
+                "mcts_prior_evaluations": sum(int(row.get("mcts_prior_evaluations", 0)) for row in rows),
+                "mcts_leaf_value_evaluations": sum(int(row.get("mcts_leaf_value_evaluations", 0)) for row in rows),
+                "mcts_backup_updates": sum(int(row.get("mcts_backup_updates", 0)) for row in rows),
                 "budget_failures": sum(1 for row in rows if row.get("failure_reason") == "budget"),
                 "proposal_support_failures": sum(1 for row in rows if row.get("failure_reason") == "proposal_support"),
                 "ranking_failures": sum(1 for row in rows if row.get("failure_reason") == "ranking"),
             }
         )
     return table_rows
+
+
+def _policy_diagnostics(policy) -> Dict[str, object]:
+    diagnostics = getattr(policy, "diagnostics", None)
+    if diagnostics is None:
+        return {}
+    data = diagnostics()
+    return dict(data) if isinstance(data, dict) else {}
 
 
 def _run_frontier_search_with_ranking_diagnostics(

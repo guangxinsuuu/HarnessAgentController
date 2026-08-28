@@ -340,6 +340,8 @@ class LLMAdapterTest(unittest.TestCase):
         prompt = json.loads(body["messages"][1]["content"])
         self.assertEqual(prompt["task"], "precedence_constrained_scheduling_complete_solution")
         self.assertEqual(prompt["objective"], "minimize makespan + total tardiness")
+        self.assertIn("reasoning", prompt["response_schema"])
+        self.assertIn("Think step by step", prompt["instruction"])
         self.assertNotIn("best_descendant_objective", prompt)
 
     def test_openai_compatible_http_client_retries_timeout(self) -> None:

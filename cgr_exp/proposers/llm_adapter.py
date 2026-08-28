@@ -187,7 +187,7 @@ class OpenAICompatibleHTTPClient:
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "Return only JSON for a complete verified scheduling plan. Do not include prose."},
+                {"role": "system", "content": "Return only JSON for a complete verified scheduling plan. Include concise reasoning inside the JSON object, not as prose outside JSON."},
                 {"role": "user", "content": prompt},
             ],
             "temperature": temperature,
@@ -407,7 +407,8 @@ class OpenAICompatibleHTTPClient:
                     "method": method,
                     "sample_index": sample_index,
                     "instruction": (
-                        "Produce one complete feasible schedule. Return only a JSON object with an actions array. "
+                        "Think step by step about precedence, release times, machine eligibility, and tardiness, then produce one complete feasible schedule. "
+                        "Return only a JSON object with a concise reasoning array and an actions array. "
                         "Each action must schedule one currently eligible unscheduled job on an allowed machine. "
                         "The action order must respect all predecessor constraints. Try to minimize makespan plus total tardiness."
                     ),
@@ -423,7 +424,10 @@ class OpenAICompatibleHTTPClient:
                         for job in task.durations
                     },
                     "machines": list(task.machines),
-                    "response_schema": {"actions": [{"action_type": "schedule", "job": "job id", "machine": "allowed machine id"}]},
+                    "response_schema": {
+                        "reasoning": ["brief step-by-step scheduling rationale"],
+                        "actions": [{"action_type": "schedule", "job": "job id", "machine": "allowed machine id"}],
+                    },
                     "constraints": [
                         "schedule every job exactly once",
                         "choose only allowed machines",
@@ -437,8 +441,11 @@ class OpenAICompatibleHTTPClient:
             {
                 "prompt_template_version": prompt_template_version,
                 "task": _safe_jsonable(task),
-                "instruction": "Return only JSON with an actions array representing one complete solution.",
-                "response_schema": {"actions": [{"action_type": "schedule", "job": "job id", "machine": "machine id"}]},
+                "instruction": "Think step by step, then return only JSON with reasoning and actions for one complete solution.",
+                "response_schema": {
+                    "reasoning": ["brief step-by-step rationale"],
+                    "actions": [{"action_type": "schedule", "job": "job id", "machine": "machine id"}],
+                },
             },
             sort_keys=True,
         )

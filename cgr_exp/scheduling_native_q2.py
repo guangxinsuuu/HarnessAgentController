@@ -98,6 +98,9 @@ def run_scheduling_native_q2(
     per_instance_path = out_dir / "scheduling_native_q2_per_instance.csv"
     if not resume and per_instance_path.exists():
         per_instance_path.unlink()
+    sample_path = out_dir / "scheduling_native_q2_samples.jsonl"
+    if not resume and sample_path.exists():
+        sample_path.unlink()
     completed = {(str(row.get("method_key")), str(row.get("task_id"))) for row in existing}
     jobs = []
     for method_key in selected_methods:
@@ -109,17 +112,21 @@ def run_scheduling_native_q2(
     workers = max(1, int(parallel_episodes))
     if workers == 1:
         for done, item in enumerate(jobs, start=1):
-            row = _run_one_method_task(client, model, item[0], item[1], item[2], sample_count)
+            row, sample_rows = _run_one_method_task(client, model, item[0], item[1], item[2], sample_count)
             new_rows.append(row)
             _append_csv_row(per_instance_path, row)
+            for sample_row in sample_rows:
+                _append_jsonl_row(sample_path, sample_row)
             print(f"[scheduling-native-q2] {done}/{len(jobs)} rows, method={row['Method']}, tokens={row['total_tokens']}", flush=True)
     else:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [pool.submit(_run_one_method_task, client, model, method_key, idx, task, sample_count) for method_key, idx, task in jobs]
             for done, future in enumerate(as_completed(futures), start=1):
-                row = future.result()
+                row, sample_rows = future.result()
                 new_rows.append(row)
                 _append_csv_row(per_instance_path, row)
+                for sample_row in sample_rows:
+                    _append_jsonl_row(sample_path, sample_row)
                 print(f"[scheduling-native-q2] {done}/{len(jobs)} rows, method={row['Method']}, tokens={row['total_tokens']}", flush=True)
     all_rows = [*_coerce_rows(existing), *new_rows]
     all_rows.sort(key=lambda row: (str(row["method_key"]), int(row["task_index"])))
@@ -146,6 +153,7 @@ def run_scheduling_native_q2(
         "produced_artifacts": [
             "scheduling_native_q2_table.csv",
             "scheduling_native_q2_per_instance.csv",
+            "scheduling_native_q2_samples.jsonl",
             "scheduling_native_q2_manifest.json",
         ],
     }
@@ -153,7 +161,7 @@ def run_scheduling_native_q2(
     return {"model": model, "table_rows": table_rows, "per_instance_rows": all_rows, **manifest}
 
 
-def _run_one_method_task(client, model: str, method_key: str, task_index: int, task: SchedulingTask, default_sample_count: int) -> Dict[str, object]:
+def _run_one_method_task(client, model: str, method_key: str, task_index: int, task: SchedulingTask, default_sample_count: int) -> tuple[Dict[str, object], List[Dict[str, object]]]:
     spec = dict(NATIVE_METHODS[method_key])
     if method_key != "direct":
         spec["sample_count"] = max(1, int(default_sample_count))
@@ -174,7 +182,7 @@ def _run_one_method_task(client, model: str, method_key: str, task_index: int, t
     optimum = task.exhaustive_oracle()
     best_objective = chosen.get("objective")
     success = best_objective == optimum
-    return {
+    row = {
         "method_key": method_key,
         "Method": spec["table_method"],
         "Training states": spec["training_states"],
@@ -197,10 +205,13 @@ def _run_one_method_task(client, model: str, method_key: str, task_index: int, t
         "source_policy": "native",
         "notes": "native end-to-end method; verifier selects/validates complete schedules without oracle future labels",
     }
+    sample_rows = [_sample_audit_row(task, task_index, method_key, spec["table_method"], sample) for sample in samples]
+    return row, sample_rows
 
 
 def _evaluate_sample(task: SchedulingTask, response: Dict[str, object], sample_idx: int) -> Dict[str, object]:
-    actions, parse_failures = _parse_actions(str(response.get("raw_output", "")))
+    raw_output = str(response.get("raw_output", ""))
+    actions, parse_failures = _parse_actions(raw_output)
     node = task.root_node()
     verifier = Level1SchedulingVerifier()
     valid_prefix = True
@@ -221,11 +232,34 @@ def _evaluate_sample(task: SchedulingTask, response: Dict[str, object], sample_i
         "objective": objective,
         "job_order": job_order,
         "parse_failures": parse_failures,
+        "parsed_action_count": len(actions),
         "violations": violations,
+        "raw_output": raw_output,
         "input_tokens": int(response.get("input_tokens", 0)),
         "output_tokens": int(response.get("output_tokens", 0)),
         "total_tokens": int(response.get("input_tokens", 0)) + int(response.get("output_tokens", 0)),
         "latency": float(response.get("latency", 0.0)),
+    }
+
+
+def _sample_audit_row(task: SchedulingTask, task_index: int, method_key: str, method: str, sample: Dict[str, object]) -> Dict[str, object]:
+    return {
+        "method_key": method_key,
+        "Method": method,
+        "task_index": task_index,
+        "task_id": task.task_id,
+        "sample_index": sample["sample_index"],
+        "valid_complete": sample["valid_complete"],
+        "objective": sample["objective"],
+        "job_order": list(sample["job_order"]),
+        "parse_failures": sample["parse_failures"],
+        "parsed_action_count": sample["parsed_action_count"],
+        "violations": sample["violations"],
+        "input_tokens": sample["input_tokens"],
+        "output_tokens": sample["output_tokens"],
+        "total_tokens": sample["total_tokens"],
+        "latency": sample["latency"],
+        "raw_output": sample["raw_output"],
     }
 
 
@@ -342,6 +376,11 @@ def _append_csv_row(path: Path, row: Dict[str, object]) -> None:
         if not exists:
             writer.writeheader()
         writer.writerow(row)
+
+
+def _append_jsonl_row(path: Path, row: Dict[str, object]) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 def _coerce_rows(rows: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:

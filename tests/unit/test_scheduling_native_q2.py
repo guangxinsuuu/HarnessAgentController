@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,10 @@ class SchedulingNativeQ2Test(unittest.TestCase):
             self.assertEqual(by_method["Self-Consistency"]["llm_calls"], "6")
             self.assertEqual(by_method["Best-of-N"]["llm_calls"], "6")
             self.assertTrue((out / "direct_cot" / "table5_native_row.json").exists())
+            samples = _read_jsonl(out / "scheduling_native_q2_samples.jsonl")
+            self.assertEqual(len(samples), 15)
+            self.assertIn("raw_output", samples[0])
+            self.assertIn("parsed_action_count", samples[0])
             self.assertEqual(metrics["live_network_required"], False)
 
     def test_resume_skips_completed_method_task_rows(self) -> None:
@@ -90,3 +95,8 @@ class SchedulingNativeQ2Test(unittest.TestCase):
 def _read_csv(path: Path):
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+def _read_jsonl(path: Path):
+    with path.open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]

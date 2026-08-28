@@ -24,7 +24,8 @@ python3 -m pip install -e ".[q2-structured]"
 ```
 
 The Scheduling Q2 table run commands and method-alignment checklist are in
-`docs/q2_runbook.md`.
+`docs/q2_runbook.md`; the row-by-row source comparison is in
+`docs/q2_source_alignment_matrix.md`.
 
 ## Quick Start
 

@@ -200,6 +200,7 @@ def _run_one_method_task(client, model: str, method_key: str, task_index: int, t
         "total_tokens": sum(int(sample["total_tokens"]) for sample in samples),
         "wall_clock_seconds": sum(float(sample["latency"]) for sample in samples),
         "valid_samples": sum(1 for sample in samples if sample["valid_complete"]),
+        "parse_failures": sum(int(sample["parse_failures"]) for sample in samples),
         "sample_count": len(samples),
         "selection_rule": spec["selection"],
         "chosen_sample_index": chosen.get("sample_index", ""),
@@ -330,6 +331,10 @@ def _summarize_rows(rows: Sequence[Dict[str, object]], method_keys: Sequence[str
                 "llm_calls": sum(int(row["llm_calls"]) for row in method_rows),
                 "tokens": sum(int(row["total_tokens"]) for row in method_rows),
                 "wall_clock_seconds": wall_clock_seconds,
+                "valid_sample_rate": _mean(float(row["valid_samples"]) / max(1.0, float(row["sample_count"])) for row in method_rows),
+                "parse_failures": sum(int(row.get("parse_failures", 0)) for row in method_rows),
+                "valid_samples": sum(int(row["valid_samples"]) for row in method_rows),
+                "total_samples": sum(int(row["sample_count"]) for row in method_rows),
                 "status": "complete" if complete else f"partial: {len(method_rows)}/{expected_count}",
                 "source_policy": "native",
                 "notes": f"{spec['selection']}; {len(method_rows)}/{expected_count} completed",
@@ -389,7 +394,8 @@ def _coerce_rows(rows: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:
     out = []
     for row in rows:
         cur = dict(row)
-        for field in ("task_index", "llm_calls", "input_tokens", "output_tokens", "total_tokens", "valid_samples", "sample_count"):
+        cur.setdefault("parse_failures", 0)
+        for field in ("task_index", "llm_calls", "input_tokens", "output_tokens", "total_tokens", "valid_samples", "sample_count", "parse_failures"):
             if field in cur:
                 cur[field] = int(float(cur[field]))
         for field in ("gap", "wall_clock_seconds", "optimum"):

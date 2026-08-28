@@ -95,6 +95,14 @@ class Table5Q2Test(unittest.TestCase):
             saved = json.loads((out / "table5_q2_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["table"], "Table 4")
             self.assertEqual(saved["legacy_artifact_prefix"], "table5_q2")
+            self.assertEqual(
+                saved["method_alignment"]["Best-of-N"]["source_url"],
+                "https://arxiv.org/abs/2408.03314",
+            )
+            self.assertIn(
+                "method_generate",
+                saved["method_alignment"]["Tree of Thoughts"]["source_primitives"],
+            )
 
     def test_builder_marks_incomplete_checkpoints_as_partial(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -39,7 +39,11 @@ class SchedulingToTQ2Test(unittest.TestCase):
             self.assertEqual(len(per_instance), 3)
             self.assertGreater(int(table[0]["llm_calls"]), 0)
             self.assertGreater(int(table[0]["tokens"]), 0)
+            self.assertEqual(metrics["native_tot_protocol"]["official_entrypoints"], ["method_generate", "method_evaluate", "method_select"])
             self.assertEqual(metrics["native_tot_protocol"]["method_select"], "greedy top-b by averaged value samples")
+            self.assertEqual(metrics["native_tot_protocol"]["n_select_sample"], 2)
+            self.assertEqual(metrics["native_tot_protocol"]["n_evaluate_sample"], 2)
+            self.assertFalse(metrics["native_tot_protocol"]["oracle_future_labels_exposed"])
             self.assertTrue((root / "table5_native_row.json").exists())
             trace = _read_jsonl(root / "scheduling_tot_q2_trace.jsonl")
             events = {row["event"] for row in trace}

@@ -24,6 +24,7 @@ NATIVE_METHODS = {
         "sample_count": 1,
         "temperature": 0.0,
         "selection": "first_valid",
+        "official_primitive": "one chain-of-thought reasoning path to a final answer",
     },
     "self_consistency": {
         "table_method": "Self-Consistency",
@@ -31,6 +32,7 @@ NATIVE_METHODS = {
         "sample_count": 8,
         "temperature": 0.7,
         "selection": "majority_job_order_then_objective",
+        "official_primitive": "sample multiple reasoning paths and aggregate final answers",
     },
     "best_of_n": {
         "table_method": "Best-of-N",
@@ -38,6 +40,7 @@ NATIVE_METHODS = {
         "sample_count": 8,
         "temperature": 0.7,
         "selection": "best_verified_objective",
+        "official_primitive": "sample multiple final answers and select with a verifier or reward",
     },
 }
 
@@ -150,7 +153,7 @@ def run_scheduling_native_q2(
         "resume": resume,
         "live_network_required": not client.__class__.__name__.startswith("Scripted"),
         "oracle_labels_in_inference_features": False,
-        "native_protocol": True,
+        "native_protocol": _native_protocol_manifest(selected_methods, sample_count),
         "method_alignment": q2_method_contracts([NATIVE_METHODS[key]["table_method"] for key in selected_methods]),
         "produced_artifacts": [
             "scheduling_native_q2_table.csv",
@@ -161,6 +164,31 @@ def run_scheduling_native_q2(
     }
     (out_dir / "scheduling_native_q2_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return {"model": model, "table_rows": table_rows, "per_instance_rows": all_rows, **manifest}
+
+
+def _native_protocol_manifest(method_keys: Sequence[str], sample_count: int) -> Dict[str, object]:
+    protocols = {}
+    for method_key in method_keys:
+        spec = NATIVE_METHODS[method_key]
+        effective_sample_count = 1 if method_key == "direct" else max(1, int(sample_count))
+        protocols[spec["table_method"]] = {
+            "official_primitive": spec["official_primitive"],
+            "prompt_template_version": "scheduling-native-q2-v1",
+            "sample_count": effective_sample_count,
+            "temperature": spec["temperature"],
+            "selection_rule": spec["selection"],
+            "verifier_role": (
+                "validate complete schedules for metrics"
+                if method_key != "best_of_n"
+                else "filter invalid complete schedules and select minimum verified objective"
+            ),
+            "oracle_future_labels_exposed": False,
+        }
+    return {
+        "task_adaptation": "complete ScheduleAction JSON sequence for a SchedulingTask",
+        "methods": protocols,
+        "sample_audit_artifact": "scheduling_native_q2_samples.jsonl",
+    }
 
 
 def _run_one_method_task(client, model: str, method_key: str, task_index: int, task: SchedulingTask, default_sample_count: int) -> tuple[Dict[str, object], List[Dict[str, object]]]:

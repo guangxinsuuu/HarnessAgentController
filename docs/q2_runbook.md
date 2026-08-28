@@ -198,7 +198,9 @@ Completion evidence:
 - `scheduling_tot_q2_per_instance.csv`
 - `scheduling_tot_q2_trace.jsonl`
 - `table5_native_row.json`
-- manifest contains `native_tot_protocol` with propose/evaluate/select.
+- manifest contains `native_tot_protocol` mapping the official ToT
+  `method_generate`, `method_evaluate`, and `method_select` primitives to the
+  Scheduling adaptation.
 
 Older `GPT-frontier-rank / ToT-style` controller-isolation artifacts should not
 be used as this strict native ToT row. `build-table5-q2` only promotes the ToT

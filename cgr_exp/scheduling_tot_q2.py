@@ -130,10 +130,17 @@ def run_scheduling_tot_q2(
         "resume": resume,
         "live_network_required": not isinstance(client, ScriptedSchedulingClient),
         "native_tot_protocol": {
+            "official_reference": "princeton-nlp/tree-of-thought-llm BFS",
+            "official_entrypoints": ["method_generate", "method_evaluate", "method_select"],
+            "task_adaptation": "partial ScheduleAction sequences are thoughts/states",
             "search": "breadth-first frontier search",
             "method_generate": "propose typed scheduling actions",
             "method_evaluate": "LLM frontier value/ranking",
             "method_select": "greedy top-b by averaged value samples",
+            "n_select_sample": breadth,
+            "n_evaluate_sample": value_samples,
+            "trace_artifact": "scheduling_tot_q2_trace.jsonl",
+            "oracle_future_labels_exposed": False,
         },
         "method_alignment": q2_method_contracts(["Tree of Thoughts"]),
         "produced_artifacts": [

@@ -45,6 +45,11 @@ class SchedulingNativeQ2Test(unittest.TestCase):
             self.assertIn("raw_output", samples[0])
             self.assertIn("parsed_action_count", samples[0])
             self.assertEqual(metrics["live_network_required"], False)
+            native_protocol = metrics["native_protocol"]["methods"]
+            self.assertEqual(native_protocol["Direct / CoT"]["sample_count"], 1)
+            self.assertEqual(native_protocol["Self-Consistency"]["selection_rule"], "majority_job_order_then_objective")
+            self.assertEqual(native_protocol["Best-of-N"]["verifier_role"], "filter invalid complete schedules and select minimum verified objective")
+            self.assertFalse(native_protocol["Best-of-N"]["oracle_future_labels_exposed"])
 
     def test_resume_skips_completed_method_task_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

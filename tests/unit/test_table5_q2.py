@@ -556,6 +556,70 @@ class Table5Q2Test(unittest.TestCase):
             self.assertEqual(audit_rows["CP-SAT"]["result_ready"], "False")
             self.assertIn("structured reference must have llm_calls = 0", audit_rows["CP-SAT"]["result_blockers"])
 
+    def test_readiness_audit_rejects_mismatched_heldout_task_sets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            structured = root / "structured"
+            structured.mkdir()
+            _write_csv(
+                structured / "scheduling_structured_q2_table.csv",
+                [
+                    {
+                        "Method": "CP-SAT",
+                        "success": "1.0",
+                        "gap": "0.0",
+                        "wall_clock_seconds": "0.01",
+                        "status": "complete",
+                    }
+                ],
+            )
+            _write_csv(
+                structured / "scheduling_structured_q2_per_instance.csv",
+                [
+                    {"Method": "CP-SAT", "task_id": "structured-0"},
+                    {"Method": "CP-SAT", "task_id": "structured-1"},
+                ],
+            )
+            _write_structured_metrics(structured, ["CP-SAT"], test_count=2)
+
+            native = root / "native"
+            native.mkdir()
+            (native / "table5_native_row.json").write_text(
+                json.dumps(
+                    {
+                        "Method": "Direct / CoT",
+                        "success": 0.5,
+                        "gap": 0.1,
+                        "llm_calls": 2,
+                        "tokens": 200,
+                        "wall_clock_seconds": 2,
+                        "status": "complete",
+                        "source_policy": "native",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            _write_csv(
+                native / "scheduling_native_q2_per_instance.csv",
+                [
+                    {"Method": "Direct / CoT", "task_id": "native-0"},
+                    {"Method": "Direct / CoT", "task_id": "native-1"},
+                ],
+            )
+            (native / "scheduling_native_q2_samples.jsonl").write_text(
+                "".join(json.dumps({"Method": "Direct / CoT", "task_id": f"native-{idx}"}) + "\n" for idx in range(2)),
+                encoding="utf-8",
+            )
+            _write_native_manifest(native, ["Direct / CoT"], test_count=2)
+
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", structured_dir=structured, direct_dir=native, expected_test_count=2)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["CP-SAT"]["result_ready"], "False")
+            self.assertEqual(audit_rows["Direct / CoT"]["result_ready"], "False")
+            self.assertIn("split mismatch", audit_rows["CP-SAT"]["result_blockers"])
+            self.assertIn("split mismatch", audit_rows["Direct / CoT"]["result_blockers"])
+
     def test_builder_reads_native_tot_row_when_shared_artifact_absent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -939,6 +1003,21 @@ def _write_native_manifest(path: Path, methods: list[str], test_count: int) -> N
         }
     (path / "scheduling_native_q2_manifest.json").write_text(
         json.dumps({"splits": {"test": test_count}, "native_protocol": {"methods": method_protocols}}),
+        encoding="utf-8",
+    )
+
+
+def _write_structured_metrics(path: Path, methods: list[str], test_count: int) -> None:
+    (path / "scheduling_structured_q2_metrics.json").write_text(
+        json.dumps(
+            {
+                "splits": {"test": test_count},
+                "structured_input": True,
+                "llm_calls": 0,
+                "tokens": 0,
+                "method_alignment": {method: {} for method in methods},
+            }
+        ),
         encoding="utf-8",
     )
 

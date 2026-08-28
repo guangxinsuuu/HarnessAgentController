@@ -138,6 +138,7 @@ def audit_table5_q2_readiness(
     )
     rows = list(manifest["rows"])
     audit_rows = [_audit_row(row) for row in rows]
+    _apply_split_consistency_audit(rows, audit_rows, expected_test_count)
     audit_csv = out_dir / "table5_q2_readiness.csv"
     audit_json = out_dir / "table5_q2_readiness.json"
     _write_csv(audit_csv, audit_rows)
@@ -189,6 +190,68 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
         "compute_blockers": "; ".join(compute_blockers),
         "token_notes": notes,
     }
+
+
+def _apply_split_consistency_audit(rows: List[Mapping[str, object]], audit_rows: List[Dict[str, object]], expected_test_count: int) -> None:
+    signatures: Dict[str, tuple[str, ...]] = {}
+    for row in rows:
+        if str(row.get("Status", "pending")) != "complete":
+            continue
+        task_ids = _task_ids_for_row(row)
+        if not task_ids:
+            continue
+        method = str(row["Method"])
+        signatures[method] = tuple(task_ids)
+    if not signatures:
+        return
+    reference_method, reference_signature = next(iter(signatures.items()))
+    has_split_mismatch = len(set(signatures.values())) > 1
+    for audit_row in audit_rows:
+        method = str(audit_row["Method"])
+        signature = signatures.get(method)
+        if signature is None:
+            continue
+        blockers = []
+        if len(signature) < expected_test_count:
+            blockers.append(f"split task coverage: {len(signature)}/{expected_test_count}")
+        if has_split_mismatch and signature == reference_signature:
+            blockers.append("split mismatch across complete rows")
+        elif signature != reference_signature:
+            blockers.append(f"split mismatch vs {reference_method}")
+        if blockers:
+            existing = str(audit_row.get("result_blockers", ""))
+            audit_row["result_blockers"] = "; ".join(part for part in [existing, *blockers] if part)
+            audit_row["result_ready"] = False
+            audit_row["compute_ready"] = False
+            compute_existing = str(audit_row.get("compute_blockers", ""))
+            audit_row["compute_blockers"] = "; ".join(part for part in [compute_existing, "result not complete"] if part)
+
+
+def _task_ids_for_row(row: Mapping[str, object]) -> List[str]:
+    method = str(row.get("Method", ""))
+    artifact_value = str(row.get("source_artifact", "")).strip()
+    if not artifact_value:
+        return []
+    source_dir = _artifact_run_root(method, Path(artifact_value))
+    if method in {"CP-SAT", "EST / list scheduling heuristic"}:
+        return _unique_task_ids(_read_csv(source_dir / "scheduling_structured_q2_per_instance.csv"), method_key="Method", method_value=method)
+    if method in {"Direct / CoT", "Self-Consistency", "Best-of-N"}:
+        return _unique_task_ids(_read_csv(source_dir / "scheduling_native_q2_per_instance.csv"), method_key="Method", method_value=method)
+    if method == "Tree of Thoughts":
+        return _unique_task_ids(_read_csv(source_dir / "scheduling_tot_q2_per_instance.csv"))
+    source_policy = str(row.get("source_policy", ""))
+    return _unique_task_ids(_read_csv(source_dir / "scheduling_llm_pilot_per_instance.csv"), method_key="Policy", method_value=source_policy)
+
+
+def _unique_task_ids(rows: List[Mapping[str, object]], method_key: str = "", method_value: str = "") -> List[str]:
+    task_ids = set()
+    for row in rows:
+        if method_key and str(row.get(method_key)) != method_value:
+            continue
+        task_id = str(row.get("task_id", row.get("instance_id", "")))
+        if task_id:
+            task_ids.add(task_id)
+    return sorted(task_ids)
 
 
 def _missing_required_artifacts(row: Mapping[str, object]) -> List[str]:

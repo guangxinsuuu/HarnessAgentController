@@ -298,7 +298,7 @@ def _run_one_tot_episode(
     proposal_latency = sum(float(record.get("latency", 0.0)) for record in proposer.call_records)
     total_tokens = proposal_input_tokens + proposal_output_tokens + value_input_tokens + value_output_tokens
     row = {
-        "Method": "Tree of Thoughts / GPT-frontier-rank",
+        "Method": "Tree of Thoughts",
         "Transfer setting": "Online",
         "task_index": task_index,
         "task_id": episode.hidden_task_id,

@@ -37,6 +37,7 @@ class SchedulingToTQ2Test(unittest.TestCase):
             self.assertEqual(table[0]["Method"], "Tree of Thoughts")
             self.assertEqual(table[0]["status"], "complete")
             self.assertEqual(len(per_instance), 3)
+            self.assertEqual({row["Method"] for row in per_instance}, {"Tree of Thoughts"})
             self.assertGreater(int(table[0]["llm_calls"]), 0)
             self.assertGreater(int(table[0]["tokens"]), 0)
             self.assertEqual(metrics["native_tot_protocol"]["official_entrypoints"], ["method_generate", "method_evaluate", "method_select"])
@@ -59,6 +60,9 @@ class SchedulingToTQ2Test(unittest.TestCase):
             self.assertIn("selected_ids", evaluate_events[0])
             self.assertIn("value_samples", evaluate_events[0])
             self.assertIn("scheduling_tot_q2_trace.jsonl", metrics["produced_artifacts"])
+            finish_rows = [row for row in trace if row["event"] == "finish"]
+            self.assertTrue(finish_rows)
+            self.assertEqual(finish_rows[0]["row"]["Method"], "Tree of Thoughts")
 
     def test_tot_resume_reruns_rows_when_trace_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

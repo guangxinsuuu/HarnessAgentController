@@ -20,9 +20,13 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("build-table4-q2", text)
         self.assertIn("audit-table4-q2", text)
         self.assertIn("audit-q2-source-evidence", text)
+        self.assertIn("build-q2-implementation-matrix", text)
         self.assertIn("SOURCE_AUDIT_DIR", text)
+        self.assertIn("IMPLEMENTATION_MATRIX_DIR", text)
         self.assertIn("source-audit", text)
+        self.assertIn("implementation-matrix", text)
         self.assertIn("source_audit", text)
+        self.assertIn("implementation_matrix", text)
         self.assertIn("run_native &", text)
         self.assertIn("run_learned &", text)
         self.assertIn("run_tot &", text)
@@ -42,6 +46,7 @@ class Q2RunScriptTest(unittest.TestCase):
                 "TABLE_DIR": str(root / "table"),
                 "AUDIT_DIR": str(root / "audit"),
                 "SOURCE_AUDIT_DIR": str(root / "source_audit"),
+                "IMPLEMENTATION_MATRIX_DIR": str(root / "matrix"),
                 "TEST_COUNT": "1",
             }
             env.pop("CGR_LLM_API_KEY", None)
@@ -55,8 +60,10 @@ class Q2RunScriptTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("llm_key: missing", result.stdout)
             self.assertIn("source_audit_dir:", result.stdout)
+            self.assertIn("implementation_matrix_dir:", result.stdout)
             self.assertTrue((root / "audit" / "table5_q2_readiness.csv").exists())
             self.assertTrue((root / "source_audit" / "q2_source_evidence_audit.csv").exists())
+            self.assertTrue((root / "matrix" / "q2_implementation_matrix.csv").exists())
 
 
 if __name__ == "__main__":

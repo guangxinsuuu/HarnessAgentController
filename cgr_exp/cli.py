@@ -27,6 +27,7 @@ from cgr_exp.scheduling_transfer import (
     run_scheduling_llm_pilot_from_env,
     run_scheduling_zero_shot_transfer,
 )
+from cgr_exp.q2_implementation_matrix import build_q2_implementation_matrix
 from cgr_exp.q2_source_evidence import audit_q2_source_evidence
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
@@ -61,6 +62,7 @@ COMMANDS = [
     "build-table5-q2",
     "audit-table4-q2",
     "audit-table5-q2",
+    "build-q2-implementation-matrix",
     "audit-q2-source-evidence",
     "build-table-q4-tau",
     "audit-table-q4-tau",
@@ -1004,6 +1006,19 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'q2_source_evidence_audit.csv'}")
+            return
+        if args.command == "build-q2-implementation-matrix":
+            manifest = build_q2_implementation_matrix(args.output_dir)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "all_table_rows_covered": manifest["all_table_rows_covered"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q2_implementation_matrix.csv'}")
             return
         if args.command == "run-table6-authority":
             corruption_seeds = tuple(int(part) for part in args.corruption_seeds.split(",") if part.strip())

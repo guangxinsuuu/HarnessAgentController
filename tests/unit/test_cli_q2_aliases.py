@@ -17,6 +17,7 @@ class CliQ2AliasesTest(unittest.TestCase):
         self.assertIn("build-table5-q2", COMMANDS)
         self.assertIn("audit-table5-q2", COMMANDS)
         self.assertIn("audit-q2-source-evidence", COMMANDS)
+        self.assertIn("build-q2-implementation-matrix", COMMANDS)
 
     def test_table4_and_legacy_table5_aliases_expose_same_q2_arguments(self) -> None:
         expected_flags = (
@@ -94,6 +95,29 @@ class CliQ2AliasesTest(unittest.TestCase):
             self.assertEqual(manifest["command"], "audit-q2-source-evidence")
             self.assertEqual(manifest["all_external_sources_ready"], True)
             self.assertTrue((out / "q2_source_evidence_audit.csv").exists())
+
+    def test_q2_implementation_matrix_cli_writes_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "matrix"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "build-q2-implementation-matrix",
+                    "--output-dir",
+                    str(out),
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out / "command_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["command"], "build-q2-implementation-matrix")
+            self.assertTrue(manifest["all_table_rows_covered"])
+            self.assertTrue((out / "q2_implementation_matrix.csv").exists())
 
 
 if __name__ == "__main__":

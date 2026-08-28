@@ -5,6 +5,17 @@ it can be promoted as a result. It is source-aligned by method family: when a
 baseline has an official codebase, the local row should mirror the official
 algorithmic primitive rather than a convenient substitute.
 
+The machine-readable version can be regenerated with:
+
+```bash
+python3 -m cgr_exp.cli build-q2-implementation-matrix \
+  --output-dir runs/q2_implementation_matrix \
+  --overwrite
+```
+
+`scripts/run_q2_table4.sh preflight` and `scripts/run_q2_table4.sh all` run this
+matrix generation together with the source-evidence and table-readiness audits.
+
 ## Official Sources
 
 - OR-Tools CP-SAT: https://github.com/google/or-tools

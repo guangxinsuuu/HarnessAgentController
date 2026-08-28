@@ -6,6 +6,11 @@ import unittest
 from pathlib import Path
 
 from cgr_exp.q2_method_contracts import Q2_METHOD_CONTRACTS, q2_method_contract
+from cgr_exp.q2_implementation_matrix import (
+    Q2_LOCAL_IMPLEMENTATION_PATHS,
+    Q2_REQUIRED_ARTIFACTS,
+    build_q2_implementation_matrix,
+)
 from cgr_exp.q2_source_evidence import audit_q2_source_evidence, q2_source_evidence, q2_source_evidence_methods
 from cgr_exp.table5_q2 import TABLE5_METHODS
 
@@ -129,6 +134,28 @@ class Q2MethodContractsTest(unittest.TestCase):
             by_method = {row["Method"]: row for row in saved["rows"]}
             self.assertEqual(by_method["Tree of Thoughts"]["source_url"], "https://github.com/princeton-nlp/tree-of-thought-llm")
             self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["source_files"])
+
+    def test_implementation_matrix_covers_table_rows_with_local_code_and_artifacts(self) -> None:
+        table_methods = {method for method, _setting, _source, _kind in TABLE5_METHODS}
+        self.assertEqual(table_methods - set(Q2_LOCAL_IMPLEMENTATION_PATHS), set())
+        self.assertEqual(table_methods - set(Q2_REQUIRED_ARTIFACTS), set())
+        for method in table_methods:
+            for path in Q2_LOCAL_IMPLEMENTATION_PATHS[method]:
+                self.assertTrue(Path(path).exists(), f"{method}: {path}")
+            self.assertTrue(Q2_REQUIRED_ARTIFACTS[method], method)
+
+    def test_implementation_matrix_writes_traceable_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            manifest = build_q2_implementation_matrix(out)
+            self.assertTrue(manifest["all_table_rows_covered"])
+            self.assertTrue((out / "q2_implementation_matrix.csv").exists())
+            saved = json.loads((out / "q2_implementation_matrix.json").read_text(encoding="utf-8"))
+            by_method = {row["Method"]: row for row in saved["rows"]}
+            self.assertIn("cgr_exp/scheduling_tot_q2.py", by_method["Tree of Thoughts"]["Local code paths"])
+            self.assertIn("method_generate", by_method["Tree of Thoughts"]["Official primitives"])
+            self.assertIn("target_prm_ranker.json", by_method["Target-PRM priority"]["Required result artifacts"])
+            self.assertIn("not full ReST-MCTS iterative self-training", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["Non-claims"])
 
 
 if __name__ == "__main__":

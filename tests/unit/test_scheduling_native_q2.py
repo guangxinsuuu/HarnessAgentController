@@ -116,6 +116,31 @@ class SchedulingNativeQ2Test(unittest.TestCase):
             self.assertEqual(len(_read_csv(out / "scheduling_native_q2_per_instance.csv")), 2)
             self.assertEqual(len(_read_jsonl(out / "scheduling_native_q2_samples.jsonl")), 2)
 
+    def test_resume_preserves_previous_methods_when_running_methods_incrementally(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            client = ScriptedSchedulingClient(input_tokens=10, output_tokens=5, model="mock")
+            common = dict(
+                client=client,
+                model="mock",
+                seed=15,
+                train_count=1,
+                validation_count=0,
+                test_count=2,
+                job_count=4,
+                machine_count=2,
+                sample_count=2,
+            )
+            run_scheduling_native_q2(out, **common, methods=("direct",))
+            run_scheduling_native_q2(out, **common, methods=("self_consistency",), resume=True)
+            per_instance = _read_csv(out / "scheduling_native_q2_per_instance.csv")
+            samples = _read_jsonl(out / "scheduling_native_q2_samples.jsonl")
+            self.assertEqual({row["method_key"] for row in per_instance}, {"direct", "self_consistency"})
+            self.assertEqual(len([row for row in per_instance if row["method_key"] == "direct"]), 2)
+            self.assertEqual(len([row for row in per_instance if row["method_key"] == "self_consistency"]), 2)
+            self.assertEqual(len([row for row in samples if row["method_key"] == "direct"]), 2)
+            self.assertEqual(len([row for row in samples if row["method_key"] == "self_consistency"]), 4)
+
     def test_runner_streams_per_instance_rows_before_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)

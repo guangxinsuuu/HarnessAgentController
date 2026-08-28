@@ -108,11 +108,18 @@ def run_scheduling_native_q2(
         sample_path.unlink()
     completed = _completed_native_method_tasks(existing, existing_samples, selected_methods, sample_count)
     if resume:
-        existing = [row for row in existing if (str(row.get("method_key")), str(row.get("task_id"))) in completed]
+        selected_method_set = set(selected_methods)
+        existing = [
+            row
+            for row in existing
+            if str(row.get("method_key")) not in selected_method_set
+            or (str(row.get("method_key")), str(row.get("task_id"))) in completed
+        ]
         existing_samples = [
             row
             for row in existing_samples
-            if (str(row.get("method_key")), str(row.get("task_id"))) in completed
+            if str(row.get("method_key")) not in selected_method_set
+            or (str(row.get("method_key")), str(row.get("task_id"))) in completed
         ]
         if existing_samples:
             _write_jsonl(sample_path, existing_samples)

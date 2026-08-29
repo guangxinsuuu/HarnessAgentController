@@ -116,6 +116,7 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("scripts/run_table10_tau3.sh source-controller", text)
         self.assertIn("scripts/run_table10_tau3.sh source-controller-smoke", text)
         self.assertIn("scripts/run_table10_tau3.sh solver-canonical-smoke", text)
+        self.assertIn("preflight should recommend", text)
         self.assertIn("scripts/run_table10_tau3.sh solver-canonical-certified-smoke", text)
         self.assertIn("scripts/run_table10_tau3.sh full", text)
         self.assertIn("scripts/run_table10_tau3.sh build", text)
@@ -826,6 +827,8 @@ class Tau3NativeTest(unittest.TestCase):
             groups = {row["run_group"]: row for row in manifest["rows"]}
             self.assertIn("source_controller", groups)
             self.assertIn("full", groups)
+            self.assertIn("solver_canonical_smoke", groups)
+            self.assertIn("solver_canonical_certified_smoke", groups)
             self.assertIn("native_full", groups)
             self.assertIn("solver_canonical_full", groups)
             self.assertIn("solver_canonical_certified_full", groups)
@@ -838,8 +841,11 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(manifest["parallel_domains"])
             self.assertFalse(manifest["parallel_method_groups"])
             self.assertEqual(groups["native_full"]["effective_max_concurrency"], 4)
+            self.assertEqual(groups["solver_canonical_smoke"]["effective_max_concurrency"], 12)
             self.assertEqual(groups["solver_canonical_full"]["effective_max_concurrency"], 12)
             self.assertEqual(groups["full"]["effective_max_concurrency"], 12)
+            self.assertEqual(groups["solver_canonical_smoke"]["estimated_api_rows"], 2)
+            self.assertEqual(groups["solver_canonical_smoke"]["estimated_tau2_simulations"], 16)
             self.assertEqual(groups["native_full"]["estimated_api_rows"], 2)
             self.assertEqual(groups["native_full"]["estimated_tau2_simulations"], 24)
             self.assertEqual(groups["solver_canonical_full"]["estimated_api_rows"], 2)
@@ -858,6 +864,7 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("SEED=2", groups["source_controller"]["command"])
             self.assertIn("scripts/run_table10_tau3.sh source-controller", manifest["recommended_next_command"])
             self.assertIn("scripts/run_table10_tau3.sh full", groups["full"]["command"])
+            self.assertIn("scripts/run_table10_tau3.sh solver-canonical-smoke", groups["solver_canonical_smoke"]["command"])
             self.assertIn("SEED=2", groups["full"]["command"])
             self.assertIn("PYTHON_BIN=/tmp/runner-python", groups["full"]["command"])
             self.assertIn("CANDIDATE_WORKERS=3", groups["full"]["command"])
@@ -890,12 +897,12 @@ class Tau3NativeTest(unittest.TestCase):
                     row["selector_full_coverage"] = True
                     (row_dir / "q4_tau_row.json").write_text(json.dumps(row), encoding="utf-8")
             manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
-            self.assertEqual(manifest["recommended_next_run_group"], "legacy_solver_full")
+            self.assertEqual(manifest["recommended_next_run_group"], "solver_canonical_smoke")
             groups = {row["run_group"]: row for row in manifest["rows"]}
             native_methods = groups["native_full"]["methods"]
             self.assertIn("retail: Native tool-calling rerun", native_methods)
             self.assertIn("airline: Best-of-N", native_methods)
-            self.assertIn("scripts/run_table10_tau3.sh solver-full", manifest["recommended_next_command"])
+            self.assertIn("scripts/run_table10_tau3.sh solver-canonical-smoke", manifest["recommended_next_command"])
 
     def test_table10_preflight_recommends_native_after_source_controller_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -908,12 +915,12 @@ class Tau3NativeTest(unittest.TestCase):
                 manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
             groups = {row["run_group"]: row for row in manifest["rows"]}
             self.assertTrue(groups["source_controller"]["ready"])
-            self.assertEqual(manifest["recommended_next_run_group"], "native_full")
+            self.assertEqual(manifest["recommended_next_run_group"], "solver_canonical_smoke")
             self.assertFalse(manifest["api_key_present"])
             self.assertTrue(manifest["recommended_next_requires_api_key"])
             self.assertFalse(manifest["recommended_next_api_key_ready"])
             self.assertEqual(manifest["accepted_api_key_envs"], ["OPENAI_API_KEY", "CGR_LLM_API_KEY"])
-            self.assertIn("scripts/run_table10_tau3.sh native-full", manifest["recommended_next_command"])
+            self.assertIn("scripts/run_table10_tau3.sh solver-canonical-smoke", manifest["recommended_next_command"])
             text = (root / "preflight" / "table10_tau3_run_preflight.md").read_text(encoding="utf-8")
             self.assertIn("API key present: `False`", text)
             self.assertIn("Present API key envs: `none`", text)
@@ -952,6 +959,7 @@ class Tau3NativeTest(unittest.TestCase):
             groups = {row["run_group"]: row for row in manifest["rows"]}
             self.assertEqual(groups["full"]["effective_max_concurrency"], 40)
             self.assertEqual(groups["native_full"]["effective_max_concurrency"], 4)
+            self.assertEqual(groups["solver_canonical_smoke"]["effective_max_concurrency"], 12)
             self.assertEqual(groups["solver_canonical_full"]["effective_max_concurrency"], 12)
             self.assertEqual(groups["build_and_audit"]["effective_max_concurrency"], 0)
             self.assertEqual(manifest["max_api_backed_effective_concurrency"], 40)

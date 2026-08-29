@@ -43,6 +43,11 @@ If the source controller is missing, the recommended next command should be:
 BASE_DIR=runs/table10_tau3 SEED=0 scripts/run_table10_tau3.sh source-controller
 ```
 
+Once the source controller is ready, preflight should recommend
+`solver-canonical-smoke` before any full row. This keeps the canonical adapter,
+ranker checkpoint, trace schema, and smoke gate checked before the expensive
+100-task API-backed runs.
+
 ## Source Controller
 
 Fast local smoke, no API:

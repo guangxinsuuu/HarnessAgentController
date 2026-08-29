@@ -806,6 +806,18 @@ def build_table10_tau3_run_preflight(
     out_dir.mkdir(parents=True, exist_ok=True)
     row_dirs = _table10_default_row_dirs(base_dir, best_of_n)
     readiness = audit_table10_tau3_readiness(out_dir / "readiness", row_dirs, expected_test_count=expected_test_count)
+    smoke_gates = {
+        "solver_canonical_smoke": audit_table10_tau3_smoke_gate(
+            out_dir / "smoke_gates" / "solver_canonical_smoke",
+            [base_dir / "solver_canonical_smoke_retail", base_dir / "solver_canonical_smoke_airline"],
+            expected_smoke_count=2,
+        ),
+        "solver_canonical_certified_smoke": audit_table10_tau3_smoke_gate(
+            out_dir / "smoke_gates" / "solver_canonical_certified_smoke",
+            [base_dir / "solver_canonical_certified_smoke_retail", base_dir / "solver_canonical_certified_smoke_airline"],
+            expected_smoke_count=2,
+        ),
+    }
     rows = [_table10_source_controller_preflight_row(base_dir, seed=seed)]
     for group, command, required_dirs in _table10_run_groups(
         base_dir=base_dir,
@@ -824,8 +836,12 @@ def build_table10_tau3_run_preflight(
         parallel_domains=parallel_domains,
         parallel_method_groups=parallel_method_groups,
     ):
-        group_methods = _methods_for_dirs(readiness["audit_rows"], required_dirs)
-        group_ready = bool(group_methods) and all(bool(row["result_ready"]) for row in group_methods)
+        if group in smoke_gates:
+            group_methods = smoke_gates[group]["rows"]
+            group_ready = bool(smoke_gates[group]["all_smoke_rows_ready"])
+        else:
+            group_methods = _methods_for_dirs(readiness["audit_rows"], required_dirs)
+            group_ready = bool(group_methods) and all(bool(row["result_ready"]) for row in group_methods)
         effective_concurrency = _table10_effective_concurrency(group, max_concurrency, candidate_workers, parallel_domains, parallel_method_groups)
         work_estimate = _table10_group_work_estimate(group, expected_test_count, num_trials, candidate_workers)
         rows.append(
@@ -834,8 +850,8 @@ def build_table10_tau3_run_preflight(
                 "ready": group_ready,
                 "methods": "; ".join(_table10_row_id(row) for row in group_methods) if group_methods else "not started",
                 "remaining_rows": sum(1 for row in group_methods if not bool(row["result_ready"])) if group_methods else len(required_dirs),
-                "api_required": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
-                "resume_safe": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
+                "api_required": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_smoke", "solver_canonical_certified_smoke", "solver_canonical_full", "solver_canonical_certified_full"},
+                "resume_safe": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_smoke", "solver_canonical_certified_smoke", "solver_canonical_full", "solver_canonical_certified_full"},
                 "effective_max_concurrency": effective_concurrency,
                 **work_estimate,
                 "command": command,
@@ -1313,6 +1329,16 @@ def _table10_run_groups(
     )
     default_dirs = _table10_default_row_dirs(base_dir, best_of_n)
     return [
+        (
+            "solver_canonical_smoke",
+            f"{prefix} scripts/run_table10_tau3.sh solver-canonical-smoke",
+            [base_dir / "solver_canonical_smoke_retail", base_dir / "solver_canonical_smoke_airline"],
+        ),
+        (
+            "solver_canonical_certified_smoke",
+            f"{prefix} scripts/run_table10_tau3.sh solver-canonical-certified-smoke",
+            [base_dir / "solver_canonical_certified_smoke_retail", base_dir / "solver_canonical_certified_smoke_airline"],
+        ),
         ("full", f"{prefix} scripts/run_table10_tau3.sh full", default_dirs),
         ("native_full", f"{prefix} scripts/run_table10_tau3.sh native-full", [base_dir / "native_retail", base_dir / "native_airline", base_dir / f"best_of_{best_of_n}_retail", base_dir / f"best_of_{best_of_n}_airline"]),
         ("legacy_solver_full", f"{prefix} scripts/run_table10_tau3.sh solver-full", [base_dir / "solver_retail", base_dir / "solver_airline"]),
@@ -1333,7 +1359,7 @@ def _methods_for_dirs(audit_rows: Sequence[Mapping[str, object]], dirs: Sequence
 
 def _table10_next_run_group(rows: Sequence[Mapping[str, object]]) -> Optional[Mapping[str, object]]:
     by_group = {str(row.get("run_group", "")): row for row in rows}
-    for group in ("source_controller", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"):
+    for group in ("source_controller", "solver_canonical_smoke", "solver_canonical_certified_smoke", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"):
         row = by_group.get(group)
         if row and not bool(row.get("ready")):
             return row
@@ -1409,7 +1435,10 @@ def _table10_effective_concurrency(group: str, max_concurrency: int, candidate_w
 def _table10_group_work_estimate(group: str, expected_test_count: int, num_trials: int, candidate_workers: int) -> Dict[str, object]:
     domain_count = 2
     native_rows = domain_count if group in {"full", "native_full"} else 0
+    task_count = 2 if group in {"solver_canonical_smoke", "solver_canonical_certified_smoke"} else expected_test_count
     solver_rows_by_group = {
+        "solver_canonical_smoke": domain_count,
+        "solver_canonical_certified_smoke": domain_count,
         "legacy_solver_full": domain_count,
         "solver_canonical_full": domain_count,
         "solver_canonical_certified_full": domain_count,
@@ -1417,7 +1446,7 @@ def _table10_group_work_estimate(group: str, expected_test_count: int, num_trial
     }
     solver_rows = solver_rows_by_group.get(group, 0)
     api_rows = native_rows + solver_rows
-    simulations = api_rows * expected_test_count * num_trials
+    simulations = api_rows * task_count * num_trials
     return {
         "estimated_api_rows": api_rows,
         "estimated_tau2_simulations": simulations,

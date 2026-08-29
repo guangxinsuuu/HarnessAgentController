@@ -208,8 +208,14 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(row["simulation_count"], 4)
             self.assertAlmostEqual(row["tokens"], 42.0)
             self.assertAlmostEqual(row["tool_calls"], 2.0)
+            self.assertEqual(row["selector"], "official_reward_best_of_n")
+            self.assertTrue(row["selector_full_coverage"])
             self.assertIn("benchmark_compatible_selection", manifest["manifest"]["method_protocols"]["Best-of-2"]["method_primitives"])
             self.assertTrue((root / "best" / "q4_tau_table.csv").exists())
+            per_instance = (root / "best" / "q4_tau_per_instance.csv").read_text(encoding="utf-8")
+            self.assertIn("selected_rollout_id", per_instance)
+            self.assertIn("candidate_rewards", per_instance)
+            self.assertIn("rollout_coverage_ready", per_instance)
 
     def test_audits_tau3_controller_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -314,6 +320,18 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("retail: Native tool-calling rerun", readiness["pending_or_partial_rows"])
             self.assertEqual(rows[("airline", "Best-of-N")]["source_artifact"], str(root / "best_of_4_airline"))
 
+    def test_audits_table10_tau3_readiness_rejects_best_of_n_without_selector_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            best = root / "best_of_4_retail"
+            best.mkdir()
+            _write_row(best, "retail", method="Best-of-N", task_count=2, status="complete")
+            readiness = audit_table10_tau3_readiness(root / "audit", [best], expected_test_count=2)
+            self.assertFalse(readiness["all_rows_result_ready"])
+            blockers = readiness["audit_rows"][0]["result_blockers"]
+            self.assertIn("Best-of-N selector evidence missing", blockers)
+            self.assertIn("Best-of-N rollout coverage incomplete", blockers)
+
     def test_builds_table10_tau3_run_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -361,6 +379,11 @@ class Tau3NativeTest(unittest.TestCase):
             ):
                 row_dir.mkdir(parents=True)
                 _write_row(row_dir, domain, method=method, task_count=3, status="complete")
+                if method == "Best-of-N":
+                    row = json.loads((row_dir / "q4_tau_row.json").read_text(encoding="utf-8"))
+                    row["selector"] = "official_reward_best_of_n"
+                    row["selector_full_coverage"] = True
+                    (row_dir / "q4_tau_row.json").write_text(json.dumps(row), encoding="utf-8")
             manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
             self.assertEqual(manifest["recommended_next_run_group"], "legacy_solver_full")
             self.assertIn("scripts/run_table10_tau3.sh solver-full", manifest["recommended_next_command"])

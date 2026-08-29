@@ -473,6 +473,11 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
             blockers.append(status or "status missing")
         if task_count < expected_test_count:
             blockers.append(f"partial: {task_count}/{expected_test_count}")
+        if method == "Best-of-N":
+            if row.get("selector") != "official_reward_best_of_n":
+                blockers.append("Best-of-N selector evidence missing")
+            if not _as_bool(row.get("selector_full_coverage")):
+                blockers.append("Best-of-N rollout coverage incomplete")
         command_manifest = _read_json_or_empty(row_dir / "tau3_native_command.json")
         if "canonical controller" in method:
             if not command_manifest.get("solver_ranker_checkpoint"):
@@ -608,6 +613,7 @@ def build_tau3_best_of_n_from_native(out_dir: Path, native_dir: Path, n: int = 4
         candidates = task_sims[:n]
         if not candidates:
             continue
+        candidate_rewards = [_reward(sim) for sim in candidates]
         selected = max(candidates, key=lambda sim: (_reward(sim), -_as_float(sim.get("duration")) if not math.isnan(_as_float(sim.get("duration"))) else 0.0))
         reward = _reward(selected)
         success = reward >= 1.0 - 1e-6
@@ -642,9 +648,13 @@ def build_tau3_best_of_n_from_native(out_dir: Path, native_dir: Path, n: int = 4
                 "Domain": _domain_from_results(data),
                 "Method": method or f"Best-of-{n}",
                 "task_id": task_id,
+                "selected_rollout_id": selected.get("id", ""),
+                "candidate_rewards": json.dumps(candidate_rewards),
                 "selected_reward": reward,
                 "success": 1 if success else 0,
                 "sampled_rollouts": len(candidates),
+                "expected_rollouts": n,
+                "rollout_coverage_ready": len(candidates) >= n,
                 "tool_calls": task_tool_calls,
                 "tokens": "" if not task_token_observed else task_tokens,
                 "llm_calls": task_calls,
@@ -671,6 +681,9 @@ def build_tau3_best_of_n_from_native(out_dir: Path, native_dir: Path, n: int = 4
         "task_count": task_count,
         "simulation_count": sum(len(values[:n]) for values in by_task.values()),
         "avg_rollouts_per_task": 0.0 if task_count == 0 else sum(row["sampled_rollouts"] for row in selected_rows) / task_count,
+        "selector": "official_reward_best_of_n",
+        "selector_expected_rollouts": n,
+        "selector_full_coverage": all(int(row["sampled_rollouts"]) >= n for row in selected_rows) if selected_rows else False,
         "notes": "Best-of-N row reuses native tau2 rollouts and selects by official evaluator reward; compute counts all sampled rollouts.",
     }
     _write_csv(out_dir / "q4_tau_per_instance.csv", selected_rows)
@@ -1209,6 +1222,12 @@ def _as_float(value: object) -> float:
         return float(value)
     except (TypeError, ValueError):
         return float("nan")
+
+
+def _as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes"}
 
 
 def _fmt_float(value: float, digits: int) -> str:

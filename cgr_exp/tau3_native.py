@@ -658,9 +658,11 @@ def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_t
                 duration = _as_float(sim.get("duration"))
                 if not math.isnan(duration):
                     total_wall += duration
-        task_count = int(_as_float(q4_row.get("task_count")) if q4_row else len(rewards_by_task))
-        simulation_count = int(_as_float(q4_row.get("simulation_count")) if q4_row else len(sims))
+        task_count = _row_int(q4_row, "task_count", len(rewards_by_task)) if q4_row else len(rewards_by_task)
+        simulation_count = _row_int(q4_row, "simulation_count", len(sims)) if q4_row else len(sims)
         expected_simulations = expected_test_count * 4
+        status = str(q4_row.get("status", "missing" if result_path is None else "partial_unaggregated"))
+        pending_without_results = bool(q4_row) and status != "complete" and result_path is None
         pass1 = q4_row.get("pass^1") if q4_row else (_pass_hat(rewards_by_task, 1) if rewards_by_task else "")
         pass4 = q4_row.get("pass^4") if q4_row else (_pass_hat(rewards_by_task, 4) if rewards_by_task and min(len(v) for v in rewards_by_task.values()) >= 4 else "")
         rows.append(
@@ -668,9 +670,11 @@ def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_t
                 "Domain": domain,
                 "Method": method,
                 "row_dir": str(row_dir),
-                "status": str(q4_row.get("status", "missing" if result_path is None else "partial_unaggregated")),
+                "status": status,
                 "q4_row_present": bool(q4_row),
                 "official_results_present": result_path is not None,
+                "pending_without_official_results": pending_without_results,
+                "rerun_safe": status != "complete",
                 "task_count": task_count,
                 "expected_task_count": expected_test_count,
                 "task_progress": _progress_fraction(task_count, expected_test_count),
@@ -684,6 +688,7 @@ def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_t
                 "tokens": q4_row.get("tokens", total_tokens / max(len(sims), 1) if token_observed and sims else ""),
                 "wall_clock_seconds": q4_row.get("wall_clock_seconds", total_wall / max(len(sims), 1) if sims else ""),
                 "official_results": "" if result_path is None else str(result_path),
+                "note": "pending artifact only; rerun same row after setting API key" if pending_without_results else "",
             }
         )
     csv_path = out_dir / "table10_tau3_progress.csv"
@@ -1347,8 +1352,8 @@ def _table10_progress_markdown(manifest: Mapping[str, object]) -> str:
         f"Base dir: `{manifest['base_dir']}`",
         f"Complete rows: `{manifest['complete_rows']}/{manifest['total_rows']}`",
         "",
-        "| Domain | Method | Status | Tasks | Simulations | pass^1 | pass^4 |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+        "| Domain | Method | Status | Tasks | Simulations | pass^1 | pass^4 | Note |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
     ]
     for row in manifest["rows"]:
         cells = [
@@ -1359,6 +1364,7 @@ def _table10_progress_markdown(manifest: Mapping[str, object]) -> str:
             f"{row['simulation_count']}/{row['expected_simulation_count']}",
             _fmt_maybe_float(row.get("pass^1"), 4),
             _fmt_maybe_float(row.get("pass^4"), 4),
+            str(row.get("note", "")),
         ]
         lines.append("| " + " | ".join(cells) + " |")
     lines.append("")
@@ -1367,6 +1373,11 @@ def _table10_progress_markdown(manifest: Mapping[str, object]) -> str:
 
 def _progress_fraction(value: int, expected: int) -> float:
     return 0.0 if expected <= 0 else min(1.0, max(0.0, value / expected))
+
+
+def _row_int(row: Mapping[str, object], key: str, default: int) -> int:
+    value = _as_float(row.get(key))
+    return default if math.isnan(value) else int(value)
 
 
 def _fmt_maybe_float(value: object, digits: int) -> str:

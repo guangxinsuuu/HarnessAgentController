@@ -786,6 +786,24 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("Table10 Tau3 Progress", text)
             self.assertIn("2/4", text)
 
+    def test_summarizes_pending_tau3_artifact_without_results_as_rerunnable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            solver = base / "solver_retail"
+            solver.mkdir(parents=True)
+            _write_row(solver, "retail", method="Solver-derived controller", task_count=0, status="preflight_failed: missing key")
+            manifest = summarize_table10_tau3_progress(root / "progress", base_dir=base, expected_test_count=4, best_of_n=4)
+            rows = {(row["Domain"], row["Method"]): row for row in manifest["rows"]}
+            solver_row = rows[("retail", "Solver-derived controller")]
+            self.assertTrue(solver_row["q4_row_present"])
+            self.assertFalse(solver_row["official_results_present"])
+            self.assertTrue(solver_row["pending_without_official_results"])
+            self.assertTrue(solver_row["rerun_safe"])
+            self.assertIn("rerun same row", solver_row["note"])
+            text = (root / "progress" / "table10_tau3_progress.md").read_text(encoding="utf-8")
+            self.assertIn("pending artifact only", text)
+
 
 def _sim(task_id: str, trial: int, reward: float) -> dict:
     return {

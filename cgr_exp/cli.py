@@ -298,6 +298,7 @@ def main() -> None:
         if name in ("build-table4-q2", "build-table5-q2", "audit-table4-q2", "audit-table5-q2"):
             p.add_argument("--solver-prior-dir", type=Path, default=Path("runs/scheduling_llm_pilot_real_100_seed0"))
             p.add_argument("--expected-test-count", type=int, default=100)
+            p.add_argument("--q2-local-primitives", type=Path, default=Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv"))
             p.add_argument("--tot-dir", "--gpt-frontier-rank-dir", dest="gpt_frontier_rank_dir", type=Path, default=None)
             p.add_argument("--target-prm-dir", type=Path, default=None)
             p.add_argument("--direct-dir", type=Path, default=None)
@@ -992,6 +993,7 @@ def main() -> None:
                 rest_mcts_dir=args.rest_mcts_dir,
                 solver_certification_dir=args.solver_certification_dir,
                 structured_dir=args.structured_dir,
+                q2_local_primitives=args.q2_local_primitives,
             )
             command_manifest = {
                 "command": args.command,

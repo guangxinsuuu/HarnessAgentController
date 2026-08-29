@@ -197,6 +197,7 @@ audit_table() {
     --rest-mcts-dir "${LEARNED_DIR}" \
     --solver-prior-dir "${LEARNED_DIR}" \
     --solver-certification-dir "${LEARNED_DIR}" \
+    --q2-local-primitives "${LOCAL_PRIMITIVE_AUDIT_DIR}/q2_local_primitive_audit.csv" \
     --overwrite
 }
 

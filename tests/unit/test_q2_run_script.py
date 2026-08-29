@@ -17,6 +17,7 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("RUN_PREFLIGHT_DIR", text)
         self.assertIn("audit-q2-local-primitives", text)
         self.assertIn("LOCAL_PRIMITIVE_AUDIT_DIR", text)
+        self.assertIn("--q2-local-primitives", text)
         self.assertIn("missing CGR_LLM_API_KEY", text)
         self.assertIn("require_cpsat", text)
         self.assertIn("ortools.sat.python", text)

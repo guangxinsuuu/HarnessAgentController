@@ -126,6 +126,7 @@ def audit_table5_q2_readiness(
     rest_mcts_dir: Optional[Path] = None,
     solver_certification_dir: Optional[Path] = None,
     structured_dir: Optional[Path] = None,
+    q2_local_primitives: Optional[Path] = None,
 ) -> Dict[str, object]:
     manifest = build_table5_q2_results(
         out_dir,
@@ -142,6 +143,7 @@ def audit_table5_q2_readiness(
     )
     rows = list(manifest["rows"])
     audit_rows = [_audit_row(row) for row in rows]
+    _apply_local_primitive_audit(audit_rows, q2_local_primitives)
     _apply_split_consistency_audit(rows, audit_rows, expected_test_count)
     audit_csv = out_dir / "table5_q2_readiness.csv"
     audit_json = out_dir / "table5_q2_readiness.json"
@@ -157,6 +159,7 @@ def audit_table5_q2_readiness(
         "audit_rows": audit_rows,
         "source_evidence": _source_evidence_for_rows(rows),
         "source_ref_verification": q2_source_ref_verification_summary(),
+        "q2_local_primitives": None if q2_local_primitives is None else str(q2_local_primitives),
         "produced_artifacts": [*manifest["produced_artifacts"], audit_csv.name, audit_json.name],
     }
     audit_json.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
@@ -281,6 +284,42 @@ def _artifact_source_evidence_blockers(manifest: Mapping[str, object], method: s
     if expected_refs - observed_refs:
         blockers.append(f"{artifact_name} source_evidence missing official_code_refs for {method}")
     return blockers
+
+
+def _apply_local_primitive_audit(audit_rows: List[Dict[str, object]], q2_local_primitives: Optional[Path]) -> None:
+    if q2_local_primitives is None:
+        return
+    local_rows = _read_csv(q2_local_primitives)
+    if not local_rows:
+        for audit_row in audit_rows:
+            _append_result_blocker(audit_row, "local primitive audit missing")
+        return
+    by_method = {str(row.get("Method", "")): row for row in local_rows}
+    for audit_row in audit_rows:
+        method = str(audit_row.get("Method", ""))
+        local = by_method.get(method)
+        if local is None:
+            _append_result_blocker(audit_row, "local primitive audit missing method row")
+            continue
+        if str(local.get("local_primitives_ready", "")).lower() != "true":
+            details = []
+            missing_paths = str(local.get("missing_paths", "")).strip()
+            missing_anchors = str(local.get("missing_anchors", "")).strip()
+            if missing_paths:
+                details.append(f"missing paths: {missing_paths}")
+            if missing_anchors:
+                details.append(f"missing anchors: {missing_anchors}")
+            suffix = "; " + "; ".join(details) if details else ""
+            _append_result_blocker(audit_row, "local primitive audit failed" + suffix)
+
+
+def _append_result_blocker(audit_row: Dict[str, object], blocker: str) -> None:
+    existing = str(audit_row.get("result_blockers", "")).strip()
+    audit_row["result_blockers"] = "; ".join(part for part in [existing, blocker] if part)
+    audit_row["result_ready"] = False
+    audit_row["compute_ready"] = False
+    compute_existing = str(audit_row.get("compute_blockers", "")).strip()
+    audit_row["compute_blockers"] = "; ".join(part for part in [compute_existing, "result not complete"] if part)
 
 
 def _apply_split_consistency_audit(rows: List[Mapping[str, object]], audit_rows: List[Dict[str, object]], expected_test_count: int) -> None:

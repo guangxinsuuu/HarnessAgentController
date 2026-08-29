@@ -10,10 +10,36 @@ from unittest.mock import patch
 from cgr_exp.q2_method_contracts import q2_method_contracts
 from cgr_exp.q2_source_evidence import q2_source_evidence_for_methods
 from cgr_exp.q2_source_evidence import Q2_SOURCE_EVIDENCE
-from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
+from cgr_exp.table5_q2 import TABLE5_METHODS, audit_table5_q2_readiness, build_table5_q2_results
 
 
 class Table5Q2Test(unittest.TestCase):
+    def test_readiness_blocks_rows_when_local_primitive_audit_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            local_primitives = root / "q2_local_primitive_audit.csv"
+            _write_csv(
+                local_primitives,
+                [
+                    {
+                        "Method": method,
+                        "local_primitives_ready": "False" if method == "Direct / CoT" else "True",
+                        "missing_paths": "",
+                        "missing_anchors": "first_valid" if method == "Direct / CoT" else "",
+                    }
+                    for method, _setting, _source, _kind in TABLE5_METHODS
+                ],
+            )
+            manifest = audit_table5_q2_readiness(
+                root / "out",
+                solver_prior_dir=root / "missing",
+                q2_local_primitives=local_primitives,
+            )
+            audit_rows = {row["Method"]: row for row in manifest["readiness"]["audit_rows"]}
+            self.assertIn("local primitive audit failed", audit_rows["Direct / CoT"]["result_blockers"])
+            self.assertIn("missing anchors: first_valid", audit_rows["Direct / CoT"]["result_blockers"])
+            self.assertNotIn("local primitive audit failed", audit_rows["Self-Consistency"]["result_blockers"])
+
     def test_builder_keeps_missing_native_rows_pending_and_extracts_completed_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

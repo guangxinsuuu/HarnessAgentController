@@ -5,7 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cgr_exp.tau3_native import Tau3RunConfig, aggregate_tau3_official_results, audit_tau3_controller_trace, build_tau2_run_command, build_table10_tau3_results
+from cgr_exp.tau3_native import (
+    Tau3RunConfig,
+    aggregate_tau3_official_results,
+    audit_tau3_controller_trace,
+    build_tau2_run_command,
+    build_table10_tau3_results,
+    run_tau3_native,
+)
 
 
 class Tau3NativeTest(unittest.TestCase):
@@ -92,6 +99,35 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(len(manifest["rows"]), 2)
             self.assertTrue((root / "table" / "table10_tau3_results.csv").exists())
             self.assertIn("partial: 2/100", (root / "table" / "table10_tau3_results.csv").read_text(encoding="utf-8"))
+
+    def test_dry_run_labels_canonical_and_certified_controller_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            canonical = run_tau3_native(
+                Tau3RunConfig(
+                    output_dir=root / "canonical",
+                    domain="retail",
+                    method="solver",
+                    num_tasks=1,
+                    num_trials=1,
+                    dry_run=True,
+                    solver_ranker_checkpoint=root / "ranker.json",
+                )
+            )
+            certified = run_tau3_native(
+                Tau3RunConfig(
+                    output_dir=root / "certified",
+                    domain="retail",
+                    method="solver",
+                    num_tasks=1,
+                    num_trials=1,
+                    dry_run=True,
+                    solver_ranker_checkpoint=root / "ranker.json",
+                    enable_certified_filter=True,
+                )
+            )
+            self.assertEqual(canonical["row"]["Method"], "Solver-derived canonical controller")
+            self.assertEqual(certified["row"]["Method"], "Solver-derived canonical controller + certified filter")
 
     def test_audits_tau3_controller_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

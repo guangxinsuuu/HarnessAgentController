@@ -106,6 +106,10 @@ build_table() {
       "${BASE_DIR}/native_airline" \
       "${BASE_DIR}/solver_retail" \
       "${BASE_DIR}/solver_airline" \
+      "${BASE_DIR}/solver_canonical_retail" \
+      "${BASE_DIR}/solver_canonical_airline" \
+      "${BASE_DIR}/solver_canonical_certified_retail" \
+      "${BASE_DIR}/solver_canonical_certified_airline" \
     --overwrite
 }
 

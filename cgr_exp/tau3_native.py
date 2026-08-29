@@ -86,11 +86,12 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
     controller_trace_path = (config.output_dir / "tau3_controller_trace.jsonl").resolve() if config.method == "solver" else None
     save_to = str(official_results_dir)
     command = build_tau2_run_command(config, save_to=save_to)
+    method_label = _tau3_method_label(config)
     command_manifest = {
         "command": command,
         "cwd": str(TAU2_SUBMODULE),
         "dry_run": config.dry_run,
-        "method": TABLE10_METHODS[config.method],
+        "method": method_label,
         "domain": config.domain,
         "task_split_name": config.task_split_name,
         "num_tasks": config.num_tasks,
@@ -113,7 +114,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
     if not preflight["ready"]:
         return _write_pending_artifacts(config, "preflight_failed: " + "; ".join(preflight["blockers"]), save_to)
     if Path(save_to).exists() and not config.force:
-        return aggregate_tau3_official_results(config.output_dir, method=TABLE10_METHODS[config.method], domain=config.domain, expected_trials=config.num_trials)
+        return aggregate_tau3_official_results(config.output_dir, method=method_label, domain=config.domain, expected_trials=config.num_trials)
 
     start = time.monotonic()
     if config.method == "solver":
@@ -128,7 +129,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
     (config.output_dir / "tau3_native_command.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
     if result.returncode != 0:
         raise RuntimeError(f"tau2 official run failed with exit code {result.returncode}; see {config.output_dir / 'tau3_native_stderr.log'}")
-    return aggregate_tau3_official_results(config.output_dir, method=TABLE10_METHODS[config.method], domain=config.domain, expected_trials=config.num_trials)
+    return aggregate_tau3_official_results(config.output_dir, method=method_label, domain=config.domain, expected_trials=config.num_trials)
 
 
 def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subprocess.CompletedProcess[str]:
@@ -404,6 +405,16 @@ def _python_version_supported(version: str) -> bool:
     return major == 3 and 12 <= minor < 14
 
 
+def _tau3_method_label(config: Tau3RunConfig) -> str:
+    if config.method != "solver":
+        return TABLE10_METHODS[config.method]
+    if config.solver_ranker_checkpoint is None:
+        return TABLE10_METHODS[config.method]
+    if config.enable_certified_filter:
+        return "Solver-derived canonical controller + certified filter"
+    return "Solver-derived canonical controller"
+
+
 def build_table10_tau3_results(out_dir: Path, row_dirs: Sequence[Path], expected_test_count: int = 100) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     rows: List[Dict[str, object]] = []
@@ -491,7 +502,7 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
 def _write_pending_artifacts(config: Tau3RunConfig, status: str, save_to: str) -> Dict[str, object]:
     row = {
         "Domain": config.domain,
-        "Method": TABLE10_METHODS[config.method],
+        "Method": _tau3_method_label(config),
         "pass^1": "",
         "pass^4": "",
         "violations": "",
@@ -512,7 +523,7 @@ def _write_pending_artifacts(config: Tau3RunConfig, status: str, save_to: str) -
     (config.output_dir / "q4_tau_row.json").write_text(json.dumps(row, indent=2, sort_keys=True), encoding="utf-8")
     _write_csv(config.output_dir / "q4_tau_table.csv", [row])
     _write_csv(config.output_dir / "q4_tau_per_instance.csv", [])
-    manifest = _tau_manifest(TABLE10_METHODS[config.method], config.domain, 0, config.num_trials, Path(save_to))
+    manifest = _tau_manifest(_tau3_method_label(config), config.domain, 0, config.num_trials, Path(save_to))
     (config.output_dir / "q4_tau_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return {"row": row, "manifest": manifest, "produced_artifacts": ["q4_tau_row.json", "q4_tau_table.csv", "q4_tau_per_instance.csv", "q4_tau_manifest.json"]}
 

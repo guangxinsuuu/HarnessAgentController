@@ -48,6 +48,16 @@ CGR_LLM_API_KEY, export OPENAI_API_KEY="$CGR_LLM_API_KEY" first.
 EOF
 }
 
+require_tau3_api_key() {
+  if [[ -z "${OPENAI_API_KEY:-}" && -n "${CGR_LLM_API_KEY:-}" ]]; then
+    export OPENAI_API_KEY="${CGR_LLM_API_KEY}"
+  fi
+  if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+    print -u2 "missing OPENAI_API_KEY or CGR_LLM_API_KEY for tau3 API-backed run"
+    return 1
+  fi
+}
+
 run_preflight() {
   "${PYTHON_BIN}" -m cgr_exp.cli preflight-tau3-native \
     --output-dir "${BASE_DIR}/preflight" \
@@ -119,6 +129,7 @@ run_source_controller() {
 }
 
 run_domain_pair() {
+  require_tau3_api_key
   local count="$1"
   local suffix="$2"
   local method="${3:-native}"
@@ -129,10 +140,10 @@ run_domain_pair() {
     local retail_pid=$!
     run_native_domain airline "${count}" "${suffix}" "${method}" "${checkpoint}" "${certified}" &
     local airline_pid=$!
-    local status=0
-    wait "${retail_pid}" || status=$?
-    wait "${airline_pid}" || status=$?
-    return "${status}"
+    local exit_status=0
+    wait "${retail_pid}" || exit_status=$?
+    wait "${airline_pid}" || exit_status=$?
+    return "${exit_status}"
   fi
   run_native_domain retail "${count}" "${suffix}" "${method}" "${checkpoint}" "${certified}"
   run_native_domain airline "${count}" "${suffix}" "${method}" "${checkpoint}" "${certified}"
@@ -150,13 +161,13 @@ run_table10_full() {
     local canonical_pid=$!
     run_domain_pair "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1 &
     local certified_pid=$!
-    local status=0
-    wait "${native_pid}" || status=$?
-    wait "${solver_pid}" || status=$?
-    wait "${canonical_pid}" || status=$?
-    wait "${certified_pid}" || status=$?
-    if [[ "${status}" != "0" ]]; then
-      return "${status}"
+    local exit_status=0
+    wait "${native_pid}" || exit_status=$?
+    wait "${solver_pid}" || exit_status=$?
+    wait "${canonical_pid}" || exit_status=$?
+    wait "${certified_pid}" || exit_status=$?
+    if [[ "${exit_status}" != "0" ]]; then
+      return "${exit_status}"
     fi
   else
     run_domain_pair "${NUM_TASKS}" native

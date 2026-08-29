@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -21,6 +22,46 @@ from cgr_exp.tau3_native import (
 
 
 class Tau3NativeTest(unittest.TestCase):
+    def test_table10_tau3_script_guards_api_backed_runs(self) -> None:
+        script = Path("scripts/run_table10_tau3.sh")
+        text = script.read_text(encoding="utf-8")
+        self.assertIn("require_tau3_api_key", text)
+        self.assertIn("CGR_LLM_API_KEY", text)
+        self.assertIn('export OPENAI_API_KEY="${CGR_LLM_API_KEY}"', text)
+        self.assertIn("missing OPENAI_API_KEY or CGR_LLM_API_KEY", text)
+        self.assertIn("run_domain_pair() {\n  require_tau3_api_key", text)
+        result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_table10_tau3_api_guard_fails_before_api_run_without_key(self) -> None:
+        script = Path("scripts/run_table10_tau3.sh")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                **os.environ,
+                "PYTHON_BIN": "/usr/bin/true",
+                "BASE_DIR": str(Path(tmp) / "tau3"),
+                "NUM_TASKS": "1",
+            }
+            env.pop("OPENAI_API_KEY", None)
+            env.pop("CGR_LLM_API_KEY", None)
+            result = subprocess.run(["zsh", str(script), "native-full"], check=False, text=True, capture_output=True, env=env)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing OPENAI_API_KEY or CGR_LLM_API_KEY", result.stderr)
+
+    def test_table10_tau3_api_guard_accepts_cgr_key_alias(self) -> None:
+        script = Path("scripts/run_table10_tau3.sh")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                **os.environ,
+                "PYTHON_BIN": "/usr/bin/true",
+                "BASE_DIR": str(Path(tmp) / "tau3"),
+                "NUM_TASKS": "1",
+                "CGR_LLM_API_KEY": "test-key",
+            }
+            env.pop("OPENAI_API_KEY", None)
+            result = subprocess.run(["zsh", str(script), "native-full"], check=False, text=True, capture_output=True, env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_builds_official_tau2_cli_command(self) -> None:
         cfg = Tau3RunConfig(
             output_dir=Path("runs/x"),

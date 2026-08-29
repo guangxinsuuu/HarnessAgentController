@@ -28,7 +28,7 @@ BEST_OF_N="${BEST_OF_N:-4}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|preflight-runs|progress|source-controller|source-controller-smoke|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
+scripts/run_table10_tau3.sh [preflight|preflight-runs|progress|source-controller|source-controller-smoke|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|solver-canonical-suite|full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -242,6 +242,23 @@ run_table10_full() {
   refresh_status
 }
 
+run_canonical_suite() {
+  run_preflight
+  ensure_source_controller
+  run_domain_pair 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
+  audit_controller_trace_pair solver_canonical_smoke
+  audit_smoke_gate_pair solver_canonical_smoke
+  run_domain_pair 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
+  audit_controller_trace_pair solver_canonical_certified_smoke
+  audit_smoke_gate_pair solver_canonical_certified_smoke
+  run_domain_pair "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
+  audit_solver_canonical_traces
+  run_domain_pair "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
+  audit_solver_canonical_certified_traces
+  build_table
+  refresh_status
+}
+
 build_best_of_n() {
   "${PYTHON_BIN}" -m cgr_exp.cli build-tau3-best-of-n \
     --output-dir "${BASE_DIR}/best_of_${BEST_OF_N}_retail" \
@@ -391,6 +408,9 @@ case "${1:-}" in
     run_domain_pair "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
     audit_solver_canonical_certified_traces
     refresh_status
+    ;;
+  solver-canonical-suite)
+    run_canonical_suite
     ;;
   full)
     run_table10_full

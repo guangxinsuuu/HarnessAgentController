@@ -151,6 +151,32 @@ Successful smoke and full targets refresh `progress/` and `run_preflight/`
 automatically, so rerun `preflight-runs` manually only when inspecting a
 partially failed command.
 
+## Canonical Controller Suite
+
+To run only the canonical controller rows for our method, including smoke
+gates and the certified variant, use:
+
+```bash
+PYTHON_BIN=/opt/anaconda3/bin/python \
+TAU_PYTHON_BIN=/opt/anaconda3/bin/python \
+AGENT_LLM=openai/gpt-4o-mini \
+USER_LLM=openai/gpt-4o-mini \
+BASE_DIR=runs/table10_tau3 \
+NUM_TASKS=100 \
+NUM_TRIALS=4 \
+MAX_CONCURRENCY=6 \
+CANDIDATE_WORKERS=4 \
+CANDIDATE_RETRIES=2 \
+PARALLEL_DOMAINS=1 \
+SEED=0 \
+scripts/run_table10_tau3.sh solver-canonical-suite
+```
+
+This target runs canonical smoke, certified canonical smoke, canonical full,
+certified canonical full, trace audits, smoke gates, table build, progress,
+and run preflight. It skips native, Best-of-N, and legacy solver-controller
+rows.
+
 ## Full Rows
 
 Run all Table10 rows:

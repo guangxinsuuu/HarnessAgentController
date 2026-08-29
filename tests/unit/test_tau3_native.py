@@ -866,6 +866,8 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(manifest["python_bin"], "/tmp/runner-python")
             self.assertEqual(manifest["seed"], 2)
             self.assertEqual(manifest["recommended_next_run_group"], "source_controller")
+            self.assertEqual(manifest["recommended_next_summary"]["recommended_next_run_group"], "source_controller")
+            self.assertEqual(manifest["recommended_next_summary"]["estimated_tau2_simulations"], 0)
             self.assertIn("source_controller_seed2", groups["source_controller"]["source_controller_checkpoint"])
             self.assertIn("SEED=2", groups["source_controller"]["command"])
             self.assertIn("scripts/run_table10_tau3.sh source-controller", manifest["recommended_next_command"])
@@ -881,6 +883,11 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("PARALLEL_DOMAINS=1", groups["native_full"]["command"])
             self.assertTrue((root / "preflight" / "table10_tau3_run_preflight.csv").exists())
             self.assertTrue((root / "preflight" / "table10_tau3_run_preflight.md").exists())
+            self.assertTrue((root / "preflight" / "next_tau3_run.json").exists())
+            self.assertTrue((root / "preflight" / "next_tau3_run.md").exists())
+            next_text = (root / "preflight" / "next_tau3_run.md").read_text(encoding="utf-8")
+            self.assertIn("Run group: `source_controller`", next_text)
+            self.assertIn("Estimated tau2 simulations: `0`", next_text)
 
     def test_table10_preflight_recommends_next_missing_group(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -922,13 +929,17 @@ class Tau3NativeTest(unittest.TestCase):
             groups = {row["run_group"]: row for row in manifest["rows"]}
             self.assertTrue(groups["source_controller"]["ready"])
             self.assertEqual(manifest["recommended_next_run_group"], "solver_canonical_smoke")
+            self.assertEqual(manifest["recommended_next_summary"]["recommended_next_run_group"], "solver_canonical_smoke")
+            self.assertEqual(manifest["recommended_next_summary"]["estimated_tau2_simulations"], 16)
             self.assertFalse(manifest["api_key_present"])
             self.assertTrue(manifest["recommended_next_requires_api_key"])
             self.assertFalse(manifest["recommended_next_api_key_ready"])
             self.assertEqual(manifest["accepted_api_key_envs"], ["OPENAI_API_KEY", "CGR_LLM_API_KEY"])
             self.assertIn("scripts/run_table10_tau3.sh solver-canonical-smoke", manifest["recommended_next_command"])
             text = (root / "preflight" / "table10_tau3_run_preflight.md").read_text(encoding="utf-8")
+            next_text = (root / "preflight" / "next_tau3_run.md").read_text(encoding="utf-8")
             self.assertIn("API key present: `False`", text)
+            self.assertIn("Set one of `OPENAI_API_KEY, CGR_LLM_API_KEY`", next_text)
             self.assertIn("Present API key envs: `none`", text)
             self.assertIn("Warning: recommended next run needs one of `OPENAI_API_KEY, CGR_LLM_API_KEY`", text)
             self.assertIn("Resume policy:", text)

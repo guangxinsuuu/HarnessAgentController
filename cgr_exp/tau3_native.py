@@ -862,6 +862,8 @@ def build_table10_tau3_run_preflight(
     csv_path = out_dir / "table10_tau3_run_preflight.csv"
     json_path = out_dir / "table10_tau3_run_preflight.json"
     md_path = out_dir / "table10_tau3_run_preflight.md"
+    next_json_path = out_dir / "next_tau3_run.json"
+    next_md_path = out_dir / "next_tau3_run.md"
     _write_csv(csv_path, rows)
     api_key_envs = ["OPENAI_API_KEY", "CGR_LLM_API_KEY"]
     present_api_key_envs = [name for name in api_key_envs if os.environ.get(name)]
@@ -893,12 +895,15 @@ def build_table10_tau3_run_preflight(
         "all_rows_result_ready": readiness["all_rows_result_ready"],
         "recommended_next_run_group": "" if next_run is None else next_run["run_group"],
         "recommended_next_command": "" if next_run is None else next_run["command"],
+        "recommended_next_summary": _table10_next_run_summary(next_run),
         "max_api_backed_effective_concurrency": max_api_concurrency,
         "rows": rows,
-        "produced_artifacts": [csv_path.name, json_path.name, md_path.name, "readiness"],
+        "produced_artifacts": [csv_path.name, json_path.name, md_path.name, next_json_path.name, next_md_path.name, "readiness"],
     }
     json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     md_path.write_text(_table10_preflight_markdown(manifest), encoding="utf-8")
+    next_json_path.write_text(json.dumps(manifest["recommended_next_summary"], indent=2, sort_keys=True), encoding="utf-8")
+    next_md_path.write_text(_table10_next_run_markdown(manifest), encoding="utf-8")
     return manifest
 
 
@@ -1456,6 +1461,43 @@ def _table10_group_work_estimate(group: str, expected_test_count: int, num_trial
     }
 
 
+def _table10_next_run_summary(next_run: Optional[Mapping[str, object]]) -> Dict[str, object]:
+    if next_run is None:
+        return {
+            "recommended_next_run_group": "",
+            "ready": True,
+            "api_required": False,
+            "resume_safe": False,
+            "effective_max_concurrency": 0,
+            "estimated_api_rows": 0,
+            "estimated_tau2_simulations": 0,
+            "estimated_native_rows": 0,
+            "estimated_solver_controller_rows": 0,
+            "candidate_worker_multiplier": 0,
+            "command": "",
+            "methods": "",
+            "blockers": "",
+        }
+    keys = [
+        "run_group",
+        "ready",
+        "api_required",
+        "resume_safe",
+        "effective_max_concurrency",
+        "estimated_api_rows",
+        "estimated_tau2_simulations",
+        "estimated_native_rows",
+        "estimated_solver_controller_rows",
+        "candidate_worker_multiplier",
+        "command",
+        "methods",
+        "blockers",
+    ]
+    summary = {key: next_run.get(key, "") for key in keys}
+    summary["recommended_next_run_group"] = summary.pop("run_group")
+    return summary
+
+
 def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
     lines = [
         "# Table10 Tau3 Run Preflight",
@@ -1519,6 +1561,38 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
                 "",
             ]
         )
+    return "\n".join(lines)
+
+
+def _table10_next_run_markdown(manifest: Mapping[str, object]) -> str:
+    summary = manifest.get("recommended_next_summary")
+    summary = summary if isinstance(summary, Mapping) else {}
+    lines = [
+        "# Next Tau3 Run",
+        "",
+        f"Base dir: `{manifest.get('base_dir', '')}`",
+        f"Run group: `{summary.get('recommended_next_run_group') or 'none'}`",
+        f"API required: `{summary.get('api_required', False)}`",
+        f"API key ready: `{manifest.get('recommended_next_api_key_ready', False)}`",
+        f"Resume safe: `{summary.get('resume_safe', False)}`",
+        f"Effective max concurrency: `{summary.get('effective_max_concurrency', 0)}`",
+        f"Estimated API rows: `{summary.get('estimated_api_rows', 0)}`",
+        f"Estimated tau2 simulations: `{summary.get('estimated_tau2_simulations', 0)}`",
+        f"Estimated native rows: `{summary.get('estimated_native_rows', 0)}`",
+        f"Estimated solver-controller rows: `{summary.get('estimated_solver_controller_rows', 0)}`",
+        f"Candidate worker multiplier: `{summary.get('candidate_worker_multiplier', 0)}`",
+        f"Methods: {summary.get('methods', '')}",
+        "",
+    ]
+    blockers = str(summary.get("blockers", ""))
+    if blockers:
+        lines.extend([f"Blockers: {blockers}", ""])
+    if summary.get("api_required") and not manifest.get("recommended_next_api_key_ready"):
+        env_names = ", ".join(str(item) for item in manifest.get("accepted_api_key_envs", ["OPENAI_API_KEY", "CGR_LLM_API_KEY"]))
+        lines.extend([f"Set one of `{env_names}` before running this command.", ""])
+    command = str(summary.get("command", ""))
+    if command:
+        lines.extend(["```bash", command, "```", ""])
     return "\n".join(lines)
 
 

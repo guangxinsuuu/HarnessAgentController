@@ -627,6 +627,84 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
     return readiness
 
 
+def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_test_count: int = 100, best_of_n: int = 4) -> Dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for row_dir in _table10_default_row_dirs(base_dir, best_of_n):
+        domain, method = _table10_expected_label(row_dir)
+        q4_row = _read_json_or_empty(row_dir / "q4_tau_row.json")
+        result_path = _find_official_results(row_dir)
+        rewards_by_task: Dict[str, List[float]] = {}
+        sims: List[Mapping[str, object]] = []
+        total_tokens = 0
+        token_observed = False
+        total_llm_calls = 0
+        total_tool_calls = 0
+        total_wall = 0.0
+        if result_path is not None:
+            data = json.loads(result_path.read_text(encoding="utf-8"))
+            sims = _load_simulations(result_path, data)
+            for sim in sims:
+                task_id = str(sim.get("task_id", ""))
+                if task_id:
+                    rewards_by_task.setdefault(task_id, []).append(_reward(sim))
+                messages = sim.get("messages") or []
+                tokens, calls = _token_usage(messages)
+                if tokens is not None:
+                    total_tokens += tokens
+                    token_observed = True
+                total_llm_calls += calls
+                total_tool_calls += _count_agent_tool_calls(messages)
+                duration = _as_float(sim.get("duration"))
+                if not math.isnan(duration):
+                    total_wall += duration
+        task_count = int(_as_float(q4_row.get("task_count")) if q4_row else len(rewards_by_task))
+        simulation_count = int(_as_float(q4_row.get("simulation_count")) if q4_row else len(sims))
+        expected_simulations = expected_test_count * 4
+        pass1 = q4_row.get("pass^1") if q4_row else (_pass_hat(rewards_by_task, 1) if rewards_by_task else "")
+        pass4 = q4_row.get("pass^4") if q4_row else (_pass_hat(rewards_by_task, 4) if rewards_by_task and min(len(v) for v in rewards_by_task.values()) >= 4 else "")
+        rows.append(
+            {
+                "Domain": domain,
+                "Method": method,
+                "row_dir": str(row_dir),
+                "status": str(q4_row.get("status", "missing" if result_path is None else "partial_unaggregated")),
+                "q4_row_present": bool(q4_row),
+                "official_results_present": result_path is not None,
+                "task_count": task_count,
+                "expected_task_count": expected_test_count,
+                "task_progress": _progress_fraction(task_count, expected_test_count),
+                "simulation_count": simulation_count,
+                "expected_simulation_count": expected_simulations,
+                "simulation_progress": _progress_fraction(simulation_count, expected_simulations),
+                "pass^1": pass1,
+                "pass^4": pass4,
+                "llm_calls": q4_row.get("llm_calls", total_llm_calls / max(len(sims), 1) if sims else ""),
+                "tool_calls": q4_row.get("tool_calls", total_tool_calls / max(len(sims), 1) if sims else ""),
+                "tokens": q4_row.get("tokens", total_tokens / max(len(sims), 1) if token_observed and sims else ""),
+                "wall_clock_seconds": q4_row.get("wall_clock_seconds", total_wall / max(len(sims), 1) if sims else ""),
+                "official_results": "" if result_path is None else str(result_path),
+            }
+        )
+    csv_path = out_dir / "table10_tau3_progress.csv"
+    json_path = out_dir / "table10_tau3_progress.json"
+    md_path = out_dir / "table10_tau3_progress.md"
+    _write_csv(csv_path, rows)
+    manifest = {
+        "artifact": "table10_tau3_progress",
+        "base_dir": str(base_dir),
+        "expected_test_count": expected_test_count,
+        "best_of_n": best_of_n,
+        "complete_rows": sum(1 for row in rows if str(row["status"]) == "complete"),
+        "total_rows": len(rows),
+        "rows": rows,
+        "produced_artifacts": [csv_path.name, json_path.name, md_path.name],
+    }
+    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    md_path.write_text(_table10_progress_markdown(manifest), encoding="utf-8")
+    return manifest
+
+
 def build_table10_tau3_run_preflight(
     out_dir: Path,
     *,
@@ -1260,6 +1338,40 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def _table10_progress_markdown(manifest: Mapping[str, object]) -> str:
+    lines = [
+        "# Table10 Tau3 Progress",
+        "",
+        f"Base dir: `{manifest['base_dir']}`",
+        f"Complete rows: `{manifest['complete_rows']}/{manifest['total_rows']}`",
+        "",
+        "| Domain | Method | Status | Tasks | Simulations | pass^1 | pass^4 |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+    ]
+    for row in manifest["rows"]:
+        cells = [
+            str(row["Domain"]),
+            str(row["Method"]),
+            str(row["status"]),
+            f"{row['task_count']}/{row['expected_task_count']}",
+            f"{row['simulation_count']}/{row['expected_simulation_count']}",
+            _fmt_maybe_float(row.get("pass^1"), 4),
+            _fmt_maybe_float(row.get("pass^4"), 4),
+        ]
+        lines.append("| " + " | ".join(cells) + " |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _progress_fraction(value: int, expected: int) -> float:
+    return 0.0 if expected <= 0 else min(1.0, max(0.0, value / expected))
+
+
+def _fmt_maybe_float(value: object, digits: int) -> str:
+    parsed = _as_float(value)
+    return "--" if math.isnan(parsed) else f"{parsed:.{digits}f}"
 
 
 def _tau_manifest(method: str, domain: str, task_count: int, num_trials: int, official_results: Path) -> Dict[str, object]:

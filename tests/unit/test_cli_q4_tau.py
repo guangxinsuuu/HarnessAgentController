@@ -15,6 +15,7 @@ class CliQ4TauTest(unittest.TestCase):
     def test_q4_tau_commands_are_registered(self) -> None:
         self.assertIn("build-table-q4-tau", COMMANDS)
         self.assertIn("audit-table-q4-tau", COMMANDS)
+        self.assertIn("summarize-table10-tau3-progress", COMMANDS)
         self.assertIn("audit-q4-tau-source-evidence", COMMANDS)
         self.assertIn("verify-q4-tau-source-refs", COMMANDS)
 

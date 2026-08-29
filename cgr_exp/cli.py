@@ -53,6 +53,7 @@ from cgr_exp.tau3_native import (
     build_table10_tau3_run_preflight,
     build_tau3_best_of_n_from_native,
     run_tau3_native,
+    summarize_table10_tau3_progress,
     tau3_preflight,
 )
 
@@ -102,6 +103,7 @@ COMMANDS = [
     "build-tau3-best-of-n",
     "build-table10-tau3",
     "build-table10-tau3-run-preflight",
+    "summarize-table10-tau3-progress",
     "audit-table10-tau3",
     "audit-tau3-controller-trace",
     "run-table6-authority",
@@ -393,6 +395,10 @@ def main() -> None:
             p.add_argument("--sequential-domains", dest="parallel_domains", action="store_false")
             p.add_argument("--parallel-method-groups", action="store_true", default=False)
             p.add_argument("--sequential-method-groups", dest="parallel_method_groups", action="store_false")
+        if name == "summarize-table10-tau3-progress":
+            p.add_argument("--base-dir", type=Path, default=Path("runs/table10_tau3"))
+            p.add_argument("--expected-test-count", type=int, default=100)
+            p.add_argument("--best-of-n", type=int, default=4)
         if name == "audit-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
@@ -1300,6 +1306,27 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table10_tau3_run_preflight.csv'}")
+            return
+        if args.command == "summarize-table10-tau3-progress":
+            manifest = summarize_table10_tau3_progress(
+                args.output_dir,
+                base_dir=args.base_dir,
+                expected_test_count=args.expected_test_count,
+                best_of_n=args.best_of_n,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "base_dir": str(args.base_dir),
+                "expected_test_count": args.expected_test_count,
+                "best_of_n": args.best_of_n,
+                "complete_rows": manifest["complete_rows"],
+                "total_rows": manifest["total_rows"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'table10_tau3_progress.csv'}")
             return
         if args.command == "build-table10-tau3":
             manifest = build_table10_tau3_results(args.output_dir, args.row_dirs, expected_test_count=args.expected_test_count)

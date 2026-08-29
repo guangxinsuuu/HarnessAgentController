@@ -28,7 +28,7 @@ BEST_OF_N="${BEST_OF_N:-4}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|preflight-runs|source-controller|source-controller-smoke|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
+scripts/run_table10_tau3.sh [preflight|preflight-runs|progress|source-controller|source-controller-smoke|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -93,6 +93,15 @@ build_run_preflight() {
     --user-llm "${USER_LLM}" \
     --python-bin "${PYTHON_BIN}" \
     --tau-python-bin "${TAU_PYTHON_BIN}" \
+    --overwrite
+}
+
+summarize_progress() {
+  "${PYTHON_BIN}" -m cgr_exp.cli summarize-table10-tau3-progress \
+    --output-dir "${BASE_DIR}/progress" \
+    --base-dir "${BASE_DIR}" \
+    --expected-test-count "${NUM_TASKS}" \
+    --best-of-n "${BEST_OF_N}" \
     --overwrite
 }
 
@@ -293,6 +302,9 @@ case "${1:-}" in
     ;;
   preflight-runs)
     build_run_preflight
+    ;;
+  progress)
+    summarize_progress
     ;;
   source-controller)
     run_source_controller

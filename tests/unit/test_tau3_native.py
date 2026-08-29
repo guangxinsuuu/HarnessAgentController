@@ -18,6 +18,7 @@ from cgr_exp.tau3_native import (
     build_table10_tau3_results,
     build_table10_tau3_run_preflight,
     run_tau3_native,
+    summarize_table10_tau3_progress,
 )
 
 
@@ -34,6 +35,7 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("source-controller-smoke", text)
         self.assertIn("run_source_controller_smoke", text)
         self.assertIn("ensure_source_controller", text)
+        self.assertIn("progress)", text)
         self.assertIn("FORCE_SOURCE_CONTROLLER", text)
         result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -751,6 +753,38 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(groups["solver_canonical_full"]["effective_max_concurrency"], 12)
             self.assertEqual(groups["build_and_audit"]["effective_max_concurrency"], 0)
             self.assertEqual(manifest["max_api_backed_effective_concurrency"], 40)
+
+    def test_summarizes_table10_tau3_progress_from_partial_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            official = base / "native_retail" / "official_tau2_results"
+            official.mkdir(parents=True)
+            (official / "results.json").write_text(
+                json.dumps(
+                    {
+                        "info": {"environment_info": {"domain_name": "retail"}},
+                        "simulations": [
+                            _sim("0", 0, 1.0),
+                            _sim("0", 1, 0.0),
+                            _sim("1", 0, 1.0),
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifest = summarize_table10_tau3_progress(root / "progress", base_dir=base, expected_test_count=4, best_of_n=4)
+            rows = {(row["Domain"], row["Method"]): row for row in manifest["rows"]}
+            native = rows[("retail", "Native tool-calling rerun")]
+            self.assertEqual(native["status"], "partial_unaggregated")
+            self.assertEqual(native["task_count"], 2)
+            self.assertEqual(native["simulation_count"], 3)
+            self.assertAlmostEqual(native["task_progress"], 0.5)
+            self.assertAlmostEqual(native["simulation_progress"], 3 / 16)
+            self.assertTrue((root / "progress" / "table10_tau3_progress.csv").exists())
+            text = (root / "progress" / "table10_tau3_progress.md").read_text(encoding="utf-8")
+            self.assertIn("Table10 Tau3 Progress", text)
+            self.assertIn("2/4", text)
 
 
 def _sim(task_id: str, trial: int, reward: float) -> dict:

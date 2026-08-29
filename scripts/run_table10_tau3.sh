@@ -22,7 +22,7 @@ BEST_OF_N="${BEST_OF_N:-4}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
+scripts/run_table10_tau3.sh [preflight|preflight-runs|source-controller|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -47,6 +47,20 @@ EOF
 run_preflight() {
   "${PYTHON_BIN}" -m cgr_exp.cli preflight-tau3-native \
     --output-dir "${BASE_DIR}/preflight" \
+    --tau-python-bin "${TAU_PYTHON_BIN}" \
+    --overwrite
+}
+
+build_run_preflight() {
+  "${PYTHON_BIN}" -m cgr_exp.cli build-table10-tau3-run-preflight \
+    --output-dir "${BASE_DIR}/run_preflight" \
+    --base-dir "${BASE_DIR}" \
+    --expected-test-count "${NUM_TASKS}" \
+    --best-of-n "${BEST_OF_N}" \
+    --num-trials "${NUM_TRIALS}" \
+    --max-concurrency "${MAX_CONCURRENCY}" \
+    --agent-llm "${AGENT_LLM}" \
+    --user-llm "${USER_LLM}" \
     --tau-python-bin "${TAU_PYTHON_BIN}" \
     --overwrite
 }
@@ -173,6 +187,9 @@ audit_solver_canonical_certified_traces() {
 case "${1:-}" in
   preflight)
     run_preflight
+    ;;
+  preflight-runs)
+    build_run_preflight
     ;;
   source-controller)
     run_source_controller

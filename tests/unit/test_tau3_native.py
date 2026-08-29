@@ -13,6 +13,7 @@ from cgr_exp.tau3_native import (
     build_tau3_best_of_n_from_native,
     build_tau2_run_command,
     build_table10_tau3_results,
+    build_table10_tau3_run_preflight,
     run_tau3_native,
 )
 
@@ -243,6 +244,29 @@ class Tau3NativeTest(unittest.TestCase):
             blockers = readiness["audit_rows"][0]["result_blockers"]
             self.assertIn("partial: 1/2", blockers)
             self.assertIn("controller trace missing", blockers)
+
+    def test_builds_table10_tau3_run_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = build_table10_tau3_run_preflight(
+                root / "preflight",
+                base_dir=root / "runs",
+                expected_test_count=3,
+                best_of_n=4,
+                num_trials=4,
+                max_concurrency=2,
+                tau_python_bin="/tmp/python",
+            )
+            groups = {row["run_group"]: row for row in manifest["rows"]}
+            self.assertIn("native_full", groups)
+            self.assertIn("solver_canonical_full", groups)
+            self.assertIn("solver_canonical_certified_full", groups)
+            self.assertIn("build_and_audit", groups)
+            self.assertTrue(groups["native_full"]["api_required"])
+            self.assertFalse(groups["build_and_audit"]["api_required"])
+            self.assertIn("scripts/run_table10_tau3.sh native-full", groups["native_full"]["command"])
+            self.assertTrue((root / "preflight" / "table10_tau3_run_preflight.csv").exists())
+            self.assertTrue((root / "preflight" / "table10_tau3_run_preflight.md").exists())
 
 
 def _sim(task_id: str, trial: int, reward: float) -> dict:

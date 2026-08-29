@@ -492,6 +492,70 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
     return readiness
 
 
+def build_table10_tau3_run_preflight(
+    out_dir: Path,
+    *,
+    base_dir: Path = Path("runs/table10_tau3_canonical"),
+    expected_test_count: int = 100,
+    best_of_n: int = 4,
+    num_trials: int = 4,
+    max_concurrency: int = 6,
+    agent_llm: str = "openai/gpt-4o-mini",
+    user_llm: str = "openai/gpt-4o-mini",
+    tau_python_bin: str = sys.executable,
+) -> Dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    row_dirs = _table10_default_row_dirs(base_dir, best_of_n)
+    readiness = audit_table10_tau3_readiness(out_dir / "readiness", row_dirs, expected_test_count=expected_test_count)
+    rows = []
+    for group, command, required_dirs in _table10_run_groups(
+        base_dir=base_dir,
+        expected_test_count=expected_test_count,
+        best_of_n=best_of_n,
+        num_trials=num_trials,
+        max_concurrency=max_concurrency,
+        agent_llm=agent_llm,
+        user_llm=user_llm,
+        tau_python_bin=tau_python_bin,
+    ):
+        group_methods = _methods_for_dirs(readiness["audit_rows"], required_dirs)
+        group_ready = bool(group_methods) and all(bool(row["result_ready"]) for row in group_methods)
+        rows.append(
+            {
+                "run_group": group,
+                "ready": group_ready,
+                "methods": "; ".join(str(row["Method"]) for row in group_methods) if group_methods else "not started",
+                "remaining_rows": sum(1 for row in group_methods if not bool(row["result_ready"])) if group_methods else len(required_dirs),
+                "api_required": group in {"native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
+                "resume_safe": group in {"native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
+                "command": command,
+            }
+        )
+    csv_path = out_dir / "table10_tau3_run_preflight.csv"
+    json_path = out_dir / "table10_tau3_run_preflight.json"
+    md_path = out_dir / "table10_tau3_run_preflight.md"
+    _write_csv(csv_path, rows)
+    manifest = {
+        "artifact": "table10_tau3_run_preflight",
+        "base_dir": str(base_dir),
+        "expected_test_count": expected_test_count,
+        "best_of_n": best_of_n,
+        "num_trials": num_trials,
+        "max_concurrency": max_concurrency,
+        "agent_llm": agent_llm,
+        "user_llm": user_llm,
+        "tau_python_bin": tau_python_bin,
+        "api_key_env": "OPENAI_API_KEY",
+        "readiness_dir": str(out_dir / "readiness"),
+        "all_rows_result_ready": readiness["all_rows_result_ready"],
+        "rows": rows,
+        "produced_artifacts": [csv_path.name, json_path.name, md_path.name, "readiness"],
+    }
+    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    md_path.write_text(_table10_preflight_markdown(manifest), encoding="utf-8")
+    return manifest
+
+
 def build_tau3_best_of_n_from_native(out_dir: Path, native_dir: Path, n: int = 4, method: Optional[str] = None) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     n = max(1, int(n))
@@ -722,6 +786,88 @@ def _read_json_or_empty(path: Path) -> Dict[str, object]:
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
     return data if isinstance(data, dict) else {}
+
+
+def _table10_default_row_dirs(base_dir: Path, best_of_n: int) -> List[Path]:
+    return [
+        base_dir / "native_retail",
+        base_dir / "native_airline",
+        base_dir / f"best_of_{best_of_n}_retail",
+        base_dir / f"best_of_{best_of_n}_airline",
+        base_dir / "solver_retail",
+        base_dir / "solver_airline",
+        base_dir / "solver_canonical_retail",
+        base_dir / "solver_canonical_airline",
+        base_dir / "solver_canonical_certified_retail",
+        base_dir / "solver_canonical_certified_airline",
+    ]
+
+
+def _table10_run_groups(
+    *,
+    base_dir: Path,
+    expected_test_count: int,
+    best_of_n: int,
+    num_trials: int,
+    max_concurrency: int,
+    agent_llm: str,
+    user_llm: str,
+    tau_python_bin: str,
+) -> List[tuple[str, str, List[Path]]]:
+    prefix = (
+        f"TAU_PYTHON_BIN={tau_python_bin} PYTHON_BIN=python3 "
+        f"AGENT_LLM={agent_llm} USER_LLM={user_llm} "
+        f"NUM_TASKS={expected_test_count} NUM_TRIALS={num_trials} "
+        f"MAX_CONCURRENCY={max_concurrency} BEST_OF_N={best_of_n} "
+        f"BASE_DIR={base_dir}"
+    )
+    return [
+        ("native_full", f"{prefix} scripts/run_table10_tau3.sh native-full", [base_dir / "native_retail", base_dir / "native_airline", base_dir / f"best_of_{best_of_n}_retail", base_dir / f"best_of_{best_of_n}_airline"]),
+        ("legacy_solver_full", f"{prefix} scripts/run_table10_tau3.sh solver-full", [base_dir / "solver_retail", base_dir / "solver_airline"]),
+        ("solver_canonical_full", f"{prefix} scripts/run_table10_tau3.sh solver-canonical-full", [base_dir / "solver_canonical_retail", base_dir / "solver_canonical_airline"]),
+        (
+            "solver_canonical_certified_full",
+            f"{prefix} scripts/run_table10_tau3.sh solver-canonical-certified-full",
+            [base_dir / "solver_canonical_certified_retail", base_dir / "solver_canonical_certified_airline"],
+        ),
+        ("build_and_audit", f"BASE_DIR={base_dir} NUM_TASKS={expected_test_count} BEST_OF_N={best_of_n} scripts/run_table10_tau3.sh build", _table10_default_row_dirs(base_dir, best_of_n)),
+    ]
+
+
+def _methods_for_dirs(audit_rows: Sequence[Mapping[str, object]], dirs: Sequence[Path]) -> List[Mapping[str, object]]:
+    wanted = {str(path) for path in dirs}
+    return [row for row in audit_rows if str(row.get("row_dir", "")) in wanted]
+
+
+def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
+    lines = [
+        "# Table10 Tau3 Run Preflight",
+        "",
+        f"Base dir: `{manifest['base_dir']}`",
+        f"Expected test count: `{manifest['expected_test_count']}`",
+        f"Best-of-N: `{manifest['best_of_n']}`",
+        f"All rows ready: `{manifest['all_rows_result_ready']}`",
+        "",
+        "Set `OPENAI_API_KEY` before API-backed run groups. `best-of-n` and `build_and_audit` reuse local artifacts.",
+        "",
+    ]
+    for row in manifest["rows"]:
+        lines.extend(
+            [
+                f"## {row['run_group']}",
+                "",
+                f"Ready: `{row['ready']}`",
+                f"API required: `{row['api_required']}`",
+                f"Resume safe: `{row['resume_safe']}`",
+                f"Methods: {row['methods']}",
+                "",
+                "```bash",
+                str(row["command"]),
+                "```",
+                "",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def _tau_manifest(method: str, domain: str, task_count: int, num_trials: int, official_results: Path) -> Dict[str, object]:

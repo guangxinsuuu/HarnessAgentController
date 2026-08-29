@@ -45,7 +45,16 @@ from cgr_exp.q4_tau_adapter_contract import build_q4_tau_adapter_contract
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
 from cgr_exp.table6_authority import run_table6_authority_experiment
-from cgr_exp.tau3_native import Tau3RunConfig, audit_table10_tau3_readiness, audit_tau3_controller_trace, build_tau3_best_of_n_from_native, build_table10_tau3_results, run_tau3_native, tau3_preflight
+from cgr_exp.tau3_native import (
+    Tau3RunConfig,
+    audit_table10_tau3_readiness,
+    audit_tau3_controller_trace,
+    build_table10_tau3_results,
+    build_table10_tau3_run_preflight,
+    build_tau3_best_of_n_from_native,
+    run_tau3_native,
+    tau3_preflight,
+)
 
 COMMANDS = [
     "run-game24-offline",
@@ -92,6 +101,7 @@ COMMANDS = [
     "run-tau3-native",
     "build-tau3-best-of-n",
     "build-table10-tau3",
+    "build-table10-tau3-run-preflight",
     "audit-table10-tau3",
     "audit-tau3-controller-trace",
     "run-table6-authority",
@@ -363,6 +373,15 @@ def main() -> None:
         if name == "build-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
+        if name == "build-table10-tau3-run-preflight":
+            p.add_argument("--base-dir", type=Path, default=Path("runs/table10_tau3_canonical"))
+            p.add_argument("--expected-test-count", type=int, default=100)
+            p.add_argument("--best-of-n", type=int, default=4)
+            p.add_argument("--num-trials", type=int, default=4)
+            p.add_argument("--max-concurrency", type=int, default=6)
+            p.add_argument("--agent-llm", default="openai/gpt-4o-mini")
+            p.add_argument("--user-llm", default="openai/gpt-4o-mini")
+            p.add_argument("--tau-python-bin", default="python3")
         if name == "audit-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
@@ -1223,6 +1242,32 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'q4_tau_table.csv'}")
+            return
+        if args.command == "build-table10-tau3-run-preflight":
+            manifest = build_table10_tau3_run_preflight(
+                args.output_dir,
+                base_dir=args.base_dir,
+                expected_test_count=args.expected_test_count,
+                best_of_n=args.best_of_n,
+                num_trials=args.num_trials,
+                max_concurrency=args.max_concurrency,
+                agent_llm=args.agent_llm,
+                user_llm=args.user_llm,
+                tau_python_bin=args.tau_python_bin,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "base_dir": str(args.base_dir),
+                "expected_test_count": args.expected_test_count,
+                "best_of_n": args.best_of_n,
+                "status": "complete",
+                "all_rows_result_ready": manifest["all_rows_result_ready"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'table10_tau3_run_preflight.csv'}")
             return
         if args.command == "build-table10-tau3":
             manifest = build_table10_tau3_results(args.output_dir, args.row_dirs, expected_test_count=args.expected_test_count)

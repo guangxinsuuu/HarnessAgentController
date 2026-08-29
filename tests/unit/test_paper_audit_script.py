@@ -44,6 +44,9 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("CANDIDATE_RETRY_BACKOFF", text)
         self.assertIn('TAU3_TABLE_BASE_DIR="${TAU3_TABLE_BASE_DIR:-runs/table10_tau3}"', text)
         self.assertNotIn("runs/table10_tau3_canonical", text)
+        self.assertIn('TAU3_SOLVER_RETAIL_DIR="${TAU3_SOLVER_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/solver_retail}"', text)
+        self.assertIn("TAU3_CANONICAL_RETAIL_DIR", text)
+        self.assertIn('"${TAU3_CANONICAL_RETAIL_DIR}"', text)
         self.assertIn("certification_authority_source_audit_dir", text)
         self.assertIn("--certification-authority-source", text)
         self.assertIn("prefer_existing_dir", text)
@@ -87,6 +90,7 @@ class PaperAuditScriptTest(unittest.TestCase):
                 "AUTHORITY_DIR": str(root / "missing_authority"),
                 "STATUS_REPORT_DIR": str(root / "status"),
                 "SECRET_AUDIT_DIR": str(root / "secret_audit"),
+                "TAU3_TABLE_BASE_DIR": str(root / "tau3_base"),
             }
             env.pop("CGR_LLM_API_KEY", None)
             result = subprocess.run(
@@ -101,6 +105,8 @@ class PaperAuditScriptTest(unittest.TestCase):
             self.assertIn("q2_local_primitive_audit_dir:", result.stdout)
             self.assertIn("q2_run_preflight_dir:", result.stdout)
             self.assertIn("q4_adapter_contract_dir:", result.stdout)
+            self.assertIn("tau3_canonical_retail_dir:", result.stdout)
+            self.assertIn("tau3_canonical_airline_dir:", result.stdout)
             self.assertIn("tau3_candidate_workers:", result.stdout)
             self.assertIn("tau3_candidate_retries:", result.stdout)
             self.assertIn("tau3_candidate_retry_backoff:", result.stdout)
@@ -120,6 +126,8 @@ class PaperAuditScriptTest(unittest.TestCase):
             self.assertTrue((root / "cert_authority_source" / "certification_authority_source_audit.csv").exists())
             self.assertTrue((root / "secret_audit" / "secret_safety_audit.csv").exists())
             self.assertTrue((root / "status" / "current_experiment_status.md").exists())
+            with (root / "tau3_base" / "table10_readiness" / "table10_tau3_readiness.csv").open(newline="", encoding="utf-8") as handle:
+                self.assertEqual(sum(1 for _ in handle) - 1, 10)
 
     def test_current_status_doc_records_audit_outputs_and_pending_tau(self) -> None:
         text = Path("docs/current_experiment_status.md").read_text(encoding="utf-8")

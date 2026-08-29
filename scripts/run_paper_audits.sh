@@ -79,8 +79,10 @@ TAU3_NATIVE_AIRLINE_DIR="${TAU3_NATIVE_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/nativ
 TAU3_BEST_OF_N="${TAU3_BEST_OF_N:-4}"
 TAU3_BEST_OF_N_RETAIL_DIR="${TAU3_BEST_OF_N_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/best_of_${TAU3_BEST_OF_N}_retail}"
 TAU3_BEST_OF_N_AIRLINE_DIR="${TAU3_BEST_OF_N_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/best_of_${TAU3_BEST_OF_N}_airline}"
-TAU3_SOLVER_RETAIL_DIR="${TAU3_SOLVER_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_retail}"
-TAU3_SOLVER_AIRLINE_DIR="${TAU3_SOLVER_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_airline}"
+TAU3_SOLVER_RETAIL_DIR="${TAU3_SOLVER_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/solver_retail}"
+TAU3_SOLVER_AIRLINE_DIR="${TAU3_SOLVER_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/solver_airline}"
+TAU3_CANONICAL_RETAIL_DIR="${TAU3_CANONICAL_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_retail}"
+TAU3_CANONICAL_AIRLINE_DIR="${TAU3_CANONICAL_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_airline}"
 TAU3_SOLVER_CERT_RETAIL_DIR="${TAU3_SOLVER_CERT_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_certified_retail}"
 TAU3_SOLVER_CERT_AIRLINE_DIR="${TAU3_SOLVER_CERT_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_certified_airline}"
 TAU_PYTHON_BIN="${TAU_PYTHON_BIN:-${PYTHON_BIN}}"
@@ -196,6 +198,8 @@ print_summary() {
   print "tau3_table_base_dir: ${TAU3_TABLE_BASE_DIR}"
   print "tau3_table_audit_dir: ${TAU3_TABLE_AUDIT_DIR}"
   print "tau3_run_preflight_dir: ${TAU3_RUN_PREFLIGHT_DIR}"
+  print "tau3_canonical_retail_dir: ${TAU3_CANONICAL_RETAIL_DIR}"
+  print "tau3_canonical_airline_dir: ${TAU3_CANONICAL_AIRLINE_DIR}"
   print "tau3_parallel_domains: ${PARALLEL_DOMAINS}"
   print "tau3_parallel_method_groups: ${PARALLEL_METHOD_GROUPS}"
   print "tau3_candidate_workers: ${CANDIDATE_WORKERS}"
@@ -262,6 +266,8 @@ audit_tau3_table10() {
       "${TAU3_BEST_OF_N_AIRLINE_DIR}" \
       "${TAU3_SOLVER_RETAIL_DIR}" \
       "${TAU3_SOLVER_AIRLINE_DIR}" \
+      "${TAU3_CANONICAL_RETAIL_DIR}" \
+      "${TAU3_CANONICAL_AIRLINE_DIR}" \
       "${TAU3_SOLVER_CERT_RETAIL_DIR}" \
       "${TAU3_SOLVER_CERT_AIRLINE_DIR}" \
     --overwrite

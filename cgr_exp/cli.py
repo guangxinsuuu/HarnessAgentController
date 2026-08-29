@@ -31,6 +31,7 @@ from cgr_exp.scheduling_transfer import (
 )
 from cgr_exp.secret_safety import audit_secret_safety
 from cgr_exp.q2_implementation_matrix import build_q2_implementation_matrix
+from cgr_exp.q2_local_primitive_audit import audit_q2_local_primitives
 from cgr_exp.q2_remaining_runs import build_q2_remaining_runs
 from cgr_exp.q2_run_preflight import build_q2_run_preflight
 from cgr_exp.q2_source_evidence import audit_q2_source_evidence
@@ -72,6 +73,7 @@ COMMANDS = [
     "audit-table4-q2",
     "audit-table5-q2",
     "build-q2-implementation-matrix",
+    "audit-q2-local-primitives",
     "build-q2-remaining-runs",
     "build-q2-run-preflight",
     "audit-q2-source-evidence",
@@ -1138,6 +1140,19 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'q2_implementation_matrix.csv'}")
+            return
+        if args.command == "audit-q2-local-primitives":
+            manifest = audit_q2_local_primitives(args.output_dir)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "all_local_primitives_ready": manifest["all_local_primitives_ready"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q2_local_primitive_audit.csv'}")
             return
         if args.command == "build-q2-remaining-runs":
             manifest = build_q2_remaining_runs(

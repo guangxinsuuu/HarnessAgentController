@@ -30,6 +30,7 @@ Machine audit: `runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readines
 
 Implementation/source matrix: `runs/q2_implementation_matrix/q2_implementation_matrix.csv`.
 Official implementation plan: `docs/q2_table4_official_implementation_plan.md`.
+Local primitive audit: `runs/q2_local_primitive_audit/q2_local_primitive_audit.csv`.
 Remaining Q2 run queue: `runs/q2_remaining_runs/q2_remaining_runs.md`.
 Q2 run preflight: `runs/q2_run_preflight/q2_run_preflight.md`.
 

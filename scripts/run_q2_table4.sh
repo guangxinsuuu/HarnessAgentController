@@ -59,12 +59,13 @@ AUDIT_DIR="${AUDIT_DIR:-runs/q2_table_current_seed0_protocol_v2_audit}"
 SOURCE_AUDIT_DIR="${SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"
 SOURCE_REF_DIR="${SOURCE_REF_DIR:-runs/q2_source_ref_verification}"
 IMPLEMENTATION_MATRIX_DIR="${IMPLEMENTATION_MATRIX_DIR:-runs/q2_implementation_matrix}"
+LOCAL_PRIMITIVE_AUDIT_DIR="${LOCAL_PRIMITIVE_AUDIT_DIR:-runs/q2_local_primitive_audit}"
 RUN_PREFLIGHT_DIR="${RUN_PREFLIGHT_DIR:-runs/q2_run_preflight}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/run_q2_table4.sh [all|preflight|implementation-matrix|source-audit|source-ref-verify|structured|llm|native|learned|tot|build|audit]
+  scripts/run_q2_table4.sh [all|preflight|implementation-matrix|local-primitive-audit|source-audit|source-ref-verify|structured|llm|native|learned|tot|build|audit]
 
 Environment:
   CGR_LLM_API_KEY must be set for llm/native/learned/tot/all.
@@ -211,6 +212,12 @@ source_ref_verify() {
     --overwrite
 }
 
+local_primitive_audit() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-local-primitives \
+    --output-dir "${LOCAL_PRIMITIVE_AUDIT_DIR}" \
+    --overwrite
+}
+
 implementation_matrix() {
   "${PYTHON_BIN}" -m cgr_exp.cli build-q2-implementation-matrix \
     --output-dir "${IMPLEMENTATION_MATRIX_DIR}" \
@@ -221,6 +228,7 @@ preflight() {
   "${PYTHON_BIN}" -m cgr_exp.cli audit-table4-q2 --help >/dev/null
   "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-source-evidence --help >/dev/null
   "${PYTHON_BIN}" -m cgr_exp.cli verify-q2-source-refs --help >/dev/null
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-local-primitives --help >/dev/null
   "${PYTHON_BIN}" -m cgr_exp.cli build-q2-implementation-matrix --help >/dev/null
   if "${PYTHON_BIN}" -c "from ortools.sat.python import cp_model" >/dev/null 2>&1; then
     cpsat_status="present"
@@ -238,6 +246,7 @@ preflight() {
   print "source_audit_dir: ${SOURCE_AUDIT_DIR}"
   print "source_ref_dir: ${SOURCE_REF_DIR}"
   print "implementation_matrix_dir: ${IMPLEMENTATION_MATRIX_DIR}"
+  print "local_primitive_audit_dir: ${LOCAL_PRIMITIVE_AUDIT_DIR}"
   print "run_preflight_dir: ${RUN_PREFLIGHT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: missing"
@@ -247,6 +256,7 @@ preflight() {
   implementation_matrix
   source_audit
   source_ref_verify
+  local_primitive_audit
   "${PYTHON_BIN}" -m cgr_exp.cli build-q2-run-preflight \
     --output-dir "${RUN_PREFLIGHT_DIR}" \
     --seed "${SEED}" \
@@ -299,6 +309,7 @@ case "${MODE}" in
     implementation_matrix
     source_audit
     source_ref_verify
+    local_primitive_audit
     run_structured
     run_llm_parallel
     build_table
@@ -306,6 +317,7 @@ case "${MODE}" in
     ;;
   preflight) preflight ;;
   implementation-matrix) implementation_matrix ;;
+  local-primitive-audit) local_primitive_audit ;;
   source-audit) source_audit ;;
   source-ref-verify) source_ref_verify ;;
   structured) run_structured ;;

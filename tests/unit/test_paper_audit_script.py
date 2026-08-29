@@ -28,6 +28,8 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("build-q2-remaining-runs", text)
         self.assertIn("Q2_RUN_PREFLIGHT_DIR", text)
         self.assertIn("build-q2-run-preflight", text)
+        self.assertIn("Q2_LOCAL_PRIMITIVE_AUDIT_DIR", text)
+        self.assertIn("audit-q2-local-primitives", text)
         self.assertIn("Q4_ADAPTER_CONTRACT_DIR", text)
         self.assertIn("build-q4-tau-adapter-contract", text)
         self.assertIn("q4_adapter_contract_dir", text)
@@ -54,6 +56,7 @@ class PaperAuditScriptTest(unittest.TestCase):
                 "Q2_SOURCE_AUDIT_DIR": str(root / "q2_source_audit"),
                 "Q2_SOURCE_REF_DIR": str(root / "q2_source_refs"),
                 "Q2_IMPLEMENTATION_MATRIX_DIR": str(root / "q2_matrix"),
+                "Q2_LOCAL_PRIMITIVE_AUDIT_DIR": str(root / "q2_local_primitives"),
                 "Q2_REMAINING_RUNS_DIR": str(root / "q2_remaining"),
                 "Q2_RUN_PREFLIGHT_DIR": str(root / "q2_run_preflight"),
                 "Q4_TABLE_AUDIT_DIR": str(root / "q4_table_audit"),
@@ -81,6 +84,7 @@ class PaperAuditScriptTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("llm_key: not required", result.stdout)
+            self.assertIn("q2_local_primitive_audit_dir:", result.stdout)
             self.assertIn("q2_run_preflight_dir:", result.stdout)
             self.assertIn("q4_adapter_contract_dir:", result.stdout)
             self.assertIn("secret_audit_dir:", result.stdout)
@@ -88,6 +92,7 @@ class PaperAuditScriptTest(unittest.TestCase):
             self.assertTrue((root / "q2_source_audit" / "q2_source_evidence_audit.csv").exists())
             self.assertTrue((root / "q2_source_refs" / "q2_source_ref_verification.csv").exists())
             self.assertTrue((root / "q2_matrix" / "q2_implementation_matrix.csv").exists())
+            self.assertTrue((root / "q2_local_primitives" / "q2_local_primitive_audit.csv").exists())
             self.assertTrue((root / "q2_remaining" / "q2_remaining_runs.csv").exists())
             self.assertTrue((root / "q2_run_preflight" / "q2_run_preflight.csv").exists())
             self.assertTrue((root / "q4_table_audit" / "q4_tau_readiness.csv").exists())
@@ -105,6 +110,7 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("q4_tau_table_current_audit/q4_tau_readiness.csv", text)
         self.assertIn("q4_tau_adapter_contract/q4_tau_adapter_contract.md", text)
         self.assertIn("docs/q2_table4_official_implementation_plan.md", text)
+        self.assertIn("q2_local_primitive_audit/q2_local_primitive_audit.csv", text)
         self.assertIn("q2_run_preflight/q2_run_preflight.md", text)
         self.assertIn("secret_safety_audit/secret_safety_audit.csv", text)
         self.assertIn("certification_tables_readiness/certification_tables_readiness.csv", text)

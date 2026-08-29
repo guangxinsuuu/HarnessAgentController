@@ -81,10 +81,12 @@ the current run directories, then writes a generated status report to
 `runs/current_experiment_status/current_experiment_status.md`.
 
 This writes the implementation matrix, source-evidence audit, source-ref
-verification, and table readiness audit without using the LLM API. The
-source-ref verifier checks pinned GitHub full SHAs, pinned raw GitHub URLs,
-symbol/schema anchors, and explicit arXiv versions. For a network reachability
-check of the same refs, run:
+verification, local primitive audit, and table readiness audit without using
+the LLM API. The source-ref verifier checks pinned GitHub full SHAs, pinned raw
+GitHub URLs, symbol/schema anchors, and explicit arXiv versions. The local
+primitive audit checks that the implementation files still contain the core
+method primitives required by the official-source contracts. For a network
+reachability check of the same refs, run:
 
 ```bash
 python3 -m cgr_exp.cli verify-q2-source-refs \

@@ -20,6 +20,7 @@ class CliQ2AliasesTest(unittest.TestCase):
         self.assertIn("audit-q2-source-evidence", COMMANDS)
         self.assertIn("verify-q2-source-refs", COMMANDS)
         self.assertIn("build-q2-implementation-matrix", COMMANDS)
+        self.assertIn("audit-q2-local-primitives", COMMANDS)
         self.assertIn("build-q2-remaining-runs", COMMANDS)
         self.assertIn("build-q2-run-preflight", COMMANDS)
         self.assertIn("build-q4-tau-adapter-contract", COMMANDS)
@@ -249,6 +250,28 @@ class CliQ2AliasesTest(unittest.TestCase):
             manifest = json.loads((out / "command_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["test_count"], 2)
             self.assertTrue((out / "q2_run_preflight.csv").exists())
+
+    def test_q2_local_primitive_audit_cli_writes_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "q2_local_primitives"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "audit-q2-local-primitives",
+                    "--output-dir",
+                    str(out),
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out / "command_manifest.json").read_text(encoding="utf-8"))
+            self.assertTrue(manifest["all_local_primitives_ready"])
+            self.assertTrue((out / "q2_local_primitive_audit.csv").exists())
 
 
 def _write_csv(path: Path, rows) -> None:

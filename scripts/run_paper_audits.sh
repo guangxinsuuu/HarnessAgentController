@@ -38,6 +38,7 @@ Q2_TABLE_AUDIT_DIR="${Q2_TABLE_AUDIT_DIR:-runs/q2_table_current_seed0_protocol_v
 Q2_SOURCE_AUDIT_DIR="${Q2_SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"
 Q2_SOURCE_REF_DIR="${Q2_SOURCE_REF_DIR:-runs/q2_source_ref_verification}"
 Q2_IMPLEMENTATION_MATRIX_DIR="${Q2_IMPLEMENTATION_MATRIX_DIR:-runs/q2_implementation_matrix}"
+Q2_LOCAL_PRIMITIVE_AUDIT_DIR="${Q2_LOCAL_PRIMITIVE_AUDIT_DIR:-runs/q2_local_primitive_audit}"
 Q2_REMAINING_RUNS_DIR="${Q2_REMAINING_RUNS_DIR:-runs/q2_remaining_runs}"
 Q2_RUN_PREFLIGHT_DIR="${Q2_RUN_PREFLIGHT_DIR:-runs/q2_run_preflight}"
 
@@ -76,6 +77,9 @@ audit_q2() {
     --overwrite
   "${PYTHON_BIN}" -m cgr_exp.cli verify-q2-source-refs \
     --output-dir "${Q2_SOURCE_REF_DIR}" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-local-primitives \
+    --output-dir "${Q2_LOCAL_PRIMITIVE_AUDIT_DIR}" \
     --overwrite
   "${PYTHON_BIN}" -m cgr_exp.cli audit-table4-q2 \
     --output-dir "${Q2_TABLE_AUDIT_DIR}" \
@@ -130,6 +134,7 @@ print_summary() {
   print "q4_audit_dir: ${Q4_TABLE_AUDIT_DIR}"
   print "certification_audit_dir: ${CERTIFICATION_AUDIT_DIR}"
   print "status_report_dir: ${STATUS_REPORT_DIR}"
+  print "q2_local_primitive_audit_dir: ${Q2_LOCAL_PRIMITIVE_AUDIT_DIR}"
   print "q2_remaining_runs_dir: ${Q2_REMAINING_RUNS_DIR}"
   print "q2_run_preflight_dir: ${Q2_RUN_PREFLIGHT_DIR}"
   print "q4_adapter_contract_dir: ${Q4_ADAPTER_CONTRACT_DIR}"

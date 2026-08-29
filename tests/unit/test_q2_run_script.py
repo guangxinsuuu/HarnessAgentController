@@ -15,6 +15,8 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("preflight", text)
         self.assertIn("build-q2-run-preflight", text)
         self.assertIn("RUN_PREFLIGHT_DIR", text)
+        self.assertIn("audit-q2-local-primitives", text)
+        self.assertIn("LOCAL_PRIMITIVE_AUDIT_DIR", text)
         self.assertIn("missing CGR_LLM_API_KEY", text)
         self.assertIn("require_cpsat", text)
         self.assertIn("ortools.sat.python", text)
@@ -65,6 +67,7 @@ class Q2RunScriptTest(unittest.TestCase):
                 "SOURCE_AUDIT_DIR": str(root / "source_audit"),
                 "SOURCE_REF_DIR": str(root / "source_refs"),
                 "IMPLEMENTATION_MATRIX_DIR": str(root / "matrix"),
+                "LOCAL_PRIMITIVE_AUDIT_DIR": str(root / "local_primitives"),
                 "RUN_PREFLIGHT_DIR": str(root / "run_preflight"),
                 "TEST_COUNT": "1",
             }
@@ -86,6 +89,7 @@ class Q2RunScriptTest(unittest.TestCase):
             self.assertTrue((root / "source_audit" / "q2_source_evidence_audit.csv").exists())
             self.assertTrue((root / "source_refs" / "q2_source_ref_verification.csv").exists())
             self.assertTrue((root / "matrix" / "q2_implementation_matrix.csv").exists())
+            self.assertTrue((root / "local_primitives" / "q2_local_primitive_audit.csv").exists())
             self.assertTrue((root / "run_preflight" / "q2_run_preflight.csv").exists())
 
     def test_q2_runbook_uses_current_protocol_directories(self) -> None:
@@ -105,6 +109,7 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("run-table6-authority", text)
         self.assertIn("certification_protocol", text)
         self.assertIn("q2_source_ref_verification", text)
+        self.assertIn("local primitive audit", text)
         self.assertNotIn("protocol_v2_protocol_v2", text)
 
     def test_q2_remaining_runs_lists_only_promotion_safe_reruns(self) -> None:

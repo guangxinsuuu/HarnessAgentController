@@ -114,7 +114,15 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
     if not preflight["ready"]:
         return _write_pending_artifacts(config, "preflight_failed: " + "; ".join(preflight["blockers"]), save_to)
     if Path(save_to).exists() and not config.force:
-        return aggregate_tau3_official_results(config.output_dir, method=method_label, domain=config.domain, expected_trials=config.num_trials)
+        existing = aggregate_tau3_official_results(config.output_dir, method=method_label, domain=config.domain, expected_trials=config.num_trials)
+        expected_tasks = _expected_tau3_task_count(config)
+        existing_tasks = int(_as_float(existing["row"].get("task_count")) if not math.isnan(_as_float(existing["row"].get("task_count"))) else 0)
+        if expected_tasks is None or existing_tasks >= expected_tasks:
+            return existing
+        command_manifest["resume_from_partial_results"] = True
+        command_manifest["existing_task_count"] = existing_tasks
+        command_manifest["expected_task_count"] = expected_tasks
+        (config.output_dir / "tau3_native_command.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
 
     start = time.monotonic()
     if config.method == "solver":
@@ -385,6 +393,12 @@ def _tau2_env() -> Dict[str, str]:
     if "OPENAI_API_KEY" not in env and "CGR_LLM_API_KEY" in env:
         env["OPENAI_API_KEY"] = env["CGR_LLM_API_KEY"]
     return env
+
+
+def _expected_tau3_task_count(config: Tau3RunConfig) -> Optional[int]:
+    if config.task_ids:
+        return len(config.task_ids)
+    return config.num_tasks
 
 
 def _python_version(python_bin: str) -> str:

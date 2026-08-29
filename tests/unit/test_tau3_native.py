@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cgr_exp.tau3_native import (
     Tau3RunConfig,
@@ -131,6 +133,46 @@ class Tau3NativeTest(unittest.TestCase):
             )
             self.assertEqual(canonical["row"]["Method"], "Solver-derived canonical controller")
             self.assertEqual(certified["row"]["Method"], "Solver-derived canonical controller + certified filter")
+
+    def test_existing_complete_results_skip_native_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            official = root / "native" / "official_tau2_results"
+            official.mkdir(parents=True)
+            (official / "results.json").write_text(
+                json.dumps({"info": {"environment_info": {"domain_name": "retail"}}, "simulations": [_sim("0", 0, 1.0), _sim("1", 0, 0.0)]}),
+                encoding="utf-8",
+            )
+            with (
+                patch("cgr_exp.tau3_native.tau3_preflight", return_value={"ready": True, "blockers": []}),
+                patch("cgr_exp.tau3_native._tau2_revision", return_value="rev"),
+                patch("cgr_exp.tau3_native.subprocess.run") as run_mock,
+            ):
+                result = run_tau3_native(Tau3RunConfig(output_dir=root / "native", domain="retail", num_tasks=2, num_trials=1))
+            self.assertEqual(result["row"]["task_count"], 2)
+            run_mock.assert_not_called()
+
+    def test_existing_partial_results_resume_native_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            official = root / "native" / "official_tau2_results"
+            official.mkdir(parents=True)
+            (official / "results.json").write_text(
+                json.dumps({"info": {"environment_info": {"domain_name": "retail"}}, "simulations": [_sim("0", 0, 1.0)]}),
+                encoding="utf-8",
+            )
+            completed = subprocess.CompletedProcess(args=["tau2"], returncode=0, stdout="ok", stderr="")
+            with (
+                patch("cgr_exp.tau3_native.tau3_preflight", return_value={"ready": True, "blockers": []}),
+                patch("cgr_exp.tau3_native._tau2_revision", return_value="rev"),
+                patch("cgr_exp.tau3_native.subprocess.run", return_value=completed) as run_mock,
+            ):
+                run_tau3_native(Tau3RunConfig(output_dir=root / "native", domain="retail", num_tasks=2, num_trials=1))
+            run_mock.assert_called_once()
+            command_manifest = json.loads((root / "native" / "tau3_native_command.json").read_text(encoding="utf-8"))
+            self.assertTrue(command_manifest["resume_from_partial_results"])
+            self.assertEqual(command_manifest["existing_task_count"], 1)
+            self.assertEqual(command_manifest["expected_task_count"], 2)
 
     def test_builds_best_of_n_from_native_rollouts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

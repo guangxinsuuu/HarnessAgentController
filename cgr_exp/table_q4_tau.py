@@ -341,8 +341,8 @@ def _aggregate_row_blockers(method: str, source_dir: Path) -> List[str]:
     for key in ("pass^1", "pass^4", "violations", "tool_calls", "tokens", "wall_clock_seconds"):
         if key not in data and key.replace("^", "") not in data and key.title() not in data:
             blockers.append(f"aggregate row missing {key}")
-    if _as_float(data.get("pass^4", data.get("pass4"))) < _as_float(data.get("pass^1", data.get("pass1"))):
-        blockers.append("aggregate row pass^4 must be at least pass^1")
+    if _as_float(data.get("pass^4", data.get("pass4"))) > _as_float(data.get("pass^1", data.get("pass1"))):
+        blockers.append("aggregate row pass^4 must not exceed pass^1")
     return blockers
 
 

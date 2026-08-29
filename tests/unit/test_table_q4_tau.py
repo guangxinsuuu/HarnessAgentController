@@ -166,14 +166,26 @@ class TableQ4TauTest(unittest.TestCase):
             self.assertEqual(rows["Native agent rerun"]["result_ready"], "False")
             self.assertIn("pass^4 requires at least 4 rollouts per task", rows["Native agent rerun"]["result_blockers"])
 
+    def test_q4_tau_audit_rejects_pass4_above_pass1(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_tau_artifacts(native, "Native agent rerun", ["t0", "t1"], pass1=0.5, pass4=0.75)
+            out = root / "out"
+            audit_q4_tau_readiness(out, expected_test_count=2, native_dir=native)
+            rows = {row["Method"]: row for row in _read_csv(out / "q4_tau_readiness.csv")}
+            self.assertEqual(rows["Native agent rerun"]["result_ready"], "False")
+            self.assertIn("pass^4 must not exceed pass^1", rows["Native agent rerun"]["result_blockers"])
 
-def _write_tau_artifacts(path: Path, method: str, task_ids: list[str], rollout_count: int = 4) -> None:
+
+def _write_tau_artifacts(path: Path, method: str, task_ids: list[str], rollout_count: int = 4, pass1: float = 0.5, pass4: float = 0.25) -> None:
     (path / "q4_tau_row.json").write_text(
         json.dumps(
             {
                 "Method": method,
-                "pass^1": 0.5,
-                "pass^4": 0.75,
+                "pass^1": pass1,
+                "pass^4": pass4,
                 "violations": 0.1,
                 "tool_calls": 12,
                 "tokens": 3456,

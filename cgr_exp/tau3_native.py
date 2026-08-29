@@ -22,6 +22,21 @@ TABLE10_METHODS = {
     "solver": "Solver-derived controller",
 }
 
+TRACE_AUDIT_COLUMNS = [
+    "trace_path",
+    "event_count",
+    "canonical_ranker_events",
+    "heuristic_events",
+    "ranker_checkpoint_loaded_events",
+    "mean_candidate_count",
+    "mean_scored_candidate_count",
+    "oracle_visible_to_controller",
+    "oracle_used_for_candidate_generation",
+    "oracle_used_for_filtering",
+    "tool_names_used_as_features",
+    "status",
+]
+
 
 @dataclass(frozen=True)
 class Tau3RunConfig:
@@ -64,6 +79,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
     (config.output_dir / "tau3_preflight.json").write_text(json.dumps(preflight, indent=2, sort_keys=True), encoding="utf-8")
 
     official_results_dir = (config.output_dir / "official_tau2_results").resolve()
+    controller_trace_path = (config.output_dir / "tau3_controller_trace.jsonl").resolve() if config.method == "solver" else None
     save_to = str(official_results_dir)
     command = build_tau2_run_command(config, save_to=save_to)
     command_manifest = {
@@ -79,6 +95,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         "max_concurrency": config.max_concurrency,
         "workers": config.workers,
         "solver_ranker_checkpoint": None if config.solver_ranker_checkpoint is None else str(config.solver_ranker_checkpoint),
+        "controller_trace_path": None if controller_trace_path is None else str(controller_trace_path),
         "official_source": str(TAU2_SUBMODULE),
         "source_url": TAU2_BENCH_SOURCE_URL,
         "source_revision": _tau2_revision(),
@@ -125,6 +142,7 @@ def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subpr
         llm_args.setdefault("cgr_candidate_count", 4)
         if config.solver_ranker_checkpoint is not None:
             llm_args["cgr_ranker_checkpoint"] = str(config.solver_ranker_checkpoint)
+        llm_args["cgr_controller_trace_path"] = str(config.output_dir / "tau3_controller_trace.jsonl")
         llm_args.setdefault("cgr_max_turns", config.max_steps)
         llm_args.setdefault("cgr_max_tool_budget", config.max_steps)
         run_config = TextRunConfig(
@@ -404,6 +422,55 @@ def build_table10_tau3_results(out_dir: Path, row_dirs: Sequence[Path], expected
     }
     (out_dir / "table10_tau3_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
+
+
+def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    event_count = 0
+    canonical_events = 0
+    heuristic_events = 0
+    ranker_loaded = 0
+    candidate_count = 0
+    scored_candidate_count = 0
+    oracle_visible = False
+    oracle_generation = False
+    oracle_filtering = False
+    tool_name_features = False
+    if trace_path.exists():
+        for line in trace_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            event_count += 1
+            mode = str(row.get("scoring_mode", ""))
+            canonical_events += 1 if mode == "canonical_ranker" else 0
+            heuristic_events += 1 if mode == "heuristic" else 0
+            ranker_loaded += 1 if row.get("ranker_checkpoint_loaded") else 0
+            candidate_scores = row.get("candidate_scores")
+            if isinstance(candidate_scores, list):
+                candidate_count += len(candidate_scores)
+                scored_candidate_count += sum(1 for item in candidate_scores if isinstance(item, Mapping) and item.get("score") is not None)
+            oracle_visible = oracle_visible or bool(row.get("oracle_visible_to_controller"))
+            oracle_generation = oracle_generation or bool(row.get("oracle_used_for_candidate_generation"))
+            oracle_filtering = oracle_filtering or bool(row.get("oracle_used_for_filtering"))
+            tool_name_features = tool_name_features or bool(row.get("tool_names_used_as_features"))
+    summary = {
+        "trace_path": str(trace_path),
+        "event_count": event_count,
+        "canonical_ranker_events": canonical_events,
+        "heuristic_events": heuristic_events,
+        "ranker_checkpoint_loaded_events": ranker_loaded,
+        "mean_candidate_count": 0.0 if event_count == 0 else candidate_count / event_count,
+        "mean_scored_candidate_count": 0.0 if event_count == 0 else scored_candidate_count / event_count,
+        "oracle_visible_to_controller": oracle_visible,
+        "oracle_used_for_candidate_generation": oracle_generation,
+        "oracle_used_for_filtering": oracle_filtering,
+        "tool_names_used_as_features": tool_name_features,
+        "status": "complete" if event_count > 0 else "empty_or_missing_trace",
+    }
+    _write_csv(out_dir / "tau3_controller_trace_audit.csv", [summary])
+    (out_dir / "tau3_controller_trace_audit.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    return summary
 
 
 def _write_pending_artifacts(config: Tau3RunConfig, status: str, save_to: str) -> Dict[str, object]:

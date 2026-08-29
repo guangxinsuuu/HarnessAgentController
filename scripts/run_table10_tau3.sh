@@ -21,7 +21,7 @@ SOURCE_MAX_STATES="${SOURCE_MAX_STATES:-200}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|build]
+scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|audit-solver-canonical|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -105,6 +105,17 @@ build_table() {
     --overwrite
 }
 
+audit_solver_canonical_traces() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-tau3-controller-trace \
+    --output-dir "${BASE_DIR}/solver_canonical_retail_trace_audit" \
+    --trace-path "${BASE_DIR}/solver_canonical_retail/tau3_controller_trace.jsonl" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-tau3-controller-trace \
+    --output-dir "${BASE_DIR}/solver_canonical_airline_trace_audit" \
+    --trace-path "${BASE_DIR}/solver_canonical_airline/tau3_controller_trace.jsonl" \
+    --overwrite
+}
+
 case "${1:-}" in
   preflight)
     run_preflight
@@ -144,6 +155,10 @@ case "${1:-}" in
     run_source_controller
     run_native_domain retail "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
     run_native_domain airline "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
+    audit_solver_canonical_traces
+    ;;
+  audit-solver-canonical)
+    audit_solver_canonical_traces
     ;;
   build)
     build_table

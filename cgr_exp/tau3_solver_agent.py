@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from pathlib import Path
+import time
 from typing import Any, List, Optional
 
 from cgr_exp.harness_ranker import GenericHarnessRanker
@@ -32,12 +34,14 @@ class Tau3SolverControllerAgent(LLMAgent):
         ranker_checkpoint: Optional[str] = None,
         max_turns: int = 200,
         max_tool_budget: int = 200,
+        controller_trace_path: Optional[str] = None,
     ):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self.candidate_count = max(1, int(candidate_count))
         self.max_turns = max(1, int(max_turns))
         self.max_tool_budget = max(1, int(max_tool_budget))
         self.ranker_checkpoint = ranker_checkpoint
+        self.controller_trace_path = Path(controller_trace_path) if controller_trace_path else None
         self.ranker: Optional[GenericHarnessRanker] = None
         if ranker_checkpoint:
             self.ranker = GenericHarnessRanker.from_json(Path(ranker_checkpoint).read_text(encoding="utf-8"))
@@ -66,10 +70,19 @@ class Tau3SolverControllerAgent(LLMAgent):
     def _select_candidate(self, candidates: List[AssistantMessage], history: List[APICompatibleMessage]) -> AssistantMessage:
         greedy = candidates[0]
         if greedy.content and not greedy.tool_calls:
+            self._write_selection_trace(candidates, selected_index=0, scored_candidates=[], scoring_mode="greedy_content_passthrough")
             return greedy
-        tool_candidates = [candidate for candidate in candidates if candidate.tool_calls and not candidate.content]
-        if tool_candidates:
-            return max(tool_candidates, key=lambda candidate: self._score_candidate(candidate, history))
+        scored_candidates = [
+            (idx, *self._score_candidate(candidate, history))
+            for idx, candidate in enumerate(candidates)
+            if candidate.tool_calls and not candidate.content
+        ]
+        if scored_candidates:
+            selected_index = max(scored_candidates, key=lambda item: (item[1], item[2]))[0]
+            mode = "canonical_ranker" if self.ranker is not None else "heuristic"
+            self._write_selection_trace(candidates, selected_index=selected_index, scored_candidates=scored_candidates, scoring_mode=mode)
+            return candidates[selected_index]
+        self._write_selection_trace(candidates, selected_index=0, scored_candidates=[], scoring_mode="fallback_greedy")
         return greedy
 
     def _sample_candidates(self, state: LLMAgentState) -> List[AssistantMessage]:
@@ -96,8 +109,13 @@ class Tau3SolverControllerAgent(LLMAgent):
         return self._score_heuristic_candidate(candidate, history)
 
     def _score_canonical_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, str]:
+        canonical = self._canonical_candidate(candidate, history)
+        assert self.ranker is not None
+        return self.ranker.score(canonical.feature_vector()), self._score_heuristic_candidate(candidate, history)[1]
+
+    def _canonical_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]):
         used_tool_calls = sum(len(getattr(item, "tool_calls", None) or []) for item in history)
-        canonical = tau3_candidate_to_canonical(
+        return tau3_candidate_to_canonical(
             candidate_id=f"tau3-candidate-{len(history)}",
             message_history=history,
             tools=self.tools,
@@ -107,8 +125,6 @@ class Tau3SolverControllerAgent(LLMAgent):
             remaining_tool_budget=max(0, self.max_tool_budget - used_tool_calls),
             max_tool_budget=self.max_tool_budget,
         )
-        assert self.ranker is not None
-        return self.ranker.score(canonical.feature_vector()), self._score_heuristic_candidate(candidate, history)[1]
 
     def _score_heuristic_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, str]:
         score = 0.0
@@ -146,6 +162,53 @@ class Tau3SolverControllerAgent(LLMAgent):
                     return True
         return False
 
+    def _write_selection_trace(
+        self,
+        candidates: List[AssistantMessage],
+        *,
+        selected_index: int,
+        scored_candidates: List[tuple[int, float, str]],
+        scoring_mode: str,
+    ) -> None:
+        if self.controller_trace_path is None:
+            return
+        self.controller_trace_path.parent.mkdir(parents=True, exist_ok=True)
+        scored_by_index = {idx: score for idx, score, _tie in scored_candidates}
+        row = {
+            "event": "tau3_controller_selection",
+            "timestamp": time.time(),
+            "scoring_mode": scoring_mode,
+            "candidate_count": len(candidates),
+            "selected_index": selected_index,
+            "ranker_checkpoint_loaded": self.ranker is not None,
+            "oracle_visible_to_controller": False,
+            "oracle_used_for_candidate_generation": False,
+            "oracle_used_for_filtering": False,
+            "tool_names_used_as_features": False,
+            "candidate_scores": [
+                {
+                    "candidate_index": idx,
+                    "score": scored_by_index.get(idx, None),
+                    "action_type": self._candidate_action_type(candidate),
+                    "tool_call_count": len(getattr(candidate, "tool_calls", None) or []),
+                    "has_content": bool(getattr(candidate, "content", None)),
+                }
+                for idx, candidate in enumerate(candidates)
+            ],
+        }
+        with self.controller_trace_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+    @staticmethod
+    def _candidate_action_type(candidate: AssistantMessage) -> str:
+        tool_calls = list(getattr(candidate, "tool_calls", None) or [])
+        if not tool_calls:
+            return "respond" if getattr(candidate, "content", None) else "terminate"
+        lowered = tool_calls[0].name.lower()
+        if any(token in lowered for token in ("update", "create", "cancel", "book", "refund", "exchange", "modify", "send", "transfer", "delete")):
+            return "write"
+        return "read"
+
     @staticmethod
     def _attach_total_sampling_cost(selected: AssistantMessage, candidates: List[AssistantMessage]) -> AssistantMessage:
         total_cost: Optional[float] = 0.0
@@ -173,6 +236,7 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
     ranker_checkpoint = llm_args.pop("cgr_ranker_checkpoint", None)
     max_turns = int(llm_args.pop("cgr_max_turns", 200))
     max_tool_budget = int(llm_args.pop("cgr_max_tool_budget", max_turns))
+    controller_trace_path = llm_args.pop("cgr_controller_trace_path", None)
     return Tau3SolverControllerAgent(
         tools=tools,
         domain_policy=domain_policy,
@@ -182,4 +246,5 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
         ranker_checkpoint=ranker_checkpoint,
         max_turns=max_turns,
         max_tool_budget=max_tool_budget,
+        controller_trace_path=controller_trace_path,
     )

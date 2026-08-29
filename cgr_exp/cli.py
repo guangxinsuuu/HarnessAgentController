@@ -45,7 +45,7 @@ from cgr_exp.q4_tau_adapter_contract import build_q4_tau_adapter_contract
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
 from cgr_exp.table6_authority import run_table6_authority_experiment
-from cgr_exp.tau3_native import Tau3RunConfig, build_table10_tau3_results, run_tau3_native, tau3_preflight
+from cgr_exp.tau3_native import Tau3RunConfig, audit_tau3_controller_trace, build_table10_tau3_results, run_tau3_native, tau3_preflight
 
 COMMANDS = [
     "run-game24-offline",
@@ -91,6 +91,7 @@ COMMANDS = [
     "preflight-tau3-native",
     "run-tau3-native",
     "build-table10-tau3",
+    "audit-tau3-controller-trace",
     "run-table6-authority",
     "audit-certification-authority-source",
     "audit-certification-tables",
@@ -359,6 +360,8 @@ def main() -> None:
         if name == "build-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
+        if name == "audit-tau3-controller-trace":
+            p.add_argument("--trace-path", type=Path, required=True)
         if name == "build-q4-tau-adapter-contract":
             p.add_argument("--expected-test-count", type=int, default=100)
         if name == "run-table6-authority":
@@ -1208,6 +1211,24 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table10_tau3_results.csv'}")
+            return
+        if args.command == "audit-tau3-controller-trace":
+            manifest = audit_tau3_controller_trace(args.output_dir, args.trace_path)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "trace_path": str(args.trace_path),
+                "status": manifest["status"],
+                "event_count": manifest["event_count"],
+                "canonical_ranker_events": manifest["canonical_ranker_events"],
+                "heuristic_events": manifest["heuristic_events"],
+                "oracle_visible_to_controller": manifest["oracle_visible_to_controller"],
+                "tool_names_used_as_features": manifest["tool_names_used_as_features"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'tau3_controller_trace_audit.csv'}")
             return
         if args.command == "audit-q2-source-evidence":
             manifest = audit_q2_source_evidence(args.output_dir)

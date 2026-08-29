@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cgr_exp.tau3_native import Tau3RunConfig, aggregate_tau3_official_results, build_tau2_run_command, build_table10_tau3_results
+from cgr_exp.tau3_native import Tau3RunConfig, aggregate_tau3_official_results, audit_tau3_controller_trace, build_tau2_run_command, build_table10_tau3_results
 
 
 class Tau3NativeTest(unittest.TestCase):
@@ -92,6 +92,37 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(len(manifest["rows"]), 2)
             self.assertTrue((root / "table" / "table10_tau3_results.csv").exists())
             self.assertIn("partial: 2/100", (root / "table" / "table10_tau3_results.csv").read_text(encoding="utf-8"))
+
+    def test_audits_tau3_controller_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trace = root / "tau3_controller_trace.jsonl"
+            trace.write_text(
+                json.dumps(
+                    {
+                        "event": "tau3_controller_selection",
+                        "scoring_mode": "canonical_ranker",
+                        "ranker_checkpoint_loaded": True,
+                        "oracle_visible_to_controller": False,
+                        "oracle_used_for_candidate_generation": False,
+                        "oracle_used_for_filtering": False,
+                        "tool_names_used_as_features": False,
+                        "candidate_scores": [
+                            {"candidate_index": 0, "score": 0.1, "action_type": "read"},
+                            {"candidate_index": 1, "score": 0.2, "action_type": "write"},
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            manifest = audit_tau3_controller_trace(root / "audit", trace)
+            self.assertEqual(manifest["event_count"], 1)
+            self.assertEqual(manifest["canonical_ranker_events"], 1)
+            self.assertEqual(manifest["ranker_checkpoint_loaded_events"], 1)
+            self.assertFalse(manifest["oracle_visible_to_controller"])
+            self.assertFalse(manifest["tool_names_used_as_features"])
+            self.assertTrue((root / "audit" / "tau3_controller_trace_audit.csv").exists())
 
 
 def _sim(task_id: str, trial: int, reward: float) -> dict:

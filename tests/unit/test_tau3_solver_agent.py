@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -83,6 +84,7 @@ class Tau3SolverAgentTest(unittest.TestCase):
         weights[names.index("action_is_write")] = -5.0
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint = Path(tmp) / "ranker.json"
+            trace = Path(tmp) / "trace.jsonl"
             checkpoint.write_text(GenericHarnessRanker(weights).to_json(), encoding="utf-8")
             agent = Tau3SolverControllerAgent(
                 [as_tool(_get_order), as_tool(_update_order)],
@@ -91,11 +93,20 @@ class Tau3SolverAgentTest(unittest.TestCase):
                 {"temperature": 0},
                 candidate_count=2,
                 ranker_checkpoint=str(checkpoint),
+                controller_trace_path=str(trace),
             )
             state = agent.get_init_state()
             with patch("cgr_exp.tau3_solver_agent.generate", side_effect=calls):
                 selected, _state = agent.generate_next_message(UserMessage(role="user", content="change order A"), state)
+            trace_text = trace.read_text(encoding="utf-8")
+            trace_row = json.loads(trace_text)
         self.assertEqual(selected.tool_calls[0].name, "get_order")
+        self.assertEqual(trace_row["scoring_mode"], "canonical_ranker")
+        self.assertTrue(trace_row["ranker_checkpoint_loaded"])
+        self.assertFalse(trace_row["oracle_visible_to_controller"])
+        self.assertFalse(trace_row["tool_names_used_as_features"])
+        self.assertNotIn("get_order", trace_text)
+        self.assertNotIn("update_order", trace_text)
 
 
 def _get_order(order_id: str) -> str:

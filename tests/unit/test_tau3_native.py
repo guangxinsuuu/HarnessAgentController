@@ -11,6 +11,7 @@ from unittest.mock import patch
 from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.tau3_native import (
     Tau3RunConfig,
+    _run_tau2_solver_controller,
     aggregate_tau3_official_results,
     audit_table10_tau3_readiness,
     audit_tau3_controller_trace,
@@ -306,6 +307,50 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("--force is required", command_manifest["resume_note"])
             self.assertEqual(command_manifest["existing_task_count"], 1)
             self.assertEqual(command_manifest["expected_task_count"], 2)
+
+    def test_solver_controller_python_api_injects_canonical_runtime_args(self) -> None:
+        class FakeResults:
+            def save(self, path: Path, format: str = "json") -> None:
+                Path(path).mkdir(parents=True, exist_ok=True)
+                (Path(path) / "results.json").write_text(json.dumps({"simulations": []}), encoding="utf-8")
+
+        captured = {}
+
+        def fake_run_domain(run_config):
+            captured["run_config"] = run_config
+            return FakeResults()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint = root / "ranker.json"
+            checkpoint.write_text("{}", encoding="utf-8")
+            config = Tau3RunConfig(
+                output_dir=root / "solver",
+                domain="retail",
+                method="solver",
+                num_tasks=1,
+                num_trials=1,
+                solver_ranker_checkpoint=checkpoint,
+                enable_certified_filter=True,
+                candidate_workers=5,
+                candidate_retries=3,
+                candidate_retry_backoff=0.25,
+                max_steps=123,
+            )
+            with patch("tau2.runner.run_domain", side_effect=fake_run_domain):
+                result = _run_tau2_solver_controller(config, root / "official")
+        self.assertEqual(result.returncode, 0)
+        run_config = captured["run_config"]
+        self.assertEqual(run_config.agent, "cgr_solver_controller")
+        args = run_config.llm_args_agent
+        self.assertEqual(args["cgr_ranker_checkpoint"], str(checkpoint))
+        self.assertTrue(args["cgr_enable_certified_filter"])
+        self.assertEqual(args["cgr_candidate_workers"], 5)
+        self.assertEqual(args["cgr_candidate_retries"], 3)
+        self.assertEqual(args["cgr_candidate_retry_backoff"], 0.25)
+        self.assertEqual(args["cgr_max_turns"], 123)
+        self.assertEqual(args["cgr_max_tool_budget"], 123)
+        self.assertTrue(str(args["cgr_controller_trace_path"]).endswith("tau3_controller_trace.jsonl"))
 
     def test_builds_best_of_n_from_native_rollouts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

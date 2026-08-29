@@ -72,6 +72,10 @@ SOURCE_MAX_STATES=200 \
 scripts/run_table10_tau3.sh source-controller
 ```
 
+Both source-controller targets refresh `progress/` and `run_preflight/` after
+the checkpoint is written. The next recommended command should then advance to
+`solver-canonical-smoke`.
+
 Required source artifacts:
 
 - `source_controller_seed0/generic_harness_ranker.json`

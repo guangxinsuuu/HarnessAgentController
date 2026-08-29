@@ -159,6 +159,7 @@ run_source_controller() {
     --epochs "${SOURCE_EPOCHS}" \
     --max-states-per-task "${SOURCE_MAX_STATES}" \
     --overwrite
+  refresh_status
 }
 
 ensure_source_controller() {

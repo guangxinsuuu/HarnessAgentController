@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import stat
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping
 
@@ -98,8 +99,11 @@ def build_q2_remaining_runs(
     csv_path = out_dir / "q2_remaining_runs.csv"
     md_path = out_dir / "q2_remaining_runs.md"
     json_path = out_dir / "q2_remaining_runs.json"
+    shell_path = out_dir / "q2_remaining_runs.sh"
     _write_csv(csv_path, queue_rows)
     md_path.write_text(_render_markdown(queue_rows, ready_rows, q2_readiness, certification_readiness), encoding="utf-8")
+    shell_path.write_text(_render_shell(queue_rows), encoding="utf-8")
+    shell_path.chmod(shell_path.stat().st_mode | stat.S_IXUSR)
     manifest = {
         "artifact": "q2_remaining_runs",
         "q2_readiness": str(q2_readiness),
@@ -109,7 +113,7 @@ def build_q2_remaining_runs(
         "ready_count": len(ready_rows),
         "rows": queue_rows,
         "ready_rows": ready_rows,
-        "produced_artifacts": [csv_path.name, md_path.name, json_path.name],
+        "produced_artifacts": [csv_path.name, md_path.name, json_path.name, shell_path.name],
     }
     json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
@@ -226,6 +230,51 @@ def _render_markdown(
             "AUTHORITY_DIR=runs/table7_grounding_robustness_100_seed0_budget200_protocol_v2 \\",
             "PYTHON_BIN=.venv/bin/python scripts/run_paper_audits.sh all",
             "```",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _render_shell(queue_rows: List[Mapping[str, str]]) -> str:
+    lines = [
+        "#!/usr/bin/env zsh",
+        "set -euo pipefail",
+        "",
+        "# Generated from Q2 readiness artifacts. This script does not set or print API keys.",
+        'if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then',
+        '  print "missing CGR_LLM_API_KEY" >&2',
+        "  exit 1",
+        "fi",
+        "",
+    ]
+    if not queue_rows:
+        lines.append('print "No Q2 reruns are required by the current readiness inputs."')
+        return "\n".join(lines) + "\n"
+    lines.extend(["mkdir -p runs/q2_remaining_runs/logs", "pids=()", ""])
+    for row in queue_rows:
+        group = str(row["run_group"])
+        lines.extend(
+            [
+                f'print "starting {group}"',
+                "(",
+                str(row["command"]),
+                f') >"runs/q2_remaining_runs/logs/{group}.log" 2>&1 &',
+                "pids+=($!)",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "status=0",
+            "for pid in ${pids[@]}; do",
+            "  if ! wait ${pid}; then",
+            "    status=1",
+            "  fi",
+            "done",
+            "",
+            'print "logs: runs/q2_remaining_runs/logs"',
+            "exit ${status}",
             "",
         ]
     )

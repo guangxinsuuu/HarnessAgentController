@@ -203,6 +203,14 @@ class CliQ2AliasesTest(unittest.TestCase):
             self.assertIn("Learned-search Q2 rows", text)
             self.assertIn("do not patch old metrics by hand", text)
             self.assertTrue((out / "q2_remaining_runs.csv").exists())
+            shell_path = out / "q2_remaining_runs.sh"
+            self.assertTrue(shell_path.exists())
+            self.assertTrue(shell_path.stat().st_mode & 0o100)
+            shell_text = shell_path.read_text(encoding="utf-8")
+            self.assertIn("CGR_LLM_API_KEY", shell_text)
+            self.assertIn("run-scheduling-llm-pilot", shell_text)
+            self.assertIn("pids+=($!)", shell_text)
+            self.assertNotIn("sk-", shell_text)
 
     def test_q4_tau_adapter_contract_cli_writes_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

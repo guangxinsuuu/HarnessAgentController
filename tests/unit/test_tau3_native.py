@@ -680,6 +680,10 @@ class Tau3NativeTest(unittest.TestCase):
                     (row_dir / "q4_tau_row.json").write_text(json.dumps(row), encoding="utf-8")
             manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
             self.assertEqual(manifest["recommended_next_run_group"], "legacy_solver_full")
+            groups = {row["run_group"]: row for row in manifest["rows"]}
+            native_methods = groups["native_full"]["methods"]
+            self.assertIn("retail: Native tool-calling rerun", native_methods)
+            self.assertIn("airline: Best-of-N", native_methods)
             self.assertIn("scripts/run_table10_tau3.sh solver-full", manifest["recommended_next_command"])
 
     def test_table10_preflight_recommends_native_after_source_controller_ready(self) -> None:

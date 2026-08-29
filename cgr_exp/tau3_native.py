@@ -665,7 +665,7 @@ def build_table10_tau3_run_preflight(
             {
                 "run_group": group,
                 "ready": group_ready,
-                "methods": "; ".join(str(row["Method"]) for row in group_methods) if group_methods else "not started",
+                "methods": "; ".join(_table10_row_id(row) for row in group_methods) if group_methods else "not started",
                 "remaining_rows": sum(1 for row in group_methods if not bool(row["result_ready"])) if group_methods else len(required_dirs),
                 "api_required": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
                 "resume_safe": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},

@@ -981,6 +981,33 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(groups["build_and_audit"]["effective_max_concurrency"], 0)
             self.assertEqual(manifest["max_api_backed_effective_concurrency"], 40)
 
+    def test_table10_preflight_caps_effective_concurrency_by_work(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = build_table10_tau3_run_preflight(
+                root / "preflight",
+                base_dir=root / "runs",
+                expected_test_count=1,
+                num_trials=1,
+                max_concurrency=20,
+                candidate_workers=10,
+                parallel_domains=True,
+                parallel_method_groups=False,
+            )
+            groups = {row["run_group"]: row for row in manifest["rows"]}
+            self.assertEqual(groups["solver_canonical_smoke"]["raw_effective_max_concurrency"], 400)
+            self.assertEqual(groups["solver_canonical_smoke"]["estimated_tau2_simulations"], 4)
+            self.assertEqual(groups["solver_canonical_smoke"]["effective_max_concurrency"], 4)
+            self.assertEqual(groups["native_full"]["raw_effective_max_concurrency"], 40)
+            self.assertEqual(groups["native_full"]["estimated_tau2_simulations"], 2)
+            self.assertEqual(groups["native_full"]["effective_max_concurrency"], 2)
+            self.assertEqual(groups["full"]["raw_effective_max_concurrency"], 400)
+            self.assertEqual(groups["full"]["estimated_tau2_simulations"], 8)
+            self.assertEqual(groups["full"]["effective_max_concurrency"], 8)
+            text = (root / "preflight" / "table10_tau3_run_preflight.md").read_text(encoding="utf-8")
+            self.assertIn("Raw effective max concurrency: `400`", text)
+            self.assertIn("Effective max concurrency: `4`", text)
+
     def test_summarizes_table10_tau3_progress_from_partial_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

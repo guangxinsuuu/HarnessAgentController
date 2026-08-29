@@ -842,8 +842,10 @@ def build_table10_tau3_run_preflight(
         else:
             group_methods = _methods_for_dirs(readiness["audit_rows"], required_dirs)
             group_ready = bool(group_methods) and all(bool(row["result_ready"]) for row in group_methods)
-        effective_concurrency = _table10_effective_concurrency(group, max_concurrency, candidate_workers, parallel_domains, parallel_method_groups)
         work_estimate = _table10_group_work_estimate(group, expected_test_count, num_trials, candidate_workers)
+        raw_effective_concurrency = _table10_effective_concurrency(group, max_concurrency, candidate_workers, parallel_domains, parallel_method_groups)
+        estimated_simulations = int(work_estimate.get("estimated_tau2_simulations", 0))
+        effective_concurrency = min(raw_effective_concurrency, estimated_simulations) if estimated_simulations > 0 else 0
         rows.append(
             {
                 "run_group": group,
@@ -852,6 +854,7 @@ def build_table10_tau3_run_preflight(
                 "remaining_rows": sum(1 for row in group_methods if not bool(row["result_ready"])) if group_methods else len(required_dirs),
                 "api_required": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_smoke", "solver_canonical_certified_smoke", "solver_canonical_full", "solver_canonical_certified_full"},
                 "resume_safe": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_smoke", "solver_canonical_certified_smoke", "solver_canonical_full", "solver_canonical_certified_full"},
+                "raw_effective_max_concurrency": raw_effective_concurrency,
                 "effective_max_concurrency": effective_concurrency,
                 **work_estimate,
                 "command": command,
@@ -1409,6 +1412,7 @@ def _table10_source_controller_preflight_row(base_dir: Path, *, seed: int = 0) -
         "remaining_rows": 0 if not blockers else 1,
         "api_required": False,
         "resume_safe": True,
+        "raw_effective_max_concurrency": 0,
         "effective_max_concurrency": 0,
         "estimated_api_rows": 0,
         "estimated_tau2_simulations": 0,
@@ -1468,6 +1472,7 @@ def _table10_next_run_summary(next_run: Optional[Mapping[str, object]]) -> Dict[
             "ready": True,
             "api_required": False,
             "resume_safe": False,
+            "raw_effective_max_concurrency": 0,
             "effective_max_concurrency": 0,
             "estimated_api_rows": 0,
             "estimated_tau2_simulations": 0,
@@ -1483,6 +1488,7 @@ def _table10_next_run_summary(next_run: Optional[Mapping[str, object]]) -> Dict[
         "ready",
         "api_required",
         "resume_safe",
+        "raw_effective_max_concurrency",
         "effective_max_concurrency",
         "estimated_api_rows",
         "estimated_tau2_simulations",
@@ -1549,6 +1555,7 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
                 f"Ready: `{row['ready']}`",
                 f"API required: `{row['api_required']}`",
                 f"Resume safe: `{row['resume_safe']}`",
+                f"Raw effective max concurrency: `{row.get('raw_effective_max_concurrency', row['effective_max_concurrency'])}`",
                 f"Effective max concurrency: `{row['effective_max_concurrency']}`",
                 f"Estimated API rows: `{row.get('estimated_api_rows', 0)}`",
                 f"Estimated tau2 simulations: `{row.get('estimated_tau2_simulations', 0)}`",
@@ -1575,6 +1582,7 @@ def _table10_next_run_markdown(manifest: Mapping[str, object]) -> str:
         f"API required: `{summary.get('api_required', False)}`",
         f"API key ready: `{manifest.get('recommended_next_api_key_ready', False)}`",
         f"Resume safe: `{summary.get('resume_safe', False)}`",
+        f"Raw effective max concurrency: `{summary.get('raw_effective_max_concurrency', summary.get('effective_max_concurrency', 0))}`",
         f"Effective max concurrency: `{summary.get('effective_max_concurrency', 0)}`",
         f"Estimated API rows: `{summary.get('estimated_api_rows', 0)}`",
         f"Estimated tau2 simulations: `{summary.get('estimated_tau2_simulations', 0)}`",

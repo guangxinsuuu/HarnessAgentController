@@ -76,6 +76,14 @@ ReST-MCTS-style artifact may not promote itself as a full official ReST-MCTS*
 reproduction unless the full iterative self-training protocol has actually
 been implemented and evaluated.
 
+`audit-q2-local-primitives` adds the local side of the same check. For every
+Q2 row, it records `primitive_alignment_json`, mapping each required
+official-method primitive to concrete source anchors and file-line locations in
+the local Scheduling adaptation. A completed row is not promotion-ready if any
+contract primitive has no local mapping, or if a mapped anchor cannot be found
+in the current source tree. This avoids a weak row-level check where a file
+exists but one required algorithmic primitive is absent.
+
 `verify-q2-source-refs` is the stricter source-ref verifier used by preflight.
 It writes `q2_source_ref_verification.csv` and checks that GitHub-backed rows
 use full pinned SHAs, raw GitHub URLs are pinned to the same SHA, symbol/schema

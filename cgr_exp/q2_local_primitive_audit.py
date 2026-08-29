@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping
 
+from cgr_exp.q2_method_contracts import q2_method_contract
+
 
 MAX_CSV_LOCATIONS_PER_ANCHOR = 5
 
@@ -13,22 +15,49 @@ Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
     "CP-SAT": {
         "paths": ["cgr_exp/scheduling_structured_q2.py"],
         "anchors": ["NewOptionalIntervalVar", "AddNoOverlap", "Minimize", "llm_calls"],
+        "primitive_anchors": {
+            "integer scheduling variables": ["NewIntVar"],
+            "optional interval variables": ["NewOptionalIntervalVar"],
+            "NoOverlap machine constraints": ["AddNoOverlap"],
+            "precedence/release constraints": ["release_times", "predecessors"],
+            "objective minimization": ["Minimize"],
+        },
     },
     "EST / list scheduling heuristic": {
         "paths": ["cgr_exp/scheduling_structured_q2.py"],
         "anchors": ["earliest_start_list_scheduling", "_earliest_start_list_schedule", "llm_calls"],
+        "primitive_anchors": {
+            "ready-list dispatch": ["ready_jobs", "dispatch_steps"],
+            "earliest feasible start selection": ["_earliest_start_list_schedule", "min(start, finish"],
+            "deterministic tie breaking": ["structured_runtime_tie_break_rule"],
+        },
     },
     "Direct / CoT": {
         "paths": ["cgr_exp/scheduling_native_q2.py"],
         "anchors": ["first_valid", "generate_scheduling_solution", "reasoning"],
+        "primitive_anchors": {
+            "single reasoning path": ["first_valid", "sample_count"],
+            "intermediate natural-language rationale": ["reasoning"],
+            "final answer extraction": ["generate_scheduling_solution"],
+        },
     },
     "Self-Consistency": {
         "paths": ["cgr_exp/scheduling_native_q2.py"],
         "anchors": ["majority_job_order_then_first_valid", "_select_sample", "sample_count"],
+        "primitive_anchors": {
+            "multiple independent reasoning paths": ["sample_count"],
+            "final-answer aggregation": ["majority_job_order_then_first_valid"],
+            "majority/consistency selection": ["_select_sample", "job_order"],
+        },
     },
     "Best-of-N": {
         "paths": ["cgr_exp/scheduling_native_q2.py"],
         "anchors": ["best_verified_objective", "_select_sample", "objective"],
+        "primitive_anchors": {
+            "multiple complete answer samples": ["sample_count"],
+            "verifier or reward scoring": ["objective", "best_verified_objective"],
+            "best sample selection": ["_select_sample", "best_verified_objective"],
+        },
     },
     "Tree of Thoughts": {
         "paths": ["cgr_exp/scheduling_tot_q2.py"],
@@ -39,6 +68,15 @@ Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
             "breadth-first frontier search",
             "tot_value_sample_count",
         ],
+        "primitive_anchors": {
+            "method_generate": ["method_generate"],
+            "method_evaluate": ["method_evaluate", "tot_value_sample_count"],
+            "method_select": ["method_select"],
+            "breadth-first search": ["breadth-first frontier search"],
+            "value or vote evaluation over generated candidates": ["method_evaluate", "value"],
+            "value cache / duplicate candidate handling": ["value_cache"],
+            "greedy top-b selection": ["greedy top-b", "n_select_sample"],
+        },
     },
     "Target-PRM priority": {
         "paths": ["cgr_exp/scheduling_transfer.py"],
@@ -48,6 +86,13 @@ Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
             "target_prm_label_manifest.json",
             "exact_residual_scheduling_oracle_on_target_llm_states",
         ],
+        "primitive_anchors": {
+            "intermediate-step labels": ["uses_intermediate_states", "max_record_depth"],
+            "per-step candidate completions": ["frontier_parent_group_count"],
+            "step rating / process supervision": ["target_process_frontier_ranking"],
+            "process supervision": ["process_label_record_count"],
+            "reward/value model over partial solutions": ["TinyPairwiseMLPRanker", "target_prm_ranker"],
+        },
     },
     "PRM-guided MCTS (ReST-MCTS-style)": {
         "paths": ["cgr_exp/scheduling_transfer.py"],
@@ -59,6 +104,15 @@ Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
             "simulation/evaluation",
             "backpropagation",
         ],
+        "primitive_anchors": {
+            "MCTS selection": ["mcts_selection_calls", "selection"],
+            "MCTS expansion": ["mcts_expansion_observations", "expansion"],
+            "MCTS simulation/evaluation": ["mcts_leaf_value_evaluations", "simulation/evaluation"],
+            "MCTS backpropagation": ["mcts_backup_updates", "backpropagation"],
+            "visit-count exploration bonus": ["visits", "exploration"],
+            "step-value/process-reward guided child scoring": ["PRM_prior", "process_reward_guidance"],
+            "process reward guidance": ["target_prm_ranker", "process_reward_guidance"],
+        },
     },
     "Solver-trained priority": {
         "paths": ["cgr_exp/scheduling_transfer.py"],
@@ -68,6 +122,11 @@ Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
             "oracle_labels_in_inference_features",
             "canonical semantic scheduling state",
         ],
+        "primitive_anchors": {
+            "solver-induced source trajectories": ["level1_solver_traces_only"],
+            "frontier priority learning": ["TinyPairwiseMLPRanker", "scheduling_llm_pilot_ranker.json"],
+            "frozen zero-shot transfer": ["zero_shot_transfer", "target_training_trace_count"],
+        },
     },
     "Solver-trained priority + certified pruning": {
         "paths": ["cgr_exp/scheduling_transfer.py", "cgr_exp/certification/prune.py"],
@@ -77,6 +136,11 @@ Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
             "should_prune",
             "learned_score_authorizes_pruning",
         ],
+        "primitive_anchors": {
+            "solver-trained frontier priority": ["Solver-trained MLP + certified pruning"],
+            "verified pruning authority": ["should_prune", "verified lower-bound"],
+            "learned score separated from pruning decision": ["learned_score_authorizes_pruning"],
+        },
     },
 }
 
@@ -100,6 +164,7 @@ def audit_q2_local_primitives(out_dir: Path) -> Dict[str, object]:
 def _audit_method(method: str, spec: Mapping[str, object]) -> Dict[str, object]:
     paths = [Path(str(path)) for path in spec.get("paths", [])]
     anchors = [str(anchor) for anchor in spec.get("anchors", [])]
+    primitive_anchors = _primitive_anchor_spec(spec.get("primitive_anchors", {}))
     missing_paths = [str(path) for path in paths if not path.exists()]
     lines_by_path = {
         str(path): path.read_text(encoding="utf-8").splitlines()
@@ -114,6 +179,19 @@ def _audit_method(method: str, spec: Mapping[str, object]) -> Dict[str, object]:
     for anchor, locations in locations_by_anchor.items():
         if not locations:
             missing_anchors.append(anchor)
+    primitive_alignment = _primitive_alignment(primitive_anchors, lines_by_path)
+    contract_primitives = [str(item) for item in q2_method_contract(method).get("source_primitives", [])]
+    missing_primitive_mappings = [
+        primitive
+        for primitive in contract_primitives
+        if primitive not in primitive_alignment
+    ]
+    missing_primitive_anchors = [
+        f"{primitive}: {anchor}"
+        for primitive, anchors_by_name in primitive_alignment.items()
+        for anchor, locations in anchors_by_name.items()
+        if not locations
+    ]
     return {
         "Method": method,
         "local_paths": "; ".join(str(path) for path in paths),
@@ -125,9 +203,49 @@ def _audit_method(method: str, spec: Mapping[str, object]) -> Dict[str, object]:
         ),
         "missing_paths": "; ".join(missing_paths),
         "missing_anchors": "; ".join(missing_anchors),
+        "primitive_alignment": _format_primitive_alignment(primitive_alignment),
+        "primitive_alignment_json": json.dumps(primitive_alignment, sort_keys=True),
+        "missing_primitive_mappings": "; ".join(missing_primitive_mappings),
+        "missing_primitive_anchors": "; ".join(missing_primitive_anchors),
         "anchor_locations_json": json.dumps(locations_by_anchor, sort_keys=True),
-        "local_primitives_ready": not missing_paths and not missing_anchors,
+        "local_primitives_ready": not missing_paths
+        and not missing_anchors
+        and not missing_primitive_mappings
+        and not missing_primitive_anchors,
     }
+
+
+def _primitive_anchor_spec(value: object) -> Dict[str, List[str]]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(primitive): [str(anchor) for anchor in anchors]
+        for primitive, anchors in value.items()
+        if isinstance(anchors, list)
+    }
+
+
+def _primitive_alignment(
+    primitive_anchors: Mapping[str, List[str]],
+    lines_by_path: Mapping[str, List[str]],
+) -> Dict[str, Dict[str, List[str]]]:
+    return {
+        primitive: {
+            anchor: _anchor_locations(anchor, lines_by_path)
+            for anchor in anchors
+        }
+        for primitive, anchors in primitive_anchors.items()
+    }
+
+
+def _format_primitive_alignment(primitive_alignment: Mapping[str, Mapping[str, List[str]]]) -> str:
+    parts = []
+    for primitive, anchors_by_name in primitive_alignment.items():
+        anchor_parts = []
+        for anchor, locations in anchors_by_name.items():
+            anchor_parts.append(f"{anchor} -> {', '.join(_trim_locations(locations))}")
+        parts.append(f"{primitive}: " + " | ".join(anchor_parts))
+    return "; ".join(parts)
 
 
 def _anchor_locations(anchor: str, lines_by_path: Mapping[str, List[str]]) -> List[str]:

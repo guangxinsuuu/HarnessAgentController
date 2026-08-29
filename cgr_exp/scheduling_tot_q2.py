@@ -5,7 +5,7 @@ import csv
 import json
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from cgr_exp.budgets import BudgetState
 from cgr_exp.datasets.level1_scheduling import SchedulingTask
@@ -224,9 +224,11 @@ def _run_one_tot_episode(
     started = time.perf_counter()
     optimum = task.exhaustive_oracle()
     trace_events: List[Dict[str, object]] = []
+    value_cache: Dict[Tuple[int, str], float] = {}
     level = 0
     while frontier and expanded < node_budget:
         next_frontier: List[SearchNode] = []
+        next_frontier_state_keys: set[str] = set()
         for node in frontier[: max(1, breadth)]:
             if expanded >= node_budget:
                 break
@@ -241,6 +243,7 @@ def _run_one_tot_episode(
             proposed_actions = proposer.propose(task, node, action_budget, budget_state=budget)
             proposal_record = proposer.call_records[-1] if len(proposer.call_records) > before_calls else {}
             proposal_children = []
+            duplicate_child_ids: List[str] = []
             invalid_children = 0
             for child_idx, action in enumerate(proposed_actions):
                 verified = verifier.verify(task, node, action)
@@ -256,7 +259,12 @@ def _run_one_tot_episode(
                     if value is not None and (incumbent is None or value < incumbent):
                         incumbent = value
                 else:
-                    next_frontier.append(child)
+                    state_key = _tot_value_cache_key(child)
+                    if state_key in next_frontier_state_keys:
+                        duplicate_child_ids.append(child.node_id)
+                    else:
+                        next_frontier_state_keys.add(state_key)
+                        next_frontier.append(child)
             trace_events.append(
                 _tot_trace_event(
                     episode,
@@ -267,6 +275,7 @@ def _run_one_tot_episode(
                     record=proposal_record,
                     proposed_actions=[_safe_action(action) for action in proposed_actions],
                     child_ids=[child.node_id for child in proposal_children],
+                    duplicate_child_ids=duplicate_child_ids,
                     invalid_children=invalid_children,
                     incumbent=incumbent,
                 )
@@ -276,14 +285,33 @@ def _run_one_tot_episode(
         score_sums = [0.0 for _ in next_frontier]
         value_sample_records = []
         for sample_idx in range(max(1, value_samples)):
-            response = client.score_frontier_states(task=task, nodes=next_frontier, model=model)
-            scores = [float(score) for score in response.get("scores", [])]
-            fallback_used = len(scores) != len(next_frontier)
-            if len(scores) != len(next_frontier):
-                scores = [float(len(next_frontier) - idx) for idx in range(len(next_frontier))]
+            scores: List[Optional[float]] = [None for _ in next_frontier]
+            uncached_indices = []
+            uncached_nodes = []
+            for idx, node in enumerate(next_frontier):
+                cache_key = (sample_idx, _tot_value_cache_key(node))
+                if cache_key in value_cache:
+                    scores[idx] = value_cache[cache_key]
+                else:
+                    uncached_indices.append(idx)
+                    uncached_nodes.append(node)
+            response: Mapping[str, object] = {"scores": [], "input_tokens": 0, "output_tokens": 0, "latency": 0.0, "raw_output": ""}
+            fallback_used = False
+            if uncached_nodes:
+                response = client.score_frontier_states(task=task, nodes=uncached_nodes, model=model)
+                uncached_scores = [float(score) for score in response.get("scores", [])]
+                fallback_used = len(uncached_scores) != len(uncached_nodes)
+                if len(uncached_scores) != len(uncached_nodes):
+                    uncached_scores = [float(len(uncached_nodes) - idx) for idx in range(len(uncached_nodes))]
+                for local_idx, score in enumerate(uncached_scores):
+                    frontier_idx = uncached_indices[local_idx]
+                    node = next_frontier[frontier_idx]
+                    value_cache[(sample_idx, _tot_value_cache_key(node))] = score
+                    scores[frontier_idx] = score
             for idx, score in enumerate(scores):
-                score_sums[idx] += score
-            value_calls += 1
+                score_sums[idx] += float(score if score is not None else 0.0)
+            if uncached_nodes:
+                value_calls += 1
             value_input_tokens += int(response.get("input_tokens", 0))
             value_output_tokens += int(response.get("output_tokens", 0))
             value_latency += float(response.get("latency", 0.0))
@@ -291,6 +319,7 @@ def _run_one_tot_episode(
                 {
                     "sample_index": sample_idx,
                     "scores": scores,
+                    "value_cache_hits": len(next_frontier) - len(uncached_nodes),
                     "fallback_used": fallback_used,
                     "input_tokens": int(response.get("input_tokens", 0)),
                     "output_tokens": int(response.get("output_tokens", 0)),
@@ -404,6 +433,10 @@ def _gap(value: Optional[float], optimum: float) -> float:
     if value is None or optimum == 0:
         return 1.0
     return max(0.0, (float(value) - optimum) / max(1.0, abs(optimum)))
+
+
+def _tot_value_cache_key(node: SearchNode) -> str:
+    return json.dumps(node.structured_state, sort_keys=True, separators=(",", ":"))
 
 
 def _mean(values: Iterable[float]) -> float:

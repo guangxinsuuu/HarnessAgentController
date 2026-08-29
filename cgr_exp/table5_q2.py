@@ -305,10 +305,16 @@ def _apply_local_primitive_audit(audit_rows: List[Dict[str, object]], q2_local_p
             details = []
             missing_paths = str(local.get("missing_paths", "")).strip()
             missing_anchors = str(local.get("missing_anchors", "")).strip()
+            missing_primitive_mappings = str(local.get("missing_primitive_mappings", "")).strip()
+            missing_primitive_anchors = str(local.get("missing_primitive_anchors", "")).strip()
             if missing_paths:
                 details.append(f"missing paths: {missing_paths}")
             if missing_anchors:
                 details.append(f"missing anchors: {missing_anchors}")
+            if missing_primitive_mappings:
+                details.append(f"missing primitive mappings: {missing_primitive_mappings}")
+            if missing_primitive_anchors:
+                details.append(f"missing primitive anchors: {missing_primitive_anchors}")
             suffix = "; " + "; ".join(details) if details else ""
             _append_result_blocker(audit_row, "local primitive audit failed" + suffix)
 

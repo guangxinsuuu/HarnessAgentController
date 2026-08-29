@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from cgr_exp.q2_local_primitive_audit import Q2_LOCAL_PRIMITIVE_CHECKS, audit_q2_local_primitives
+from cgr_exp.q2_method_contracts import q2_method_contract
 from cgr_exp.table5_q2 import TABLE5_METHODS
 
 
@@ -36,6 +37,14 @@ class Q2LocalPrimitiveAuditTest(unittest.TestCase):
                 locations = json.loads(row["anchor_locations_json"])
                 for anchor in row["required_anchors"].split("; "):
                     self.assertTrue(locations[anchor], f"{row['Method']}: {anchor}")
+                self.assertEqual(row["missing_primitive_mappings"], "", row["Method"])
+                self.assertEqual(row["missing_primitive_anchors"], "", row["Method"])
+                primitive_alignment = json.loads(row["primitive_alignment_json"])
+                expected_primitives = q2_method_contract(row["Method"])["source_primitives"]
+                for primitive in expected_primitives:
+                    self.assertIn(primitive, primitive_alignment, row["Method"])
+                    for anchor, anchor_locations in primitive_alignment[primitive].items():
+                        self.assertTrue(anchor_locations, f"{row['Method']}: {primitive}: {anchor}")
 
 
 if __name__ == "__main__":

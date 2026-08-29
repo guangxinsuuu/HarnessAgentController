@@ -26,6 +26,8 @@ class Table5Q2Test(unittest.TestCase):
                         "local_primitives_ready": "False" if method == "Direct / CoT" else "True",
                         "missing_paths": "",
                         "missing_anchors": "first_valid" if method == "Direct / CoT" else "",
+                        "missing_primitive_mappings": "single reasoning path" if method == "Direct / CoT" else "",
+                        "missing_primitive_anchors": "final answer extraction: generate_scheduling_solution" if method == "Direct / CoT" else "",
                     }
                     for method, _setting, _source, _kind in TABLE5_METHODS
                 ],
@@ -38,6 +40,8 @@ class Table5Q2Test(unittest.TestCase):
             audit_rows = {row["Method"]: row for row in manifest["readiness"]["audit_rows"]}
             self.assertIn("local primitive audit failed", audit_rows["Direct / CoT"]["result_blockers"])
             self.assertIn("missing anchors: first_valid", audit_rows["Direct / CoT"]["result_blockers"])
+            self.assertIn("missing primitive mappings: single reasoning path", audit_rows["Direct / CoT"]["result_blockers"])
+            self.assertIn("missing primitive anchors: final answer extraction", audit_rows["Direct / CoT"]["result_blockers"])
             self.assertNotIn("local primitive audit failed", audit_rows["Self-Consistency"]["result_blockers"])
 
     def test_builder_keeps_missing_native_rows_pending_and_extracts_completed_rows(self) -> None:

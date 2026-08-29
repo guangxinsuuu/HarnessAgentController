@@ -400,7 +400,7 @@ def tau3_preflight(python_bin: str = sys.executable) -> Dict[str, object]:
     if dependency.returncode != 0:
         blockers.append("tau2 Python dependencies missing for selected interpreter")
     if not (os.environ.get("OPENAI_API_KEY") or os.environ.get("CGR_LLM_API_KEY")):
-        blockers.append("OPENAI_API_KEY missing; tau2/litellm reads OPENAI_API_KEY")
+        blockers.append("OPENAI_API_KEY or CGR_LLM_API_KEY missing; runner maps CGR_LLM_API_KEY into OPENAI_API_KEY for tau2/litellm")
     return {
         "ready": not blockers,
         "blockers": blockers,

@@ -379,6 +379,7 @@ class Tau3NativeTest(unittest.TestCase):
                         "ranker_checkpoint_loaded": True,
                         "certified_filter_enabled": False,
                         "certified_pruned_count": 0,
+                        "candidate_sample_failures": 2,
                         "oracle_visible_to_controller": False,
                         "oracle_used_for_candidate_generation": False,
                         "oracle_used_for_filtering": False,
@@ -401,8 +402,10 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(canonical_row["tool_identity_generalization_ready"])
             self.assertTrue(canonical_row["contract_coverage_stress_ready"])
             self.assertEqual(canonical_row["canonical_ranker_events"], 1)
+            self.assertEqual(canonical_row["candidate_sample_failures"], 2)
             self.assertIn("source generator frozen before target test", canonical_row["notes"])
             self.assertIn("tool-identity stress delta=0.0", canonical_row["notes"])
+            self.assertIn("candidate sample failures after retries=2", canonical_row["notes"])
             self.assertIn("contract coverage black-box delta=0.0", canonical_row["notes"])
 
     def test_audits_table10_tau3_readiness_rejects_missing_compute_accounting(self) -> None:

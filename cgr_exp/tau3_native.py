@@ -955,6 +955,7 @@ def _table10_audit_row(
         "contract_coverage_stress_ready": source_protocol.get("contract_coverage_stress_ready", ""),
         "contract_coverage_black_box_top1_delta_from_full": source_protocol.get("contract_coverage_black_box_top1_delta_from_full", ""),
         "canonical_ranker_events": trace_summary.get("canonical_ranker_events", ""),
+        "candidate_sample_failures": trace_summary.get("candidate_sample_failures", ""),
         "certified_prune_rate": trace_summary.get("certified_prune_rate", ""),
         "notes": notes,
         "result_ready": not blockers,
@@ -976,6 +977,8 @@ def _table10_evidence_notes(source_protocol: Mapping[str, object], trace_summary
         notes.append(f"contract coverage black-box delta={source_protocol.get('contract_coverage_black_box_top1_delta_from_full', '')}")
     if trace_summary.get("canonical_ranker_events"):
         notes.append(f"canonical ranker events={trace_summary.get('canonical_ranker_events')}")
+    if _as_float(trace_summary.get("candidate_sample_failures")) > 0:
+        notes.append(f"candidate sample failures after retries={trace_summary.get('candidate_sample_failures')}")
     return "; ".join(notes)
 
 

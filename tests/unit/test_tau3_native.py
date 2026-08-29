@@ -693,11 +693,18 @@ class Tau3NativeTest(unittest.TestCase):
             source = base / "source_controller_seed0"
             source.mkdir(parents=True)
             _write_source_manifest(source, tau3_train_trajectories_used=False)
-            manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
+            with patch.dict(os.environ, {}, clear=True):
+                manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
             groups = {row["run_group"]: row for row in manifest["rows"]}
             self.assertTrue(groups["source_controller"]["ready"])
             self.assertEqual(manifest["recommended_next_run_group"], "native_full")
+            self.assertFalse(manifest["api_key_present"])
+            self.assertTrue(manifest["recommended_next_requires_api_key"])
+            self.assertFalse(manifest["recommended_next_api_key_ready"])
             self.assertIn("scripts/run_table10_tau3.sh native-full", manifest["recommended_next_command"])
+            text = (root / "preflight" / "table10_tau3_run_preflight.md").read_text(encoding="utf-8")
+            self.assertIn("API key present: `False`", text)
+            self.assertIn("Warning: recommended next run needs `OPENAI_API_KEY`", text)
 
     def test_table10_preflight_reports_parallel_method_group_concurrency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

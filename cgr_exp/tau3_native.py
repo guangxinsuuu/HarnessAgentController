@@ -679,6 +679,8 @@ def build_table10_tau3_run_preflight(
     json_path = out_dir / "table10_tau3_run_preflight.json"
     md_path = out_dir / "table10_tau3_run_preflight.md"
     _write_csv(csv_path, rows)
+    api_key_env = "OPENAI_API_KEY"
+    api_key_present = bool(os.environ.get(api_key_env))
     manifest = {
         "artifact": "table10_tau3_run_preflight",
         "base_dir": str(base_dir),
@@ -696,7 +698,10 @@ def build_table10_tau3_run_preflight(
         "tau_python_bin": tau_python_bin,
         "parallel_domains": parallel_domains,
         "parallel_method_groups": parallel_method_groups,
-        "api_key_env": "OPENAI_API_KEY",
+        "api_key_env": api_key_env,
+        "api_key_present": api_key_present,
+        "recommended_next_requires_api_key": bool(next_run and next_run.get("api_required")),
+        "recommended_next_api_key_ready": bool((not next_run) or (not next_run.get("api_required")) or api_key_present),
         "readiness_dir": str(out_dir / "readiness"),
         "all_rows_result_ready": readiness["all_rows_result_ready"],
         "recommended_next_run_group": "" if next_run is None else next_run["run_group"],
@@ -1189,6 +1194,8 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         f"Candidate retry backoff: `{manifest['candidate_retry_backoff']}`",
         f"Parallel domains: `{manifest['parallel_domains']}`",
         f"Parallel method groups: `{manifest['parallel_method_groups']}`",
+        f"API key env: `{manifest['api_key_env']}`",
+        f"API key present: `{manifest['api_key_present']}`",
         f"Max API-backed effective concurrency: `{manifest['max_api_backed_effective_concurrency']}`",
         f"All rows ready: `{manifest['all_rows_result_ready']}`",
         f"Recommended next run group: `{manifest['recommended_next_run_group'] or 'none'}`",
@@ -1196,6 +1203,13 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         "Set `OPENAI_API_KEY` before API-backed run groups. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; solver-controller rows also multiply active requests by `CANDIDATE_WORKERS`. `best-of-n` and `build_and_audit` reuse local artifacts.",
         "",
     ]
+    if manifest.get("recommended_next_requires_api_key") and not manifest.get("recommended_next_api_key_ready"):
+        lines.extend(
+            [
+                f"Warning: recommended next run needs `{manifest['api_key_env']}`, but it is not present in this shell.",
+                "",
+            ]
+        )
     if manifest.get("recommended_next_command"):
         lines.extend(
             [

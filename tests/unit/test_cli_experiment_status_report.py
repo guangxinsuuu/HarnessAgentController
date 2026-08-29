@@ -20,10 +20,12 @@ class CliExperimentStatusReportTest(unittest.TestCase):
             root = Path(tmp)
             q2 = root / "q2.csv"
             q4 = root / "q4.csv"
+            tau3 = root / "tau3.csv"
             cert = root / "cert.csv"
             matrix = root / "matrix.csv"
             _write_csv(q2, [{"Method": "CP-SAT", "result_ready": "True", "result_blockers": ""}])
             _write_csv(q4, [{"Method": "Native agent rerun", "result_ready": "False", "result_blockers": "pending"}])
+            _write_csv(tau3, [{"Domain": "Retail", "Method": "Solver-derived canonical controller", "result_ready": "True", "result_blockers": ""}])
             _write_csv(cert, [{"Table": "Table 6 clean certification", "result_ready": "False", "result_blockers": "artifact missing"}])
             _write_csv(matrix, [{"Method": "CP-SAT", "Local code present": "True", "Implemented scope": "structured solver"}])
             out = root / "out"
@@ -39,6 +41,8 @@ class CliExperimentStatusReportTest(unittest.TestCase):
                     str(q2),
                     "--q4-readiness",
                     str(q4),
+                    "--tau3-readiness",
+                    str(tau3),
                     "--certification-readiness",
                     str(cert),
                     "--q2-implementation-matrix",

@@ -10,6 +10,7 @@ from cgr_exp.q4_tau_source_evidence import Q4_TAU_SOURCE_EVIDENCE
 
 DEFAULT_Q2_READINESS = Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv")
 DEFAULT_Q4_READINESS = Path("runs/q4_tau_table_current_audit/q4_tau_readiness.csv")
+DEFAULT_TAU3_READINESS = Path("runs/table10_tau3_canonical/table10_readiness/table10_tau3_readiness.csv")
 DEFAULT_CERT_READINESS = Path("runs/certification_tables_readiness/certification_tables_readiness.csv")
 DEFAULT_Q2_MATRIX = Path("runs/q2_implementation_matrix/q2_implementation_matrix.csv")
 DEFAULT_Q2_LOCAL_PRIMITIVES = Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv")
@@ -21,6 +22,7 @@ def build_current_experiment_status(
     *,
     q2_readiness: Path = DEFAULT_Q2_READINESS,
     q4_readiness: Path = DEFAULT_Q4_READINESS,
+    tau3_readiness: Path = DEFAULT_TAU3_READINESS,
     certification_readiness: Path = DEFAULT_CERT_READINESS,
     q2_implementation_matrix: Path = DEFAULT_Q2_MATRIX,
     q2_local_primitives: Path = DEFAULT_Q2_LOCAL_PRIMITIVES,
@@ -30,6 +32,7 @@ def build_current_experiment_status(
     out_dir.mkdir(parents=True, exist_ok=True)
     q2_rows = _read_csv(q2_readiness)
     q4_rows = _read_csv(q4_readiness)
+    tau3_rows = _read_csv(tau3_readiness)
     cert_rows = _read_csv(certification_readiness)
     q2_matrix_rows = _read_csv(q2_implementation_matrix)
     q2_local_primitive_rows = _read_csv(q2_local_primitives)
@@ -37,6 +40,7 @@ def build_current_experiment_status(
     markdown = _render_markdown(
         q2_rows=q2_rows,
         q4_rows=q4_rows,
+        tau3_rows=tau3_rows,
         cert_rows=cert_rows,
         q2_matrix_rows=q2_matrix_rows,
         q2_local_primitive_rows=q2_local_primitive_rows,
@@ -44,6 +48,7 @@ def build_current_experiment_status(
         audit_command=audit_command,
         q2_readiness=q2_readiness,
         q4_readiness=q4_readiness,
+        tau3_readiness=tau3_readiness,
         certification_readiness=certification_readiness,
         q2_implementation_matrix=q2_implementation_matrix,
         q2_local_primitives=q2_local_primitives,
@@ -58,6 +63,7 @@ def build_current_experiment_status(
         "input_artifacts": {
             "q2_readiness": str(q2_readiness),
             "q4_readiness": str(q4_readiness),
+            "tau3_readiness": str(tau3_readiness),
             "certification_readiness": str(certification_readiness),
             "q2_implementation_matrix": str(q2_implementation_matrix),
             "q2_local_primitives": str(q2_local_primitives),
@@ -69,6 +75,8 @@ def build_current_experiment_status(
         "q2_local_primitive_ready_rows": _local_primitive_ready_count(q2_local_primitive_rows),
         "q4_rows": _row_count(q4_rows),
         "q4_ready_rows": _ready_count(q4_rows),
+        "tau3_rows": _row_count(tau3_rows),
+        "tau3_ready_rows": _ready_count(tau3_rows),
         "certification_rows": _row_count(cert_rows),
         "certification_ready_rows": _ready_count(cert_rows),
         "certification_authority_source_rows": _row_count(cert_authority_source_rows),
@@ -83,6 +91,7 @@ def _render_markdown(
     *,
     q2_rows: List[Dict[str, str]],
     q4_rows: List[Dict[str, str]],
+    tau3_rows: List[Dict[str, str]],
     cert_rows: List[Dict[str, str]],
     q2_matrix_rows: List[Dict[str, str]],
     q2_local_primitive_rows: List[Dict[str, str]],
@@ -90,6 +99,7 @@ def _render_markdown(
     audit_command: str,
     q2_readiness: Path,
     q4_readiness: Path,
+    tau3_readiness: Path,
     certification_readiness: Path,
     q2_implementation_matrix: Path,
     q2_local_primitives: Path,
@@ -180,6 +190,34 @@ def _render_markdown(
     lines.extend(
         [
             "",
+            "## Table10 tau3 Canonical Harness Evaluation",
+            "",
+            f"Machine audit: `{tau3_readiness}`.",
+            "",
+            _tau3_summary(tau3_rows),
+            "",
+            "| Row | Domain | Source artifact | Current promotion status | Notes |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    for row in tau3_rows:
+        method = row.get("Method", "")
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape(method),
+                    _escape(row.get("Domain", "")),
+                    _escape(_source_artifact_status(row)),
+                    _escape(_promotion_status(row)),
+                    _escape(row.get("notes", row.get("result_blockers", ""))),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
             "## Certification Tables",
             "",
             f"Machine audit: `{certification_readiness}`.",
@@ -221,7 +259,7 @@ def _render_markdown(
             "3. Rerun native Q2 Direct / CoT, Self-Consistency, and Best-of-N.",
             "4. Rerun strict native ToT BFS with `run-scheduling-tot-q2`.",
             "5. Rerun clean certification and grounding robustness with current code if their readiness rows are blocked.",
-            "6. Keep Q4 tau/tau2 rows pending until a native tau/tau2 adapter exists.",
+            "6. Run Table10 tau3 native, Best-of-N, canonical controller, and certified-controller rows before promoting the maintained-protocol tool-agent table.",
             "",
             "Only rows marked ready by the relevant readiness CSV should be promoted into paper tables.",
             "",
@@ -300,6 +338,15 @@ def _q4_summary(rows: List[Dict[str, str]]) -> str:
     if _ready_count(rows) == 0:
         return "All Q4 tau/tau2 rows remain pending; the repository still has no native tau/tau2 runner artifact in the audited directories."
     return f"{_ready_count(rows)}/{len(rows)} Q4 rows are ready in the current audit."
+
+
+def _tau3_summary(rows: List[Dict[str, str]]) -> str:
+    if not rows:
+        return "No Table10 tau3 readiness artifact was found."
+    ready = _ready_count(rows)
+    if ready == len(rows):
+        return f"All {ready} Table10 tau3 rows are ready in the current audit."
+    return f"{ready}/{len(rows)} Table10 tau3 rows are ready in the current audit."
 
 
 def _row_count(rows: Iterable[Mapping[str, str]]) -> int:

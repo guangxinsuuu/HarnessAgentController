@@ -65,6 +65,25 @@ Q4_VALUE_GUIDED_DIR="${Q4_VALUE_GUIDED_DIR:-runs/q4_tau_value_guided}"
 Q4_TARGET_PRM_DIR="${Q4_TARGET_PRM_DIR:-runs/q4_tau_target_prm}"
 Q4_SOLVER_CONTROLLER_DIR="${Q4_SOLVER_CONTROLLER_DIR:-runs/q4_tau_solver_controller}"
 
+TAU3_TABLE_BASE_DIR="${TAU3_TABLE_BASE_DIR:-runs/table10_tau3_canonical}"
+TAU3_TABLE_AUDIT_DIR="${TAU3_TABLE_AUDIT_DIR:-${TAU3_TABLE_BASE_DIR}/table10_readiness}"
+TAU3_RUN_PREFLIGHT_DIR="${TAU3_RUN_PREFLIGHT_DIR:-${TAU3_TABLE_BASE_DIR}/run_preflight}"
+TAU3_NATIVE_RETAIL_DIR="${TAU3_NATIVE_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/native_retail}"
+TAU3_NATIVE_AIRLINE_DIR="${TAU3_NATIVE_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/native_airline}"
+TAU3_BEST_OF_N_RETAIL_DIR="${TAU3_BEST_OF_N_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/best_of_n_retail}"
+TAU3_BEST_OF_N_AIRLINE_DIR="${TAU3_BEST_OF_N_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/best_of_n_airline}"
+TAU3_SOLVER_RETAIL_DIR="${TAU3_SOLVER_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_retail}"
+TAU3_SOLVER_AIRLINE_DIR="${TAU3_SOLVER_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_airline}"
+TAU3_SOLVER_CERT_RETAIL_DIR="${TAU3_SOLVER_CERT_RETAIL_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_certified_retail}"
+TAU3_SOLVER_CERT_AIRLINE_DIR="${TAU3_SOLVER_CERT_AIRLINE_DIR:-${TAU3_TABLE_BASE_DIR}/solver_canonical_certified_airline}"
+TAU3_BEST_OF_N="${TAU3_BEST_OF_N:-4}"
+TAU_PYTHON_BIN="${TAU_PYTHON_BIN:-${PYTHON_BIN}}"
+AGENT_LLM="${AGENT_LLM:-openai/gpt-4o-mini}"
+USER_LLM="${USER_LLM:-openai/gpt-4o-mini}"
+NUM_TRIALS="${NUM_TRIALS:-4}"
+MAX_CONCURRENCY="${MAX_CONCURRENCY:-6}"
+TIMEOUT="${TIMEOUT:-300}"
+
 CERTIFICATION_AUDIT_DIR="${CERTIFICATION_AUDIT_DIR:-runs/certification_tables_readiness}"
 CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR="${CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR:-runs/certification_authority_source_audit}"
 CERTIFICATION_DIR="${CERTIFICATION_DIR:-runs/q2_structured_cert_reference_100_seed0}"
@@ -75,7 +94,7 @@ SECRET_AUDIT_DIR="${SECRET_AUDIT_DIR:-runs/secret_safety_audit}"
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/run_paper_audits.sh [all|q2|q4|certification|status]
+  scripts/run_paper_audits.sh [all|q2|q4|tau3|certification|status]
 
 This script runs paper-level promotion audits only. It does not call the LLM
 API, set API keys, or generate new experiment trajectories.
@@ -163,6 +182,9 @@ print_summary() {
   print "q2_remaining_runs_dir: ${Q2_REMAINING_RUNS_DIR}"
   print "q2_run_preflight_dir: ${Q2_RUN_PREFLIGHT_DIR}"
   print "q4_adapter_contract_dir: ${Q4_ADAPTER_CONTRACT_DIR}"
+  print "tau3_table_base_dir: ${TAU3_TABLE_BASE_DIR}"
+  print "tau3_table_audit_dir: ${TAU3_TABLE_AUDIT_DIR}"
+  print "tau3_run_preflight_dir: ${TAU3_RUN_PREFLIGHT_DIR}"
   print "secret_audit_dir: ${SECRET_AUDIT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: not required"
@@ -176,11 +198,42 @@ build_status_report() {
     --output-dir "${STATUS_REPORT_DIR}" \
     --q2-readiness "${Q2_TABLE_AUDIT_DIR}/table5_q2_readiness.csv" \
     --q4-readiness "${Q4_TABLE_AUDIT_DIR}/q4_tau_readiness.csv" \
+    --tau3-readiness "${TAU3_TABLE_AUDIT_DIR}/table10_tau3_readiness.csv" \
     --certification-readiness "${CERTIFICATION_AUDIT_DIR}/certification_tables_readiness.csv" \
     --q2-implementation-matrix "${Q2_IMPLEMENTATION_MATRIX_DIR}/q2_implementation_matrix.csv" \
     --q2-local-primitives "${Q2_LOCAL_PRIMITIVE_AUDIT_DIR}/q2_local_primitive_audit.csv" \
     --certification-authority-source "${CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR}/certification_authority_source_audit.csv" \
     --audit-command "PYTHON_BIN=${PYTHON_BIN} scripts/run_paper_audits.sh all" \
+    --overwrite
+}
+
+build_tau3_run_preflight() {
+  "${PYTHON_BIN}" -m cgr_exp.cli build-table10-tau3-run-preflight \
+    --output-dir "${TAU3_RUN_PREFLIGHT_DIR}" \
+    --base-dir "${TAU3_TABLE_BASE_DIR}" \
+    --expected-test-count "${TEST_COUNT}" \
+    --best-of-n "${TAU3_BEST_OF_N}" \
+    --tau-python-bin "${TAU_PYTHON_BIN}" \
+    --agent-llm "${AGENT_LLM}" \
+    --user-llm "${USER_LLM}" \
+    --num-trials "${NUM_TRIALS}" \
+    --max-concurrency "${MAX_CONCURRENCY}" \
+    --overwrite
+}
+
+audit_tau3_table10() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-table10-tau3 \
+    --output-dir "${TAU3_TABLE_AUDIT_DIR}" \
+    --expected-test-count "${TEST_COUNT}" \
+    --row-dirs \
+      "${TAU3_NATIVE_RETAIL_DIR}" \
+      "${TAU3_NATIVE_AIRLINE_DIR}" \
+      "${TAU3_BEST_OF_N_RETAIL_DIR}" \
+      "${TAU3_BEST_OF_N_AIRLINE_DIR}" \
+      "${TAU3_SOLVER_RETAIL_DIR}" \
+      "${TAU3_SOLVER_AIRLINE_DIR}" \
+      "${TAU3_SOLVER_CERT_RETAIL_DIR}" \
+      "${TAU3_SOLVER_CERT_AIRLINE_DIR}" \
     --overwrite
 }
 
@@ -219,6 +272,8 @@ case "${MODE}" in
     audit_secret_safety
     build_q2_remaining_runs
     build_q2_run_preflight
+    build_tau3_run_preflight
+    audit_tau3_table10
     build_status_report
     ;;
   q2)
@@ -229,6 +284,11 @@ case "${MODE}" in
     print_summary
     audit_q4
     ;;
+  tau3)
+    print_summary
+    build_tau3_run_preflight
+    audit_tau3_table10
+    ;;
   certification)
     print_summary
     audit_certification
@@ -238,6 +298,8 @@ case "${MODE}" in
     audit_secret_safety
     build_q2_remaining_runs
     build_q2_run_preflight
+    build_tau3_run_preflight
+    audit_tau3_table10
     build_status_report
     ;;
   -h|--help|help) usage ;;

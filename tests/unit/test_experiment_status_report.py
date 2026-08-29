@@ -15,6 +15,7 @@ class ExperimentStatusReportTest(unittest.TestCase):
             root = Path(tmp)
             q2 = root / "q2.csv"
             q4 = root / "q4.csv"
+            tau3 = root / "tau3.csv"
             cert = root / "cert.csv"
             matrix = root / "matrix.csv"
             local_primitives = root / "local_primitives.csv"
@@ -42,6 +43,19 @@ class ExperimentStatusReportTest(unittest.TestCase):
                         "result_ready": "False",
                         "result_blockers": "pending",
                         "notes": "native tau artifact missing",
+                    }
+                ],
+            )
+            _write_csv(
+                tau3,
+                [
+                    {
+                        "Domain": "Retail",
+                        "Method": "Solver-derived canonical controller",
+                        "source_artifact": "runs/table10_tau3_canonical/solver_canonical_retail",
+                        "result_ready": "True",
+                        "result_blockers": "",
+                        "notes": "canonical trace audited",
                     }
                 ],
             )
@@ -89,6 +103,7 @@ class ExperimentStatusReportTest(unittest.TestCase):
                 root / "out",
                 q2_readiness=q2,
                 q4_readiness=q4,
+                tau3_readiness=tau3,
                 certification_readiness=cert,
                 q2_implementation_matrix=matrix,
                 q2_local_primitives=local_primitives,
@@ -96,6 +111,7 @@ class ExperimentStatusReportTest(unittest.TestCase):
             )
             self.assertEqual(manifest["q2_rows"], 1)
             self.assertEqual(manifest["q2_local_primitive_ready_rows"], 1)
+            self.assertEqual(manifest["tau3_ready_rows"], 1)
             self.assertEqual(manifest["certification_ready_rows"], 1)
             self.assertEqual(manifest["certification_authority_source_ready_rows"], 1)
             text = (root / "out" / "current_experiment_status.md").read_text(encoding="utf-8")
@@ -108,11 +124,16 @@ class ExperimentStatusReportTest(unittest.TestCase):
             self.assertIn("All Q4 tau/tau2 rows remain pending", text)
             self.assertIn("runs/q4_tau_native", text)
             self.assertIn("native tau artifact missing", text)
+            self.assertIn("Table10 tau3 Canonical Harness Evaluation", text)
+            self.assertIn("Solver-derived canonical controller", text)
+            self.assertIn("runs/table10_tau3_canonical/solver_canonical_retail", text)
+            self.assertIn("canonical trace audited", text)
             self.assertIn("runs/q2_structured_cert_reference_100_seed0", text)
             self.assertIn("Authority source audit", text)
             self.assertIn("1/1 authority checks ready", text)
             saved = json.loads((root / "out" / "current_experiment_status.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["artifact"], "current_experiment_status")
+            self.assertEqual(saved["input_artifacts"]["tau3_readiness"], str(tau3))
             self.assertEqual(saved["input_artifacts"]["q2_local_primitives"], str(local_primitives))
             self.assertEqual(saved["input_artifacts"]["certification_authority_source"], str(authority_source))
 

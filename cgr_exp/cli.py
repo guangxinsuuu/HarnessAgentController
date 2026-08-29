@@ -415,6 +415,7 @@ def main() -> None:
         if name == "build-current-experiment-status":
             p.add_argument("--q2-readiness", type=Path, default=Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv"))
             p.add_argument("--q4-readiness", type=Path, default=Path("runs/q4_tau_table_current_audit/q4_tau_readiness.csv"))
+            p.add_argument("--tau3-readiness", type=Path, default=Path("runs/table10_tau3_canonical/table10_readiness/table10_tau3_readiness.csv"))
             p.add_argument("--certification-readiness", type=Path, default=Path("runs/certification_tables_readiness/certification_tables_readiness.csv"))
             p.add_argument("--q2-implementation-matrix", type=Path, default=Path("runs/q2_implementation_matrix/q2_implementation_matrix.csv"))
             p.add_argument("--q2-local-primitives", type=Path, default=Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv"))
@@ -1591,6 +1592,7 @@ def main() -> None:
                 args.output_dir,
                 q2_readiness=args.q2_readiness,
                 q4_readiness=args.q4_readiness,
+                tau3_readiness=args.tau3_readiness,
                 certification_readiness=args.certification_readiness,
                 q2_implementation_matrix=args.q2_implementation_matrix,
                 q2_local_primitives=args.q2_local_primitives,

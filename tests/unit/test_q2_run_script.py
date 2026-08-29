@@ -87,6 +87,7 @@ class Q2RunScriptTest(unittest.TestCase):
     def test_q2_runbook_uses_current_protocol_directories(self) -> None:
         text = Path("docs/q2_runbook.md").read_text(encoding="utf-8")
         self.assertIn("PYTHON_BIN=.venv/bin/python", text)
+        self.assertIn("docs/q2_remaining_runs.md", text)
         self.assertIn("ortools.sat.python.cp_model", text)
         self.assertIn("q2_structured_100_seed0_runtime_v2", text)
         self.assertIn("q2_native_llm_baselines_100_seed0_sc_v2", text)
@@ -100,6 +101,22 @@ class Q2RunScriptTest(unittest.TestCase):
         self.assertIn("certification_protocol", text)
         self.assertIn("q2_source_ref_verification", text)
         self.assertNotIn("protocol_v2_protocol_v2", text)
+
+    def test_q2_remaining_runs_lists_only_promotion_safe_reruns(self) -> None:
+        text = Path("docs/q2_remaining_runs.md").read_text(encoding="utf-8")
+        self.assertIn("q2_learned_search_100_seed0_rest_gate_v2", text)
+        self.assertIn("q2_native_llm_baselines_100_seed0_sc_v2", text)
+        self.assertIn("q2_tot_bfs_100_seed0_tot_gate_v2", text)
+        self.assertIn("include-target-prm", text)
+        self.assertIn("include-rest-mcts", text)
+        self.assertIn("include-solver-certification", text)
+        self.assertIn("run-scheduling-native-q2", text)
+        self.assertIn("run-scheduling-tot-q2", text)
+        self.assertIn("scripts/run_q2_table4.sh llm", text)
+        self.assertIn("result_ready=True", text)
+        self.assertIn("compute_ready=True", text)
+        self.assertIn("Do not patch these fields into old", text)
+        self.assertIn("metrics by hand", text)
 
 
 if __name__ == "__main__":

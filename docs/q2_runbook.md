@@ -8,6 +8,9 @@ token accounting should remain marked as pending or qualified.
 For the row-level algorithm requirements and source-aligned claim boundaries,
 see `docs/q2_table4_required_algorithms.md`.
 
+For the current minimal rerun queue after reading the readiness blockers, see
+`docs/q2_remaining_runs.md`.
+
 ## Global Setup
 
 Real-LLM rows require an OpenAI-compatible chat-completions endpoint:

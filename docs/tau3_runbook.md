@@ -11,7 +11,8 @@ auditable protocol.
   verifier, and pass-k aggregation.
 - Use either `OPENAI_API_KEY` or `CGR_LLM_API_KEY` for API-backed rows. The
   runner maps `CGR_LLM_API_KEY` into `OPENAI_API_KEY` before calling
-  tau2/litellm.
+  tau2/litellm, so setting either one is enough when using
+  `scripts/run_table10_tau3.sh`.
 - Build the source controller before canonical tau3 runs. This is local and
   does not use the API.
 - Promote rows only when `table10_tau3_readiness.csv` marks them ready.
@@ -177,9 +178,15 @@ For faster but heavier API usage:
 PARALLEL_METHOD_GROUPS=1 scripts/run_table10_tau3.sh full
 ```
 
-With `PARALLEL_DOMAINS=1`, effective API concurrency is roughly
+Preflight reports two concurrency numbers. `Raw effective max concurrency`
+is the configured request capacity after domain, method-group, and
+candidate-worker multipliers. `Effective max concurrency` caps that raw value
+by the number of runnable tau2 simulations in the selected run group. For
+example, a smoke group with only 16 simulations can report raw capacity 48 but
+effective concurrency 16.
+With `PARALLEL_DOMAINS=1`, raw native API concurrency is roughly
 `2 * MAX_CONCURRENCY`. With `PARALLEL_METHOD_GROUPS=1`, the `full` target can
-reach roughly `8 * MAX_CONCURRENCY`.
+reach roughly `8 * MAX_CONCURRENCY` before the runnable-work cap.
 For solver-controller rows, `CANDIDATE_WORKERS` also parallelizes the internal
 candidate samples at each decision point; set `CANDIDATE_WORKERS=1` for a
 strictly serial controller run.

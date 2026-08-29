@@ -1095,7 +1095,15 @@ def _tau_manifest(method: str, domain: str, task_count: int, num_trials: int, of
             "uses_official_user_simulator": True,
             "uses_official_task_verifier": True,
             "preserves_tool_state": True,
-            "reported_metrics": ["pass^1", "pass^4", "violations", "tool_calls", "tokens"],
+            "reported_metrics": [
+                "pass^1",
+                "pass^4",
+                "violations",
+                "tool_calls",
+                "llm_calls",
+                "tokens",
+                "wall_clock_seconds",
+            ],
         },
         "method_protocols": {
             method: {

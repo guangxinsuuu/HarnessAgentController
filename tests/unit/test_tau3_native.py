@@ -139,6 +139,9 @@ class Tau3NativeTest(unittest.TestCase):
             )
             self.assertEqual(canonical["row"]["Method"], "Solver-derived canonical controller")
             self.assertEqual(certified["row"]["Method"], "Solver-derived canonical controller + certified filter")
+            reported_metrics = canonical["manifest"]["native_protocol"]["reported_metrics"]
+            self.assertIn("llm_calls", reported_metrics)
+            self.assertIn("wall_clock_seconds", reported_metrics)
 
     def test_existing_complete_results_skip_native_rerun(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

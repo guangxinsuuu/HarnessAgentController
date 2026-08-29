@@ -28,10 +28,11 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
             "cp_model API: NewOptionalIntervalVar / AddNoOverlap / Minimize",
         ],
         "official_primitives": [
-            "integer variables for scheduling decisions",
+            "integer scheduling variables",
             "interval variables",
-            "NoOverlap machine-capacity constraints",
-            "precedence constraints",
+            "optional interval variables",
+            "NoOverlap machine constraints",
+            "precedence/release constraints",
             "objective minimization",
         ],
         "local_promotion_gates": [
@@ -53,6 +54,7 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
         ],
         "official_primitives": [
             "single chain-of-thought reasoning path",
+            "single reasoning path",
             "intermediate natural-language rationale",
             "final answer extraction",
         ],
@@ -77,6 +79,7 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
             "multiple independent reasoning paths",
             "final-answer aggregation",
             "consistency-based selection",
+            "majority/consistency selection",
         ],
         "local_promotion_gates": [
             "selection_rule majority_job_order_then_first_valid",
@@ -126,6 +129,8 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
             "method_evaluate",
             "method_select",
             "breadth-first search",
+            "value or vote evaluation over generated candidates",
+            "value cache / duplicate candidate handling",
             "greedy top-b selection",
         ],
         "local_promotion_gates": [
@@ -151,6 +156,8 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
         ],
         "official_primitives": [
             "intermediate-step labels",
+            "per-step candidate completions",
+            "step rating / process supervision",
             "process supervision",
             "reward/value model over partial solutions",
         ],
@@ -184,6 +191,8 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
             "MCTS expansion",
             "MCTS simulation/evaluation",
             "MCTS backpropagation",
+            "visit-count exploration bonus",
+            "step-value/process-reward guided child scoring",
             "process reward guidance",
         ],
         "local_promotion_gates": [
@@ -289,8 +298,9 @@ def _audit_source_evidence_row(method: str) -> Dict[str, object]:
     if not source_anchors:
         blockers.append("missing official_source_anchors")
     contract_primitives = {str(item) for item in contract.get("source_primitives", [])}
-    if official_primitives and contract_primitives and not (set(official_primitives) & contract_primitives):
-        blockers.append("official_primitives do not intersect contract source_primitives")
+    missing_contract_primitives = sorted(contract_primitives - set(official_primitives))
+    if official_primitives and missing_contract_primitives:
+        blockers.append("official_primitives missing contract source_primitives: " + ", ".join(missing_contract_primitives))
     promotion_gates = [str(item) for item in evidence.get("local_promotion_gates", [])] if isinstance(evidence.get("local_promotion_gates"), list) else []
     if not promotion_gates:
         blockers.append("missing local_promotion_gates")

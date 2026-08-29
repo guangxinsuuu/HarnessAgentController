@@ -68,8 +68,10 @@ baseline row unless they also declare the official-method primitive that the
 local Scheduling adaptation implements.
 
 The same readiness gate also checks `claim_scope`,
-`official_reproduction`, `required_table_wording`, and `non_claims` against the
-method contract. This matters for adapted baselines: for example, a
+`official_reproduction`, `required_table_wording`, `source_primitives`, and
+`non_claims` against the method contract. Source evidence must cover every
+contract primitive, not merely overlap with one related primitive. This matters
+for adapted baselines: for example, a
 ReST-MCTS-style artifact may not promote itself as a full official ReST-MCTS*
 reproduction unless the full iterative self-training protocol has actually
 been implemented and evaluated.

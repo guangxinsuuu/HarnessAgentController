@@ -132,7 +132,7 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertTrue(evidence["local_promotion_gates"], method)
             declared = {str(item) for item in evidence["official_primitives"]}
             required = {str(item) for item in contract["source_primitives"]}
-            self.assertTrue(required & declared, method)
+            self.assertFalse(required - declared, method)
             if str(evidence["source_url"]).startswith("https://github.com/"):
                 self.assertEqual(len(str(evidence["source_revision"])), 40, method)
                 self.assertIn(str(evidence["source_revision"]), str(evidence["source_revision_url"]), method)
@@ -169,6 +169,9 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertIn("openai/prm800k/data/*.jsonl::label.steps", by_method["Target-PRM priority"]["official_code_refs"])
             self.assertIn("method_generate", by_method["Tree of Thoughts"]["official_source_anchors"])
             self.assertIn("process-supervision", by_method["Target-PRM priority"]["official_source_anchors"])
+            self.assertIn("value cache / duplicate candidate handling", by_method["Tree of Thoughts"]["official_primitives"])
+            self.assertIn("step rating / process supervision", by_method["Target-PRM priority"]["official_primitives"])
+            self.assertIn("visit-count exploration bonus", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["official_primitives"])
 
     def test_source_ref_verifier_writes_static_readiness_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

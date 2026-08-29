@@ -21,6 +21,7 @@ from cgr_exp.tau3_native import (
     run_tau3_native,
     summarize_table10_tau3_progress,
 )
+from cgr_exp.tau3_contract_adapter import tau3_adapter_manifest
 
 
 class Tau3NativeTest(unittest.TestCase):
@@ -252,6 +253,9 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(certified["row"]["Method"], "Solver-derived canonical controller + certified filter")
             command_manifest = json.loads((root / "certified" / "tau3_native_command.json").read_text(encoding="utf-8"))
             self.assertEqual(command_manifest["candidate_workers"], 3)
+            self.assertEqual(command_manifest["tau3_adapter_protocol"]["adapter"], "Tau3AdapterV1")
+            self.assertFalse(command_manifest["tau3_adapter_protocol"]["uses_tau3_train_trajectories"])
+            self.assertFalse(command_manifest["tau3_adapter_protocol"]["oracle_visible_to_controller"])
             reported_metrics = canonical["manifest"]["native_protocol"]["reported_metrics"]
             self.assertIn("llm_calls", reported_metrics)
             self.assertIn("wall_clock_seconds", reported_metrics)
@@ -405,6 +409,7 @@ class Tau3NativeTest(unittest.TestCase):
                 json.dumps(
                     {
                         "solver_ranker_checkpoint": str(source / "generic_harness_ranker.json"),
+                        "tau3_adapter_protocol": tau3_adapter_manifest(),
                         "source_controller_protocol": {
                             "manifest_found": True,
                             "controller_checkpoint_frozen": True,
@@ -457,6 +462,9 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(canonical_row["source_generator_anonymized_tools"])
             self.assertTrue(canonical_row["tool_identity_generalization_ready"])
             self.assertTrue(canonical_row["contract_coverage_stress_ready"])
+            self.assertEqual(canonical_row["tau3_adapter"], "Tau3AdapterV1")
+            self.assertTrue(canonical_row["tau3_adapter_train_trajectories_hidden"])
+            self.assertTrue(canonical_row["tau3_adapter_oracle_hidden"])
             self.assertEqual(canonical_row["canonical_ranker_events"], 1)
             self.assertEqual(canonical_row["ranker_checkpoint_loaded_events"], 1)
             self.assertTrue(canonical_row["canonical_feature_schema_match"])
@@ -511,6 +519,7 @@ class Tau3NativeTest(unittest.TestCase):
                 json.dumps(
                     {
                         "solver_ranker_checkpoint": str(source / "generic_harness_ranker.json"),
+                        "tau3_adapter_protocol": tau3_adapter_manifest(),
                         "source_controller_protocol": {
                             "manifest_found": True,
                             "controller_checkpoint_frozen": True,

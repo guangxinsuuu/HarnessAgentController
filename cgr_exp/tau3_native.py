@@ -14,6 +14,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.q4_tau_source_evidence import TAU2_BENCH_SOURCE_URL, q4_tau_source_evidence
+from cgr_exp.tau3_contract_adapter import tau3_adapter_manifest
 
 TAU2_SOURCE_REVISION = "a2c024725189473d2d7cea3a5cfdbcc67478e41f"
 TAU2_SUBMODULE = Path("third_party/tau2-bench")
@@ -113,6 +114,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         "candidate_retries": config.candidate_retries,
         "candidate_retry_backoff": config.candidate_retry_backoff,
         "source_controller_protocol": _source_controller_protocol(config.solver_ranker_checkpoint),
+        "tau3_adapter_protocol": tau3_adapter_manifest() if config.method == "solver" else {},
         "enable_certified_filter": config.enable_certified_filter,
         "controller_trace_path": None if controller_trace_path is None else str(controller_trace_path),
         "resume_safe": config.auto_resume and not config.force,
@@ -596,6 +598,20 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
                 blockers.append("source generator used tau3 trajectories")
             if source_protocol.get("tau3_heldout_test_seen_before_freeze"):
                 blockers.append("tau3 heldout test influenced source generator freeze")
+            adapter_protocol = command_manifest.get("tau3_adapter_protocol")
+            adapter_protocol = adapter_protocol if isinstance(adapter_protocol, Mapping) else {}
+            if adapter_protocol.get("adapter") != "Tau3AdapterV1":
+                blockers.append("Tau3AdapterV1 manifest missing")
+            if adapter_protocol.get("uses_tau3_train_trajectories"):
+                blockers.append("tau3 adapter used tau3 train trajectories")
+            if adapter_protocol.get("uses_tau3_heldout_outcomes"):
+                blockers.append("tau3 adapter used heldout outcomes")
+            if adapter_protocol.get("oracle_visible_to_controller"):
+                blockers.append("tau3 adapter exposes oracle to controller")
+            if adapter_protocol.get("oracle_used_for_candidate_generation"):
+                blockers.append("tau3 adapter uses oracle for candidate generation")
+            if adapter_protocol.get("oracle_used_for_filtering"):
+                blockers.append("tau3 adapter uses oracle for filtering")
             if not source_protocol.get("source_generator_distribution_fixed_before_target_test_evaluation"):
                 blockers.append("source generator freeze evidence missing")
             if not source_protocol.get("source_generator_anonymized_tool_names"):
@@ -1113,6 +1129,9 @@ def _table10_audit_row(
     task_count = int(_as_float(row.get("task_count")) if not math.isnan(_as_float(row.get("task_count"))) else 0)
     source_protocol = source_protocol or {}
     trace_summary = trace_summary or {}
+    command_manifest = _read_json_or_empty(row_dir / "tau3_native_command.json")
+    adapter_protocol = command_manifest.get("tau3_adapter_protocol")
+    adapter_protocol = adapter_protocol if isinstance(adapter_protocol, Mapping) else {}
     notes = _table10_evidence_notes(source_protocol, trace_summary)
     return {
         "Method": method,
@@ -1129,6 +1148,9 @@ def _table10_audit_row(
         "tool_identity_generalization_top1_delta": source_protocol.get("tool_identity_generalization_top1_delta", ""),
         "contract_coverage_stress_ready": source_protocol.get("contract_coverage_stress_ready", ""),
         "contract_coverage_black_box_top1_delta_from_full": source_protocol.get("contract_coverage_black_box_top1_delta_from_full", ""),
+        "tau3_adapter": adapter_protocol.get("adapter", ""),
+        "tau3_adapter_train_trajectories_hidden": adapter_protocol.get("uses_tau3_train_trajectories", "") is False,
+        "tau3_adapter_oracle_hidden": adapter_protocol.get("oracle_visible_to_controller", "") is False,
         "canonical_ranker_events": trace_summary.get("canonical_ranker_events", ""),
         "ranker_checkpoint_loaded_events": trace_summary.get("ranker_checkpoint_loaded_events", ""),
         "canonical_feature_schema_hash": trace_summary.get("canonical_feature_schema_hash", ""),

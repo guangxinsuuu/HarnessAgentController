@@ -105,6 +105,11 @@ summarize_progress() {
     --overwrite
 }
 
+refresh_status() {
+  summarize_progress
+  build_run_preflight
+}
+
 run_native_domain() {
   local domain="$1"
   local count="$2"
@@ -223,6 +228,7 @@ run_table10_full() {
   audit_solver_canonical_traces
   audit_solver_canonical_certified_traces
   build_table
+  refresh_status
 }
 
 build_best_of_n() {
@@ -331,6 +337,7 @@ case "${1:-}" in
     run_domain_pair "${NUM_TASKS}" native
     build_best_of_n
     build_table
+    refresh_status
     ;;
   best-of-n)
     build_best_of_n
@@ -342,6 +349,7 @@ case "${1:-}" in
   solver-full)
     run_preflight
     run_domain_pair "${NUM_TASKS}" solver solver
+    refresh_status
     ;;
   solver-canonical-smoke)
     run_preflight
@@ -349,12 +357,14 @@ case "${1:-}" in
     run_domain_pair 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
     audit_controller_trace_pair solver_canonical_smoke
     audit_smoke_gate_pair solver_canonical_smoke
+    refresh_status
     ;;
   solver-canonical-full)
     run_preflight
     ensure_source_controller
     run_domain_pair "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
     audit_solver_canonical_traces
+    refresh_status
     ;;
   solver-canonical-certified-smoke)
     run_preflight
@@ -362,12 +372,14 @@ case "${1:-}" in
     run_domain_pair 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
     audit_controller_trace_pair solver_canonical_certified_smoke
     audit_smoke_gate_pair solver_canonical_certified_smoke
+    refresh_status
     ;;
   solver-canonical-certified-full)
     run_preflight
     ensure_source_controller
     run_domain_pair "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
     audit_solver_canonical_certified_traces
+    refresh_status
     ;;
   full)
     run_table10_full
@@ -384,6 +396,7 @@ case "${1:-}" in
   build)
     build_table
     audit_table
+    refresh_status
     ;;
   *)
     usage

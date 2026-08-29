@@ -142,6 +142,9 @@ Only move from smoke to full when the corresponding gate has
 `all_smoke_rows_ready=True` in `table10_tau3_smoke_gate.json`. The smoke
 targets call the gate with `--fail-on-not-ready`, so a failed gate exits
 nonzero instead of silently producing an unusable smoke row.
+Successful smoke and full targets refresh `progress/` and `run_preflight/`
+automatically, so rerun `preflight-runs` manually only when inspecting a
+partially failed command.
 
 ## Full Rows
 

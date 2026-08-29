@@ -112,6 +112,36 @@ class CliQ4TauTest(unittest.TestCase):
             self.assertEqual(manifest["all_static_refs_ready"], True)
             self.assertTrue((out / "q4_tau_source_ref_verification.csv").exists())
 
+    def test_tau3_smoke_gate_cli_can_fail_on_not_ready_after_writing_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row = root / "solver_canonical_smoke_retail"
+            row.mkdir()
+            out = root / "gate"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "audit-table10-tau3-smoke",
+                    "--output-dir",
+                    str(out),
+                    "--expected-smoke-count",
+                    "2",
+                    "--row-dirs",
+                    str(row),
+                    "--fail-on-not-ready",
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 1)
+            manifest = json.loads((out / "table10_tau3_smoke_gate.json").read_text(encoding="utf-8"))
+            self.assertFalse(manifest["all_smoke_rows_ready"])
+            self.assertTrue((out / "table10_tau3_smoke_gate.csv").exists())
+
 
 def _read_csv(path: Path):
     with path.open(newline="", encoding="utf-8") as handle:

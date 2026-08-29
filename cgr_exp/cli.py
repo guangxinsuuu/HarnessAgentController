@@ -407,6 +407,7 @@ def main() -> None:
         if name == "audit-table10-tau3-smoke":
             p.add_argument("--expected-smoke-count", type=int, default=2)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
+            p.add_argument("--fail-on-not-ready", action="store_true", default=False)
         if name == "build-tau3-best-of-n":
             p.add_argument("--native-dir", type=Path, required=True)
             p.add_argument("--n", type=int, default=4)
@@ -1378,6 +1379,8 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table10_tau3_smoke_gate.csv'}")
+            if args.fail_on_not_ready and not manifest["all_smoke_rows_ready"]:
+                raise SystemExit(1)
             return
         if args.command == "audit-tau3-controller-trace":
             manifest = audit_tau3_controller_trace(args.output_dir, args.trace_path)

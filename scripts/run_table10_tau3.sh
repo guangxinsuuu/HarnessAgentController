@@ -302,6 +302,7 @@ audit_smoke_gate_pair() {
     --row-dirs \
       "${BASE_DIR}/${suffix}_retail" \
       "${BASE_DIR}/${suffix}_airline" \
+    --fail-on-not-ready \
     --overwrite
 }
 

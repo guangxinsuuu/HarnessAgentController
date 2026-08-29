@@ -134,7 +134,9 @@ They also write a promotion gate:
 - `solver_canonical_certified_smoke_gate/table10_tau3_smoke_gate.csv`
 
 Only move from smoke to full when the corresponding gate has
-`all_smoke_rows_ready=True` in `table10_tau3_smoke_gate.json`.
+`all_smoke_rows_ready=True` in `table10_tau3_smoke_gate.json`. The smoke
+targets call the gate with `--fail-on-not-ready`, so a failed gate exits
+nonzero instead of silently producing an unusable smoke row.
 
 ## Full Rows
 

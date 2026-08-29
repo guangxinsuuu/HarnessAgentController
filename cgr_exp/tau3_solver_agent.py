@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -36,9 +37,11 @@ class Tau3SolverControllerAgent(LLMAgent):
         max_tool_budget: int = 200,
         controller_trace_path: Optional[str] = None,
         enable_certified_filter: bool = False,
+        candidate_workers: int = 1,
     ):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self.candidate_count = max(1, int(candidate_count))
+        self.candidate_workers = max(1, int(candidate_workers))
         self.max_turns = max(1, int(max_turns))
         self.max_tool_budget = max(1, int(max_tool_budget))
         self.ranker_checkpoint = ranker_checkpoint
@@ -93,22 +96,26 @@ class Tau3SolverControllerAgent(LLMAgent):
         return candidates[fallback_index]
 
     def _sample_candidates(self, state: LLMAgentState) -> List[AssistantMessage]:
-        candidates: List[AssistantMessage] = []
-        for idx in range(self.candidate_count):
-            llm_args = deepcopy(self.llm_args)
-            if "seed" in llm_args:
-                llm_args["seed"] = int(llm_args["seed"]) + idx
-            if idx > 0 and self.candidate_count > 1:
-                llm_args["temperature"] = max(float(llm_args.get("temperature", 0.0)), 0.2)
-            candidate = generate(
-                model=self.llm,
-                tools=self.tools,
-                messages=state.system_messages + state.messages,
-                call_name="cgr_solver_controller_candidate",
-                **llm_args,
-            )
-            candidates.append(candidate)
-        return candidates
+        messages = state.system_messages + state.messages
+        if self.candidate_workers <= 1 or self.candidate_count == 1:
+            return [self._sample_candidate(idx, messages) for idx in range(self.candidate_count)]
+        workers = min(self.candidate_workers, self.candidate_count)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            return list(executor.map(lambda idx: self._sample_candidate(idx, messages), range(self.candidate_count)))
+
+    def _sample_candidate(self, idx: int, messages: List[APICompatibleMessage]) -> AssistantMessage:
+        llm_args = deepcopy(self.llm_args)
+        if "seed" in llm_args:
+            llm_args["seed"] = int(llm_args["seed"]) + idx
+        if idx > 0 and self.candidate_count > 1:
+            llm_args["temperature"] = max(float(llm_args.get("temperature", 0.0)), 0.2)
+        return generate(
+            model=self.llm,
+            tools=self.tools,
+            messages=messages,
+            call_name="cgr_solver_controller_candidate",
+            **llm_args,
+        )
 
     def _score_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, str]:
         if self.ranker is not None:
@@ -274,6 +281,7 @@ class Tau3SolverControllerAgent(LLMAgent):
 def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
     llm_args = deepcopy(kwargs.get("llm_args") or {})
     candidate_count = int(llm_args.pop("cgr_candidate_count", 4))
+    candidate_workers = int(llm_args.pop("cgr_candidate_workers", 1))
     ranker_checkpoint = llm_args.pop("cgr_ranker_checkpoint", None)
     max_turns = int(llm_args.pop("cgr_max_turns", 200))
     max_tool_budget = int(llm_args.pop("cgr_max_tool_budget", max_turns))
@@ -285,6 +293,7 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
         llm=kwargs.get("llm"),
         llm_args=llm_args,
         candidate_count=candidate_count,
+        candidate_workers=candidate_workers,
         ranker_checkpoint=ranker_checkpoint,
         max_turns=max_turns,
         max_tool_budget=max_tool_budget,

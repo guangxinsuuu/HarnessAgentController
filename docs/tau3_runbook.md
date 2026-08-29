@@ -92,6 +92,7 @@ USER_LLM=openai/gpt-4o-mini \
 BASE_DIR=runs/table10_tau3 \
 NUM_TRIALS=4 \
 MAX_CONCURRENCY=4 \
+CANDIDATE_WORKERS=4 \
 SEED=0 \
 scripts/run_table10_tau3.sh solver-canonical-smoke
 ```
@@ -106,6 +107,7 @@ USER_LLM=openai/gpt-4o-mini \
 BASE_DIR=runs/table10_tau3 \
 NUM_TRIALS=4 \
 MAX_CONCURRENCY=4 \
+CANDIDATE_WORKERS=4 \
 SEED=0 \
 scripts/run_table10_tau3.sh solver-canonical-certified-smoke
 ```
@@ -123,6 +125,7 @@ BASE_DIR=runs/table10_tau3 \
 NUM_TASKS=100 \
 NUM_TRIALS=4 \
 MAX_CONCURRENCY=6 \
+CANDIDATE_WORKERS=4 \
 PARALLEL_DOMAINS=1 \
 PARALLEL_METHOD_GROUPS=0 \
 SEED=0 \
@@ -138,6 +141,9 @@ PARALLEL_METHOD_GROUPS=1 scripts/run_table10_tau3.sh full
 With `PARALLEL_DOMAINS=1`, effective API concurrency is roughly
 `2 * MAX_CONCURRENCY`. With `PARALLEL_METHOD_GROUPS=1`, the `full` target can
 reach roughly `8 * MAX_CONCURRENCY`.
+For solver-controller rows, `CANDIDATE_WORKERS` also parallelizes the internal
+candidate samples at each decision point; set `CANDIDATE_WORKERS=1` for a
+strictly serial controller run.
 
 ## Multi-Seed
 

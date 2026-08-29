@@ -108,6 +108,35 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertNotIn("get_order", trace_text)
         self.assertNotIn("update_order", trace_text)
 
+    def test_parallel_candidate_sampling_preserves_index_order_and_args(self) -> None:
+        seen: list[tuple[int, float]] = []
+
+        def fake_generate(**kwargs):
+            seen.append((kwargs["seed"], kwargs["temperature"]))
+            seed = kwargs["seed"]
+            name = "get_order" if seed == 7 else "update_order"
+            return AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name=name, arguments={"order_id": str(seed)})],
+                cost=0.01,
+                usage={"prompt_tokens": 1, "completion_tokens": 1},
+            )
+
+        agent = Tau3SolverControllerAgent(
+            [as_tool(_get_order), as_tool(_update_order)],
+            "policy",
+            "mock",
+            {"temperature": 0, "seed": 7},
+            candidate_count=3,
+            candidate_workers=3,
+        )
+        state = agent.get_init_state()
+        with patch("cgr_exp.tau3_solver_agent.generate", side_effect=fake_generate):
+            candidates = agent._sample_candidates(state)
+        self.assertEqual([candidate.tool_calls[0].arguments["order_id"] for candidate in candidates], ["7", "8", "9"])
+        self.assertEqual(sorted(seen), [(7, 0), (8, 0.2), (9, 0.2)])
+
     def test_certified_filter_prunes_unknown_tool_without_oracle(self) -> None:
         calls = [
             AssistantMessage(

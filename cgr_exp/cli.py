@@ -370,6 +370,7 @@ def main() -> None:
             p.add_argument("--force", action="store_true", default=False)
             p.add_argument("--solver-ranker-checkpoint", type=Path, default=None)
             p.add_argument("--enable-certified-filter", action="store_true", default=False)
+            p.add_argument("--candidate-workers", type=int, default=1)
         if name == "build-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
@@ -1212,6 +1213,7 @@ def main() -> None:
                     force=args.force,
                     solver_ranker_checkpoint=args.solver_ranker_checkpoint,
                     enable_certified_filter=args.enable_certified_filter,
+                    candidate_workers=args.candidate_workers,
                 )
             )
             row = manifest["row"]
@@ -1224,6 +1226,7 @@ def main() -> None:
                 "method": args.method,
                 "solver_ranker_checkpoint": None if args.solver_ranker_checkpoint is None else str(args.solver_ranker_checkpoint),
                 "enable_certified_filter": args.enable_certified_filter,
+                "candidate_workers": args.candidate_workers,
                 "num_tasks": args.num_tasks,
                 "num_trials": args.num_trials,
                 "pass^1": row.get("pass^1"),

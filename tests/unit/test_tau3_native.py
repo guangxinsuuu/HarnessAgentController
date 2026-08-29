@@ -30,6 +30,7 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn('export OPENAI_API_KEY="${CGR_LLM_API_KEY}"', text)
         self.assertIn("missing OPENAI_API_KEY or CGR_LLM_API_KEY", text)
         self.assertIn("run_domain_pair() {\n  require_tau3_api_key", text)
+        self.assertIn("CANDIDATE_WORKERS", text)
         self.assertIn("source-controller-smoke", text)
         self.assertIn("run_source_controller_smoke", text)
         result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
@@ -89,6 +90,7 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("source_controller_seed${seed}/generic_harness_ranker.json", text)
         self.assertIn("OPENAI_API_KEY", text)
         self.assertIn("CGR_LLM_API_KEY", text)
+        self.assertIn("CANDIDATE_WORKERS=4", text)
         self.assertIn("tool-identity stress passed", text)
         self.assertIn("contract-coverage stress passed", text)
         self.assertIn("result_ready=True", text)
@@ -207,10 +209,13 @@ class Tau3NativeTest(unittest.TestCase):
                     dry_run=True,
                     solver_ranker_checkpoint=root / "ranker.json",
                     enable_certified_filter=True,
+                    candidate_workers=3,
                 )
             )
             self.assertEqual(canonical["row"]["Method"], "Solver-derived canonical controller")
             self.assertEqual(certified["row"]["Method"], "Solver-derived canonical controller + certified filter")
+            command_manifest = json.loads((root / "certified" / "tau3_native_command.json").read_text(encoding="utf-8"))
+            self.assertEqual(command_manifest["candidate_workers"], 3)
             reported_metrics = canonical["manifest"]["native_protocol"]["reported_metrics"]
             self.assertIn("llm_calls", reported_metrics)
             self.assertIn("wall_clock_seconds", reported_metrics)

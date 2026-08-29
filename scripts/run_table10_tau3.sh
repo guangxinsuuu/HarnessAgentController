@@ -9,6 +9,7 @@ NUM_TASKS="${NUM_TASKS:-100}"
 NUM_TRIALS="${NUM_TRIALS:-4}"
 MAX_CONCURRENCY="${MAX_CONCURRENCY:-6}"
 WORKERS="${WORKERS:-0}"
+CANDIDATE_WORKERS="${CANDIDATE_WORKERS:-4}"
 TIMEOUT="${TIMEOUT:-300}"
 PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-1}"
 PARALLEL_METHOD_GROUPS="${PARALLEL_METHOD_GROUPS:-0}"
@@ -34,6 +35,7 @@ Environment overrides:
   NUM_TASKS=100
   NUM_TRIALS=4
   MAX_CONCURRENCY=6
+  CANDIDATE_WORKERS=4
   PARALLEL_DOMAINS=1
   PARALLEL_METHOD_GROUPS=0
   WORKERS=0
@@ -114,6 +116,7 @@ run_native_domain() {
     --timeout "${TIMEOUT}" \
     --max-concurrency "${MAX_CONCURRENCY}" \
     --workers "${WORKERS}" \
+    --candidate-workers "${CANDIDATE_WORKERS}" \
     --seed "${SEED}" \
     --tau-python-bin "${TAU_PYTHON_BIN}" \
     --auto-resume \

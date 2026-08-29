@@ -67,6 +67,7 @@ class Tau3RunConfig:
     force: bool = False
     solver_ranker_checkpoint: Optional[Path] = None
     enable_certified_filter: bool = False
+    candidate_workers: int = 1
 
 
 def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
@@ -100,6 +101,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         "max_concurrency": config.max_concurrency,
         "workers": config.workers,
         "solver_ranker_checkpoint": None if config.solver_ranker_checkpoint is None else str(config.solver_ranker_checkpoint),
+        "candidate_workers": config.candidate_workers,
         "source_controller_protocol": _source_controller_protocol(config.solver_ranker_checkpoint),
         "enable_certified_filter": config.enable_certified_filter,
         "controller_trace_path": None if controller_trace_path is None else str(controller_trace_path),
@@ -155,6 +157,7 @@ def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subpr
             registry.register_agent_factory(create_tau3_solver_controller_agent, "cgr_solver_controller")
         llm_args = json.loads(config.agent_llm_args)
         llm_args.setdefault("cgr_candidate_count", 4)
+        llm_args.setdefault("cgr_candidate_workers", config.candidate_workers)
         if config.solver_ranker_checkpoint is not None:
             llm_args["cgr_ranker_checkpoint"] = str(config.solver_ranker_checkpoint)
         if config.enable_certified_filter:

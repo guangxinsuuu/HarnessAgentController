@@ -18,6 +18,7 @@ Q2_LOCAL_IMPLEMENTATION_PATHS: Dict[str, List[str]] = {
     "Best-of-N": ["cgr_exp/scheduling_native_q2.py"],
     "Tree of Thoughts": ["cgr_exp/scheduling_tot_q2.py"],
     "Target-PRM priority": ["cgr_exp/scheduling_transfer.py"],
+    "Solver-PRM priority": ["cgr_exp/scheduling_transfer.py"],
     "PRM-guided MCTS (ReST-MCTS-style)": ["cgr_exp/scheduling_transfer.py"],
     "Solver-trained priority": ["cgr_exp/scheduling_transfer.py"],
     "Solver-trained priority + certified pruning": [
@@ -40,6 +41,13 @@ Q2_REQUIRED_ARTIFACTS: Dict[str, List[str]] = {
         "target_prm_trace_records.jsonl",
         "target_prm_train_pairs.jsonl",
         "target_prm_label_manifest.json",
+    ],
+    "Solver-PRM priority": [
+        "scheduling_llm_pilot_metrics.json",
+        "solver_prm_ranker.json",
+        "solver_prm_trace_records.jsonl",
+        "solver_prm_train_pairs.jsonl",
+        "solver_prm_label_manifest.json",
     ],
     "PRM-guided MCTS (ReST-MCTS-style)": [
         "scheduling_llm_pilot_metrics.json",

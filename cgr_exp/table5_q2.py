@@ -18,6 +18,7 @@ TABLE5_METHODS = [
     ("Best-of-N", "Frozen", None, "native"),
     ("Tree of Thoughts", "Online", None, "native"),
     ("Target-PRM priority", "In-domain trained", "Target-PRM", "scheduling"),
+    ("Solver-PRM priority", "Zero-shot transfer", "Solver-PRM", "scheduling"),
     ("PRM-guided MCTS (ReST-MCTS-style)", "In-domain trained", "PRM-guided MCTS (ReST-MCTS-style)", "scheduling"),
     ("Solver-trained priority", "Zero-shot transfer", "Solver-trained MLP", "scheduling"),
     ("Solver-trained priority + certified pruning", "Zero-shot transfer", "Solver-trained MLP + certified pruning", "scheduling"),
@@ -37,6 +38,10 @@ TABLE5_SECTIONS = [
         {"Target-PRM priority", "PRM-guided MCTS (ReST-MCTS-style)"},
     ),
     (
+        "Source PRM control",
+        {"Solver-PRM priority"},
+    ),
+    (
         "Ours -- solver-to-LLM zero-shot transfer",
         {"Solver-trained priority", "Solver-trained priority + certified pruning"},
     ),
@@ -49,6 +54,7 @@ def build_table5_q2_results(
     expected_test_count: int = 100,
     gpt_frontier_rank_dir: Optional[Path] = None,
     target_prm_dir: Optional[Path] = None,
+    solver_prm_dir: Optional[Path] = None,
     direct_dir: Optional[Path] = None,
     self_consistency_dir: Optional[Path] = None,
     best_of_n_dir: Optional[Path] = None,
@@ -65,6 +71,7 @@ def build_table5_q2_results(
         "Best-of-N": best_of_n_dir,
         "Tree of Thoughts": gpt_frontier_rank_dir,
         "Target-PRM priority": target_prm_dir,
+        "Solver-PRM priority": solver_prm_dir,
         "PRM-guided MCTS (ReST-MCTS-style)": rest_mcts_dir,
         "Solver-trained priority": solver_prior_dir,
         "Solver-trained priority + certified pruning": solver_certification_dir,
@@ -102,6 +109,7 @@ def build_table5_q2_results(
         "expected_test_count": expected_test_count,
         "gpt_frontier_rank_dir": None if gpt_frontier_rank_dir is None else str(gpt_frontier_rank_dir),
         "target_prm_dir": None if target_prm_dir is None else str(target_prm_dir),
+        "solver_prm_dir": None if solver_prm_dir is None else str(solver_prm_dir),
         "structured_dir": None if structured_dir is None else str(structured_dir),
         "rows": rows,
         "method_alignment": q2_method_contracts([row["Method"] for row in rows]),
@@ -120,6 +128,7 @@ def audit_table5_q2_readiness(
     expected_test_count: int = 100,
     gpt_frontier_rank_dir: Optional[Path] = None,
     target_prm_dir: Optional[Path] = None,
+    solver_prm_dir: Optional[Path] = None,
     direct_dir: Optional[Path] = None,
     self_consistency_dir: Optional[Path] = None,
     best_of_n_dir: Optional[Path] = None,
@@ -134,6 +143,7 @@ def audit_table5_q2_readiness(
         expected_test_count=expected_test_count,
         gpt_frontier_rank_dir=gpt_frontier_rank_dir,
         target_prm_dir=target_prm_dir,
+        solver_prm_dir=solver_prm_dir,
         direct_dir=direct_dir,
         self_consistency_dir=self_consistency_dir,
         best_of_n_dir=best_of_n_dir,
@@ -428,6 +438,13 @@ def _missing_required_artifacts(row: Mapping[str, object]) -> List[str]:
             "target_prm_train_pairs.jsonl",
             "target_prm_label_manifest.json",
         ],
+        "Solver-PRM priority": [
+            "scheduling_llm_pilot_metrics.json",
+            "solver_prm_ranker.json",
+            "solver_prm_trace_records.jsonl",
+            "solver_prm_train_pairs.jsonl",
+            "solver_prm_label_manifest.json",
+        ],
         "PRM-guided MCTS (ReST-MCTS-style)": [
             "scheduling_llm_pilot_metrics.json",
             "target_prm_ranker.json",
@@ -688,6 +705,60 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
         overlap = _target_prm_eval_overlap(source_dir, row)
         if overlap:
             invalid.append("target_prm_trace_records.jsonl overlaps held-out evaluation tasks: " + ", ".join(overlap[:5]))
+    if method == "Solver-PRM priority":
+        invalid.extend(_solver_prior_audit_blockers(source_dir))
+        learned_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_llm_pilot_metrics.json")
+        if manifest_error:
+            invalid.append(f"scheduling_llm_pilot_metrics.json {manifest_error}")
+        if learned_manifest:
+            alignment = learned_manifest.get("q2_method_alignment")
+            if not isinstance(alignment, Mapping) or method not in alignment:
+                invalid.append(f"scheduling_llm_pilot_metrics.json missing Q2 method alignment for {method}")
+            else:
+                invalid.extend(_method_alignment_blockers(alignment, method, "scheduling_llm_pilot_metrics.json"))
+            schema = learned_manifest.get("semantic_state_schema")
+            if not isinstance(schema, Mapping) or schema.get("oracle_labels_in_inference_features") is not False:
+                invalid.append("scheduling_llm_pilot_metrics.json must exclude oracle labels from inference features")
+            protocols = learned_manifest.get("learned_search_protocol")
+            protocol_by_policy = protocols.get("policies") if isinstance(protocols, Mapping) else None
+            solver_prm_protocol = protocol_by_policy.get("Solver-PRM") if isinstance(protocol_by_policy, Mapping) else None
+            if not isinstance(solver_prm_protocol, Mapping):
+                invalid.append("scheduling_llm_pilot_metrics.json missing Solver-PRM protocol")
+            else:
+                if solver_prm_protocol.get("zero_shot_transfer") is not True:
+                    invalid.append("Solver-PRM protocol must declare zero-shot transfer")
+                if str(solver_prm_protocol.get("training_distribution")) != "solver-induced Scheduling source trajectories only":
+                    invalid.append("Solver-PRM protocol must declare source-only solver training")
+                if solver_prm_protocol.get("target_llm_trajectory_training") is not False:
+                    invalid.append("Solver-PRM protocol must declare no target LLM trajectory training")
+        label_manifest, label_error = _read_json_manifest_for_audit(source_dir / "solver_prm_label_manifest.json")
+        if label_error:
+            invalid.append(f"solver_prm_label_manifest.json {label_error}")
+        if label_manifest:
+            if str(label_manifest.get("supervision")) != "solver_process_frontier_ranking":
+                invalid.append("solver_prm_label_manifest.json must declare solver_process_frontier_ranking supervision")
+            if str(label_manifest.get("label_source")) != "exact_residual_scheduling_oracle_on_solver_states":
+                invalid.append("solver_prm_label_manifest.json must declare exact residual labels on solver states")
+            if label_manifest.get("target_llm_trajectory_training") is not False:
+                invalid.append("solver_prm_label_manifest.json must declare no target LLM trajectory training")
+            if label_manifest.get("zero_shot_transfer") is not True:
+                invalid.append("solver_prm_label_manifest.json must declare zero-shot transfer")
+            if label_manifest.get("terminal_outcome_only") is not False:
+                invalid.append("solver_prm_label_manifest.json must not be terminal outcome only")
+            if label_manifest.get("oracle_labels_in_inference_features") is not False:
+                invalid.append("solver_prm_label_manifest.json must exclude oracle labels from inference features")
+            if _as_float(label_manifest.get("target_pair_count")) <= 0:
+                invalid.append("solver_prm_label_manifest.json must record positive pair count")
+            if _as_float(label_manifest.get("process_label_record_count")) <= 0:
+                invalid.append("solver_prm_label_manifest.json must record positive process label count")
+        for filename in ("solver_prm_trace_records.jsonl", "solver_prm_train_pairs.jsonl"):
+            path = source_dir / filename
+            if path.exists() and path.stat().st_size > 0:
+                rows, error = _read_jsonl_for_audit(path)
+                if error:
+                    invalid.append(f"{filename} {error}")
+                elif not rows:
+                    invalid.append(f"{filename} empty jsonl")
     if method in {"Solver-trained priority", "Solver-trained priority + certified pruning"}:
         invalid.extend(_solver_prior_audit_blockers(source_dir))
         learned_manifest, manifest_error = _read_json_manifest_for_audit(source_dir / "scheduling_llm_pilot_metrics.json")

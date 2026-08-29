@@ -99,6 +99,22 @@ Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
             "reward/value model over partial solutions": ["TinyPairwiseMLPRanker", "target_prm_ranker"],
         },
     },
+    "Solver-PRM priority": {
+        "paths": ["cgr_exp/scheduling_transfer.py"],
+        "anchors": [
+            "solver_prm_trace_records.jsonl",
+            "solver_prm_train_pairs.jsonl",
+            "solver_prm_label_manifest.json",
+            "exact_residual_scheduling_oracle_on_solver_states",
+        ],
+        "primitive_anchors": {
+            "intermediate-step labels": ["uses_intermediate_states", "max_record_depth"],
+            "per-step candidate completions": ["frontier_parent_group_count"],
+            "step rating / process supervision": ["solver_process_frontier_ranking"],
+            "process supervision": ["process_label_record_count"],
+            "reward/value model over partial solutions": ["TinyPairwiseMLPRanker", "solver_prm_ranker"],
+        },
+    },
     "PRM-guided MCTS (ReST-MCTS-style)": {
         "paths": ["third_party/ReST-MCTS/MCTS/mcts.py", "third_party/ReST-MCTS/MCTS/base.py", "cgr_exp/scheduling_transfer.py"],
         "source_checkouts": {"third_party/ReST-MCTS": "2d5f488c3d6e24f99d50a9860e818383b1bb5883"},

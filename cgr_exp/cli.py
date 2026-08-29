@@ -209,6 +209,7 @@ def main() -> None:
             p.add_argument("--include-gpt-frontier-ranking", action="store_true", default=False)
             p.add_argument("--include-target-prm", action="store_true", default=False)
             p.add_argument("--include-rest-mcts", action="store_true", default=False)
+            p.add_argument("--include-solver-prm", action="store_true", default=False)
             p.add_argument("--include-solver-certification", action="store_true", default=False)
             p.add_argument("--target-prm-train-count", type=int, default=100)
         if name == "run-scheduling-native-q2":
@@ -311,6 +312,7 @@ def main() -> None:
             p.add_argument("--q2-local-primitives", type=Path, default=Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv"))
             p.add_argument("--tot-dir", "--gpt-frontier-rank-dir", dest="gpt_frontier_rank_dir", type=Path, default=None)
             p.add_argument("--target-prm-dir", type=Path, default=None)
+            p.add_argument("--solver-prm-dir", type=Path, default=None)
             p.add_argument("--direct-dir", type=Path, default=None)
             p.add_argument("--self-consistency-dir", type=Path, default=None)
             p.add_argument("--best-of-n-dir", type=Path, default=None)
@@ -672,6 +674,7 @@ def main() -> None:
                     include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
                     include_target_prm=args.include_target_prm,
                     include_rest_mcts=args.include_rest_mcts,
+                    include_solver_prm=args.include_solver_prm,
                     include_solver_certification=args.include_solver_certification,
                     target_prm_train_count=args.target_prm_train_count,
                 )
@@ -698,6 +701,7 @@ def main() -> None:
                     include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
                     include_target_prm=args.include_target_prm,
                     include_rest_mcts=args.include_rest_mcts,
+                    include_solver_prm=args.include_solver_prm,
                     include_solver_certification=args.include_solver_certification,
                     target_prm_train_count=args.target_prm_train_count,
                 )
@@ -716,9 +720,11 @@ def main() -> None:
                 "include_gpt_frontier_ranking": args.include_gpt_frontier_ranking,
                 "include_target_prm": args.include_target_prm,
                 "include_rest_mcts": args.include_rest_mcts,
+                "include_solver_prm": args.include_solver_prm,
                 "include_solver_certification": args.include_solver_certification,
                 "target_prm_train_count": metrics.get("target_prm_train_count", 0),
                 "target_prm_pair_count": metrics.get("target_prm_pair_count", 0),
+                "solver_prm_pair_count": metrics.get("solver_prm_pair_count", 0),
                 "live_network_required": metrics["live_network_required"],
                 "training_source": metrics["training_source"],
                 "target_training_trace_count": metrics["target_training_trace_count"],
@@ -941,6 +947,7 @@ def main() -> None:
                 include_gpt_frontier_ranking=args.include_gpt_frontier_ranking,
                 include_target_prm=args.include_target_prm,
                 include_rest_mcts=args.include_rest_mcts,
+                include_solver_prm=args.include_solver_prm,
                 include_solver_certification=args.include_solver_certification,
                 target_prm_train_count=args.target_prm_train_count,
             )
@@ -1005,6 +1012,7 @@ def main() -> None:
                 expected_test_count=args.expected_test_count,
                 gpt_frontier_rank_dir=args.gpt_frontier_rank_dir,
                 target_prm_dir=args.target_prm_dir,
+                solver_prm_dir=args.solver_prm_dir,
                 direct_dir=args.direct_dir,
                 self_consistency_dir=args.self_consistency_dir,
                 best_of_n_dir=args.best_of_n_dir,
@@ -1025,6 +1033,7 @@ def main() -> None:
                     "best_of_n_dir": None if args.best_of_n_dir is None else str(args.best_of_n_dir),
                     "tot_dir": None if args.gpt_frontier_rank_dir is None else str(args.gpt_frontier_rank_dir),
                     "target_prm_dir": None if args.target_prm_dir is None else str(args.target_prm_dir),
+                    "solver_prm_dir": None if args.solver_prm_dir is None else str(args.solver_prm_dir),
                     "rest_mcts_dir": None if args.rest_mcts_dir is None else str(args.rest_mcts_dir),
                     "solver_prior_dir": str(args.solver_prior_dir),
                     "solver_certification_dir": None if args.solver_certification_dir is None else str(args.solver_certification_dir),
@@ -1041,6 +1050,7 @@ def main() -> None:
                 expected_test_count=args.expected_test_count,
                 gpt_frontier_rank_dir=args.gpt_frontier_rank_dir,
                 target_prm_dir=args.target_prm_dir,
+                solver_prm_dir=args.solver_prm_dir,
                 direct_dir=args.direct_dir,
                 self_consistency_dir=args.self_consistency_dir,
                 best_of_n_dir=args.best_of_n_dir,
@@ -1062,6 +1072,7 @@ def main() -> None:
                     "best_of_n_dir": None if args.best_of_n_dir is None else str(args.best_of_n_dir),
                     "tot_dir": None if args.gpt_frontier_rank_dir is None else str(args.gpt_frontier_rank_dir),
                     "target_prm_dir": None if args.target_prm_dir is None else str(args.target_prm_dir),
+                    "solver_prm_dir": None if args.solver_prm_dir is None else str(args.solver_prm_dir),
                     "rest_mcts_dir": None if args.rest_mcts_dir is None else str(args.rest_mcts_dir),
                     "solver_prior_dir": str(args.solver_prior_dir),
                     "solver_certification_dir": None if args.solver_certification_dir is None else str(args.solver_certification_dir),

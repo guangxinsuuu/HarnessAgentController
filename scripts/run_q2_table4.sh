@@ -141,6 +141,7 @@ run_learned() {
     --batch-size "${BATCH_SIZE}" \
     --parallel-episodes "${SEARCH_PARALLEL_EPISODES}" \
     --include-target-prm \
+    --include-solver-prm \
     --include-rest-mcts \
     --include-solver-certification \
     --target-prm-train-count "${TARGET_PRM_TRAIN_COUNT}" \
@@ -178,6 +179,7 @@ build_table() {
     --best-of-n-dir "${NATIVE_DIR}" \
     --tot-dir "${TOT_DIR}" \
     --target-prm-dir "${LEARNED_DIR}" \
+    --solver-prm-dir "${LEARNED_DIR}" \
     --rest-mcts-dir "${LEARNED_DIR}" \
     --solver-prior-dir "${LEARNED_DIR}" \
     --solver-certification-dir "${LEARNED_DIR}" \
@@ -194,6 +196,7 @@ audit_table() {
     --best-of-n-dir "${NATIVE_DIR}" \
     --tot-dir "${TOT_DIR}" \
     --target-prm-dir "${LEARNED_DIR}" \
+    --solver-prm-dir "${LEARNED_DIR}" \
     --rest-mcts-dir "${LEARNED_DIR}" \
     --solver-prior-dir "${LEARNED_DIR}" \
     --solver-certification-dir "${LEARNED_DIR}" \

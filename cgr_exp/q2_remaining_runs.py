@@ -73,6 +73,7 @@ METHOD_GROUPS = {
     "Best-of-N": "native_frozen",
     "Tree of Thoughts": "native_tot",
     "Target-PRM priority": "learned_search",
+    "Solver-PRM priority": "learned_search",
     "PRM-guided MCTS (ReST-MCTS-style)": "learned_search",
     "Solver-trained priority": "learned_search",
     "Solver-trained priority + certified pruning": "learned_search",

@@ -567,6 +567,50 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertGreater(label_manifest["sibling_pair_candidate_count"], 0)
             self.assertFalse(label_manifest["oracle_labels_in_inference_features"])
 
+    def test_scheduling_llm_pilot_can_include_solver_prm_zero_shot_control(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metrics = run_scheduling_llm_pilot(
+                root,
+                client=ScriptedSchedulingClient(model="mock-scheduling"),
+                model="mock-scheduling",
+                seed=30,
+                train_count=8,
+                validation_count=3,
+                test_count=3,
+                job_count=5,
+                machine_count=2,
+                node_budget=50,
+                action_budget=5,
+                records_per_instance=10,
+                rank_epochs=4,
+                perturbation="canonical",
+                batch_size=1,
+                include_solver_prm=True,
+            )
+            self.assertIn("Solver-PRM", metrics["methods"])
+            self.assertIn("Solver-PRM priority", metrics["q2_method_alignment"])
+            self.assertEqual(metrics["target_training_trace_count"], 0)
+            self.assertGreater(metrics["solver_prm_trace_record_count"], 0)
+            self.assertGreater(metrics["solver_prm_pair_count"], 0)
+            solver_prm_protocol = metrics["learned_search_protocol"]["policies"]["Solver-PRM"]
+            self.assertEqual(solver_prm_protocol["training_distribution"], "solver-induced Scheduling source trajectories only")
+            self.assertTrue(solver_prm_protocol["zero_shot_transfer"])
+            self.assertFalse(solver_prm_protocol["target_llm_trajectory_training"])
+            for name in (
+                "solver_prm_ranker.json",
+                "solver_prm_label_manifest.json",
+                "solver_prm_trace_records.jsonl",
+                "solver_prm_train_pairs.jsonl",
+            ):
+                self.assertTrue((root / name).exists(), name)
+            label_manifest = json.loads((root / "solver_prm_label_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(label_manifest["supervision"], "solver_process_frontier_ranking")
+            self.assertEqual(label_manifest["label_source"], "exact_residual_scheduling_oracle_on_solver_states")
+            self.assertTrue(label_manifest["zero_shot_transfer"])
+            self.assertFalse(label_manifest["target_llm_trajectory_training"])
+            self.assertFalse(label_manifest["oracle_labels_in_inference_features"])
+
     def test_scheduling_llm_pilot_can_include_rest_mcts_and_solver_certification_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

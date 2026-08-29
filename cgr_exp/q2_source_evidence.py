@@ -173,6 +173,34 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
             "not zero-shot",
         ],
     },
+    "Solver-PRM priority": {
+        "source_url": "https://github.com/openai/prm800k",
+        "source_revision": "7ecc794703b2877f63226f2477a49b34f9b25163",
+        "source_revision_url": "https://github.com/openai/prm800k/commit/7ecc794703b2877f63226f2477a49b34f9b25163",
+        "source_files": ["README.md", "data/*.jsonl"],
+        "official_code_refs": [
+            "raw: https://raw.githubusercontent.com/openai/prm800k/7ecc794703b2877f63226f2477a49b34f9b25163/README.md::step-level correctness labels",
+            "github@7ecc794703b2877f63226f2477a49b34f9b25163: openai/prm800k/data/*.jsonl::label.steps[].completions[].rating",
+        ],
+        "official_source_anchors": [
+            "README: PRM800K is a process-supervision dataset with step-level correctness labels",
+            "data schema: per-step completions receive ratings rather than only terminal labels",
+        ],
+        "official_primitives": [
+            "intermediate-step labels",
+            "per-step candidate completions",
+            "step rating / process supervision",
+            "process supervision",
+            "reward/value model over partial solutions",
+        ],
+        "local_promotion_gates": [
+            "solver-induced source training trajectories",
+            "solver PRM ranker artifact",
+            "solver PRM trace and pair artifacts",
+            "no target LLM trajectory training",
+            "zero-shot transfer",
+        ],
+    },
     "PRM-guided MCTS (ReST-MCTS-style)": {
         "source_url": "https://github.com/THUDM/ReST-MCTS",
         "source_revision": "2d5f488c3d6e24f99d50a9860e818383b1bb5883",
@@ -220,6 +248,7 @@ Q2_EXTERNAL_SOURCE_METHODS = [
     "Best-of-N",
     "Tree of Thoughts",
     "Target-PRM priority",
+    "Solver-PRM priority",
     "PRM-guided MCTS (ReST-MCTS-style)",
 ]
 

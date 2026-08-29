@@ -78,6 +78,7 @@ def _q2_methods_for_level2_policies(policy_names: Sequence[str]) -> List[str]:
         "GPT-value / ToT-style": "Tree of Thoughts",
         "GPT-frontier-rank / ToT-style": "Tree of Thoughts",
         "Target-PRM": "Target-PRM priority",
+        "Solver-PRM": "Solver-PRM priority",
         "PRM-guided MCTS (ReST-MCTS-style)": "PRM-guided MCTS (ReST-MCTS-style)",
         "Solver-trained MLP": "Solver-trained priority",
         "Solver-trained MLP + certified pruning": "Solver-trained priority + certified pruning",
@@ -94,6 +95,7 @@ def _learned_search_protocol_manifest(
     policy_names: Sequence[str],
     include_target_prm: bool,
     include_rest_mcts: bool,
+    include_solver_prm: bool,
     include_solver_certification: bool,
 ) -> Dict[str, object]:
     protocols: Dict[str, Dict[str, object]] = {}
@@ -105,6 +107,16 @@ def _learned_search_protocol_manifest(
             "inference": "frozen canonical-feature priority controller",
             "oracle_future_labels_exposed": False,
             "zero_shot_transfer": False,
+        }
+    if "Solver-PRM" in policy_names:
+        protocols["Solver-PRM"] = {
+            "official_primitive": "process reward model trained from intermediate source-domain solver search states",
+            "training_distribution": "solver-induced Scheduling source trajectories only",
+            "supervision": "frontier/process ranking pairs",
+            "inference": "frozen PRM-style canonical-feature priority controller over real LLM-induced states",
+            "oracle_future_labels_exposed": False,
+            "zero_shot_transfer": True,
+            "target_llm_trajectory_training": False,
         }
     if "PRM-guided MCTS (ReST-MCTS-style)" in policy_names:
         protocols["PRM-guided MCTS (ReST-MCTS-style)"] = {
@@ -146,6 +158,7 @@ def _learned_search_protocol_manifest(
         "canonical_state_representation": True,
         "target_prm_requested": include_target_prm,
         "rest_mcts_requested": include_rest_mcts,
+        "solver_prm_requested": include_solver_prm,
         "solver_certification_requested": include_solver_certification,
         "policies": protocols,
     }
@@ -755,6 +768,7 @@ def run_scheduling_llm_pilot_from_env(
     include_gpt_frontier_ranking: bool = False,
     include_target_prm: bool = False,
     include_rest_mcts: bool = False,
+    include_solver_prm: bool = False,
     include_solver_certification: bool = False,
     target_prm_train_count: int = 100,
 ) -> Dict[str, object]:
@@ -782,6 +796,7 @@ def run_scheduling_llm_pilot_from_env(
         include_gpt_frontier_ranking=include_gpt_frontier_ranking,
         include_target_prm=include_target_prm,
         include_rest_mcts=include_rest_mcts,
+        include_solver_prm=include_solver_prm,
         include_solver_certification=include_solver_certification,
         target_prm_train_count=target_prm_train_count,
     )
@@ -805,6 +820,7 @@ def preflight_scheduling_llm_pilot(
     include_gpt_frontier_ranking: bool = False,
     include_target_prm: bool = False,
     include_rest_mcts: bool = False,
+    include_solver_prm: bool = False,
     include_solver_certification: bool = False,
     target_prm_train_count: int = 100,
     env=None,
@@ -829,6 +845,9 @@ def preflight_scheduling_llm_pilot(
     if include_rest_mcts:
         insert_at = policy_names.index("Solver-trained MLP")
         policy_names.insert(insert_at, "PRM-guided MCTS (ReST-MCTS-style)")
+    if include_solver_prm:
+        insert_at = policy_names.index("Solver-trained MLP")
+        policy_names.insert(insert_at, "Solver-PRM")
     if include_solver_certification:
         insert_at = policy_names.index("Oracle")
         policy_names.insert(insert_at, "Solver-trained MLP + certified pruning")
@@ -860,6 +879,7 @@ def preflight_scheduling_llm_pilot(
         "include_gpt_frontier_ranking": include_gpt_frontier_ranking,
         "include_target_prm": include_target_prm,
         "include_rest_mcts": include_rest_mcts,
+        "include_solver_prm": include_solver_prm,
         "include_solver_certification": include_solver_certification,
         "target_prm_train_count": target_prm_train_count if include_target_prm or include_rest_mcts else 0,
         "worst_case_request_count_upper_bound": worst_case_proposal_calls,
@@ -898,6 +918,7 @@ def run_scheduling_llm_pilot(
     include_gpt_frontier_ranking: bool = False,
     include_target_prm: bool = False,
     include_rest_mcts: bool = False,
+    include_solver_prm: bool = False,
     include_solver_certification: bool = False,
     target_prm_train_count: int = 100,
 ) -> Dict[str, object]:
@@ -915,6 +936,8 @@ def run_scheduling_llm_pilot(
     train_pairs = make_scheduling_ranking_pairs(train_records, max_pairs_per_task=40, seed=seed)
     validation_pairs = make_scheduling_ranking_pairs(validation_records, max_pairs_per_task=40, seed=seed + 1)
     ranker = _train_ranker(train_pairs, rank_epochs, seed)
+    solver_prm_pairs = make_scheduling_ranking_pairs(train_records, max_pairs_per_task=40, seed=seed + 9400) if include_solver_prm else []
+    solver_prm_ranker = _train_ranker(solver_prm_pairs, rank_epochs, seed + 9500) if include_solver_prm else None
     source_policy_rows = _evaluate_scheduling_policies(
         instances["test"],
         ranker,
@@ -972,6 +995,10 @@ def run_scheduling_llm_pilot(
         insert_at = policy_names.index("Solver-trained MLP")
         policy_names.insert(insert_at, "PRM-guided MCTS (ReST-MCTS-style)")
         extra_policy_factories["PRM-guided MCTS (ReST-MCTS-style)"] = lambda episode, idx: PRMGuidedMCTSStylePolicy(episode.hidden_task, target_prm_ranker)
+    if include_solver_prm and solver_prm_ranker is not None:
+        insert_at = policy_names.index("Solver-trained MLP")
+        policy_names.insert(insert_at, "Solver-PRM")
+        extra_policy_factories["Solver-PRM"] = lambda episode, idx: SchedulingMLPPolicy(episode.hidden_task, solver_prm_ranker)
     policy_certified_pruning = {}
     if include_solver_certification:
         insert_at = policy_names.index("Oracle") if "Oracle" in policy_names else len(policy_names)
@@ -1019,11 +1046,14 @@ def run_scheduling_llm_pilot(
         "include_gpt_frontier_ranking": include_gpt_frontier_ranking,
         "include_target_prm": include_target_prm,
         "include_rest_mcts": include_rest_mcts,
+        "include_solver_prm": include_solver_prm,
         "include_solver_certification": include_solver_certification,
         "target_prm_train_count": target_prm_train_count if include_target_prm or include_rest_mcts else 0,
         "target_prm_training_instance_ids": target_prm_train_ids,
         "target_prm_trace_record_count": len(target_prm_records),
         "target_prm_pair_count": len(target_prm_pairs),
+        "solver_prm_trace_record_count": len(train_records) if include_solver_prm else 0,
+        "solver_prm_pair_count": len(solver_prm_pairs),
         "model": model,
         "live_network_required": not isinstance(client, ScriptedSchedulingClient),
         "training_source": "level1_solver_traces_only",
@@ -1049,6 +1079,7 @@ def run_scheduling_llm_pilot(
             observed_policy_names,
             include_target_prm=include_target_prm,
             include_rest_mcts=include_rest_mcts,
+            include_solver_prm=include_solver_prm,
             include_solver_certification=include_solver_certification,
         ),
         "shared_proposal_replay": proposal_stats,
@@ -1080,6 +1111,24 @@ def run_scheduling_llm_pilot(
         )
         _write_csv(out_dir / "target_prm_training_proposal_cache.csv", target_prm_cache_rows)
         _write_jsonl(out_dir / "target_prm_training_proposal_states.jsonl", target_prm_state_rows)
+    if include_solver_prm and solver_prm_ranker is not None:
+        (out_dir / "solver_prm_ranker.json").write_text(solver_prm_ranker.to_json(), encoding="utf-8")
+        _write_trace_records(out_dir / "solver_prm_trace_records.jsonl", train_records)
+        _write_pairs(out_dir / "solver_prm_train_pairs.jsonl", solver_prm_pairs)
+        (out_dir / "solver_prm_label_manifest.json").write_text(
+            json.dumps(
+                _solver_prm_label_manifest(
+                    metrics,
+                    train_records,
+                    solver_prm_pairs,
+                    [task.task_id for task in instances["train"]],
+                    pair_sampling_version="process_first_v2",
+                ),
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
     (out_dir / "scheduling_llm_pilot_leakage_manifest.json").write_text(json.dumps(metrics["semantic_state_schema"], indent=2, sort_keys=True), encoding="utf-8")
     (out_dir / "scheduling_llm_pilot_metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
     _write_transfer_audit_artifacts(
@@ -1114,6 +1163,7 @@ def backfill_scheduling_llm_pilot_audit_artifacts(out_dir: Path) -> Dict[str, ob
         observed_policy_names,
         include_target_prm="Target-PRM" in observed_policy_names,
         include_rest_mcts="PRM-guided MCTS (ReST-MCTS-style)" in observed_policy_names,
+        include_solver_prm="Solver-PRM" in observed_policy_names,
         include_solver_certification="Solver-trained MLP + certified pruning" in observed_policy_names,
     )
     if "shared_proposal_replay" not in metrics or not metrics["shared_proposal_replay"]:
@@ -2363,6 +2413,37 @@ def _target_prm_label_manifest(
         "inference_feature_schema": "feature_schema.json",
         "not_zero_shot": True,
     }
+
+
+def _solver_prm_label_manifest(
+    metrics: Mapping[str, object],
+    solver_records: Sequence[object],
+    solver_pairs: Sequence[object],
+    solver_train_ids: Sequence[str],
+    pair_sampling_version: str = "process_first_v2",
+) -> Dict[str, object]:
+    manifest = _target_prm_label_manifest(
+        metrics,
+        solver_records,
+        solver_pairs,
+        solver_train_ids,
+        pair_sampling_version=pair_sampling_version,
+    )
+    manifest.update(
+        {
+            "supervision": "solver_process_frontier_ranking",
+            "label_source": "exact_residual_scheduling_oracle_on_solver_states",
+            "state_distribution": "solver-induced Scheduling source trajectories only",
+            "target_training_instance_ids": [],
+            "target_training_instance_count": 0,
+            "solver_training_instance_ids": list(solver_train_ids),
+            "solver_training_instance_count": len(set(solver_train_ids)),
+            "not_zero_shot": False,
+            "zero_shot_transfer": True,
+            "target_llm_trajectory_training": False,
+        }
+    )
+    return manifest
 
 
 def _record_get(record: object, key: str, default: object = None) -> object:

@@ -142,6 +142,27 @@ Q2_METHOD_CONTRACTS: Dict[str, Dict[str, object]] = {
         ],
         "non_claims": ["not zero-shot", "not outcome-only PRM"],
     },
+    "Solver-PRM priority": {
+        "reference": "process reward modeling / PRM800K process-supervision setup",
+        "source_url": "https://github.com/openai/prm800k",
+        "claim_scope": "diagnostic_control",
+        "official_reproduction": False,
+        "required_table_wording": "Solver-PRM priority, source-only zero-shot",
+        "implemented_scope": [
+            "solver-induced source training trajectories only",
+            "process/frontier ranking supervision",
+            "canonical state features matched to Target-PRM and solver-trained controller",
+            "frozen zero-shot evaluation on real LLM-induced Scheduling search",
+        ],
+        "source_primitives": [
+            "intermediate-step labels",
+            "per-step candidate completions",
+            "step rating / process supervision",
+            "process supervision",
+            "reward/value model over partial solutions",
+        ],
+        "non_claims": ["no target LLM trajectory supervision", "not outcome-only PRM"],
+    },
     "Outcome-PRM": {
         "reference": "outcome-supervised reward model diagnostic",
         "source_url": "",

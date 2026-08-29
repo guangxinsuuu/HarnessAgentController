@@ -33,6 +33,8 @@ Remaining Q2 run queue: `runs/q2_remaining_runs/q2_remaining_runs.md`.
 
 Machine audit: `runs/q4_tau_table_current_audit/q4_tau_readiness.csv`.
 
+Native adapter contract: `runs/q4_tau_adapter_contract/q4_tau_adapter_contract.md`.
+
 All Q4 tau/tau2 rows remain pending; the repository still has no native tau/tau2 runner artifact in the audited directories.
 
 | Row | Source artifact | Current promotion status | Notes |

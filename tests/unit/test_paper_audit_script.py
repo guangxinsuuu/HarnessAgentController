@@ -91,6 +91,7 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("scripts/run_paper_audits.sh all", text)
         self.assertIn("q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv", text)
         self.assertIn("q4_tau_table_current_audit/q4_tau_readiness.csv", text)
+        self.assertIn("q4_tau_adapter_contract/q4_tau_adapter_contract.md", text)
         self.assertIn("certification_tables_readiness/certification_tables_readiness.csv", text)
         self.assertIn("All Q4 tau/tau2 rows remain pending", text)
         self.assertIn("Only rows marked ready", text)

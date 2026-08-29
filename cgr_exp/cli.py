@@ -337,6 +337,7 @@ def main() -> None:
             p.add_argument("--q4-readiness", type=Path, default=Path("runs/q4_tau_table_current_audit/q4_tau_readiness.csv"))
             p.add_argument("--certification-readiness", type=Path, default=Path("runs/certification_tables_readiness/certification_tables_readiness.csv"))
             p.add_argument("--q2-implementation-matrix", type=Path, default=Path("runs/q2_implementation_matrix/q2_implementation_matrix.csv"))
+            p.add_argument("--q2-local-primitives", type=Path, default=Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv"))
             p.add_argument("--audit-command", default="PYTHON_BIN=.venv/bin/python scripts/run_paper_audits.sh all")
     args, rest = parser.parse_known_args()
     if args.command in (None, "run-smoke"):
@@ -1289,6 +1290,7 @@ def main() -> None:
                 q4_readiness=args.q4_readiness,
                 certification_readiness=args.certification_readiness,
                 q2_implementation_matrix=args.q2_implementation_matrix,
+                q2_local_primitives=args.q2_local_primitives,
                 audit_command=args.audit_command,
             )
             command_manifest = {

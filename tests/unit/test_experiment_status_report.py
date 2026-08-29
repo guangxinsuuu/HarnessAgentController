@@ -17,6 +17,7 @@ class ExperimentStatusReportTest(unittest.TestCase):
             q4 = root / "q4.csv"
             cert = root / "cert.csv"
             matrix = root / "matrix.csv"
+            local_primitives = root / "local_primitives.csv"
             _write_csv(
                 q2,
                 [
@@ -64,8 +65,26 @@ class ExperimentStatusReportTest(unittest.TestCase):
                     }
                 ],
             )
-            manifest = build_current_experiment_status(root / "out", q2_readiness=q2, q4_readiness=q4, certification_readiness=cert, q2_implementation_matrix=matrix)
+            _write_csv(
+                local_primitives,
+                [
+                    {
+                        "Method": "Direct / CoT",
+                        "local_primitives_ready": "True",
+                        "missing_anchors": "",
+                    }
+                ],
+            )
+            manifest = build_current_experiment_status(
+                root / "out",
+                q2_readiness=q2,
+                q4_readiness=q4,
+                certification_readiness=cert,
+                q2_implementation_matrix=matrix,
+                q2_local_primitives=local_primitives,
+            )
             self.assertEqual(manifest["q2_rows"], 1)
+            self.assertEqual(manifest["q2_local_primitive_ready_rows"], 1)
             self.assertEqual(manifest["certification_ready_rows"], 1)
             text = (root / "out" / "current_experiment_status.md").read_text(encoding="utf-8")
             self.assertIn("Direct / CoT", text)
@@ -73,12 +92,14 @@ class ExperimentStatusReportTest(unittest.TestCase):
             self.assertIn("Blocked: pending; artifact missing", text)
             self.assertIn("Blocked: missing token accounting", text)
             self.assertIn("runs/q2_remaining_runs/q2_remaining_runs.md", text)
+            self.assertIn("1/1 rows preserve required local primitives", text)
             self.assertIn("All Q4 tau/tau2 rows remain pending", text)
             self.assertIn("runs/q4_tau_native", text)
             self.assertIn("native tau artifact missing", text)
             self.assertIn("runs/q2_structured_cert_reference_100_seed0", text)
             saved = json.loads((root / "out" / "current_experiment_status.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["artifact"], "current_experiment_status")
+            self.assertEqual(saved["input_artifacts"]["q2_local_primitives"], str(local_primitives))
 
 
 def _write_csv(path: Path, rows) -> None:

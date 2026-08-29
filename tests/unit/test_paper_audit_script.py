@@ -30,6 +30,7 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("build-q2-run-preflight", text)
         self.assertIn("Q2_LOCAL_PRIMITIVE_AUDIT_DIR", text)
         self.assertIn("audit-q2-local-primitives", text)
+        self.assertIn("--q2-local-primitives", text)
         self.assertIn("Q4_ADAPTER_CONTRACT_DIR", text)
         self.assertIn("build-q4-tau-adapter-contract", text)
         self.assertIn("q4_adapter_contract_dir", text)

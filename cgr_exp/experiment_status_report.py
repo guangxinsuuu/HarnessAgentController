@@ -12,6 +12,7 @@ DEFAULT_Q2_READINESS = Path("runs/q2_table_current_seed0_protocol_v2_audit/table
 DEFAULT_Q4_READINESS = Path("runs/q4_tau_table_current_audit/q4_tau_readiness.csv")
 DEFAULT_CERT_READINESS = Path("runs/certification_tables_readiness/certification_tables_readiness.csv")
 DEFAULT_Q2_MATRIX = Path("runs/q2_implementation_matrix/q2_implementation_matrix.csv")
+DEFAULT_Q2_LOCAL_PRIMITIVES = Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv")
 
 
 def build_current_experiment_status(
@@ -21,6 +22,7 @@ def build_current_experiment_status(
     q4_readiness: Path = DEFAULT_Q4_READINESS,
     certification_readiness: Path = DEFAULT_CERT_READINESS,
     q2_implementation_matrix: Path = DEFAULT_Q2_MATRIX,
+    q2_local_primitives: Path = DEFAULT_Q2_LOCAL_PRIMITIVES,
     audit_command: str = "PYTHON_BIN=.venv/bin/python scripts/run_paper_audits.sh all",
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -28,16 +30,19 @@ def build_current_experiment_status(
     q4_rows = _read_csv(q4_readiness)
     cert_rows = _read_csv(certification_readiness)
     q2_matrix_rows = _read_csv(q2_implementation_matrix)
+    q2_local_primitive_rows = _read_csv(q2_local_primitives)
     markdown = _render_markdown(
         q2_rows=q2_rows,
         q4_rows=q4_rows,
         cert_rows=cert_rows,
         q2_matrix_rows=q2_matrix_rows,
+        q2_local_primitive_rows=q2_local_primitive_rows,
         audit_command=audit_command,
         q2_readiness=q2_readiness,
         q4_readiness=q4_readiness,
         certification_readiness=certification_readiness,
         q2_implementation_matrix=q2_implementation_matrix,
+        q2_local_primitives=q2_local_primitives,
     )
     md_path = out_dir / "current_experiment_status.md"
     json_path = out_dir / "current_experiment_status.json"
@@ -50,9 +55,12 @@ def build_current_experiment_status(
             "q4_readiness": str(q4_readiness),
             "certification_readiness": str(certification_readiness),
             "q2_implementation_matrix": str(q2_implementation_matrix),
+            "q2_local_primitives": str(q2_local_primitives),
         },
         "q2_rows": _row_count(q2_rows),
         "q2_ready_rows": _ready_count(q2_rows),
+        "q2_local_primitive_rows": _row_count(q2_local_primitive_rows),
+        "q2_local_primitive_ready_rows": _local_primitive_ready_count(q2_local_primitive_rows),
         "q4_rows": _row_count(q4_rows),
         "q4_ready_rows": _ready_count(q4_rows),
         "certification_rows": _row_count(cert_rows),
@@ -69,11 +77,13 @@ def _render_markdown(
     q4_rows: List[Dict[str, str]],
     cert_rows: List[Dict[str, str]],
     q2_matrix_rows: List[Dict[str, str]],
+    q2_local_primitive_rows: List[Dict[str, str]],
     audit_command: str,
     q2_readiness: Path,
     q4_readiness: Path,
     certification_readiness: Path,
     q2_implementation_matrix: Path,
+    q2_local_primitives: Path,
 ) -> str:
     q2_status = _status_map(q2_rows, method_key="Method", ready_key="result_ready", blocker_key="result_blockers")
     q2_impl = {row.get("Method", ""): row for row in q2_matrix_rows}
@@ -119,7 +129,7 @@ def _render_markdown(
             "",
             f"Implementation/source matrix: `{q2_implementation_matrix}`.",
             "Official implementation plan: `docs/q2_table4_official_implementation_plan.md`.",
-            "Local primitive audit: `runs/q2_local_primitive_audit/q2_local_primitive_audit.csv`.",
+            f"Local primitive audit: `{q2_local_primitives}` ({_local_primitive_summary(q2_local_primitive_rows)}).",
             "Remaining Q2 run queue: `runs/q2_remaining_runs/q2_remaining_runs.md`.",
             "Q2 run preflight: `runs/q2_run_preflight/q2_run_preflight.md`.",
             "",
@@ -291,6 +301,28 @@ def _ready_count(rows: Iterable[Mapping[str, str]]) -> int:
         if value == "true":
             count += 1
     return count
+
+
+def _local_primitive_ready_count(rows: Iterable[Mapping[str, str]]) -> int:
+    count = 0
+    for row in rows:
+        if str(row.get("local_primitives_ready", "")).lower() == "true":
+            count += 1
+    return count
+
+
+def _local_primitive_summary(rows: List[Dict[str, str]]) -> str:
+    if not rows:
+        return "artifact missing"
+    ready = _local_primitive_ready_count(rows)
+    if ready == len(rows):
+        return f"{ready}/{len(rows)} rows preserve required local primitives"
+    blockers = [
+        row.get("Method", "")
+        for row in rows
+        if str(row.get("local_primitives_ready", "")).lower() != "true"
+    ]
+    return f"{ready}/{len(rows)} rows ready; blocked: {', '.join(blockers)}"
 
 
 def _read_csv(path: Path) -> List[Dict[str, str]]:

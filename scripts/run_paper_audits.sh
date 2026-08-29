@@ -153,6 +153,7 @@ build_status_report() {
     --q4-readiness "${Q4_TABLE_AUDIT_DIR}/q4_tau_readiness.csv" \
     --certification-readiness "${CERTIFICATION_AUDIT_DIR}/certification_tables_readiness.csv" \
     --q2-implementation-matrix "${Q2_IMPLEMENTATION_MATRIX_DIR}/q2_implementation_matrix.csv" \
+    --q2-local-primitives "${Q2_LOCAL_PRIMITIVE_AUDIT_DIR}/q2_local_primitive_audit.csv" \
     --audit-command "PYTHON_BIN=${PYTHON_BIN} scripts/run_paper_audits.sh all" \
     --overwrite
 }

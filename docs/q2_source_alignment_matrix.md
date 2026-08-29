@@ -18,9 +18,11 @@ style baselines that must not be described as full official replications.
   - Official `src/tot/methods/bfs.py` performs generation, evaluation, and
     selection in sequence, with greedy selection implemented by sorting values
     and keeping `n_select_sample`.
-  - Machine-readable evidence now records function-level refs to
-    `src/tot/methods/bfs.py::solve`, `::method_generate`,
-    `::method_evaluate`, and `::method_select`.
+  - Machine-readable evidence now records raw-source refs to
+    `src/tot/methods/bfs.py::def solve`, the `args.method_generate`
+    sample/propose branches, the `args.method_evaluate` vote/value branches,
+    the `args.method_select` sample/greedy branches, and
+    `args.n_select_sample`.
 - PRM800K / Let's Verify Step by Step:
   `https://github.com/openai/prm800k`
   - Source revision pinned for Q2 evidence:

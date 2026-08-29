@@ -66,8 +66,8 @@ def _verify_method_refs(
     source_revision_url = str(evidence.get("source_revision_url", ""))
     code_refs = [str(ref) for ref in evidence.get("official_code_refs", [])] if isinstance(evidence.get("official_code_refs"), list) else []
     raw_targets = _raw_targets(code_refs)
-    raw_urls = [url for url, _anchor in raw_targets]
-    urls_to_check = [url for url in [source_revision_url, *raw_urls] if url]
+    raw_urls = _dedupe(url for url, _anchor in raw_targets)
+    urls_to_check = _dedupe(url for url in [source_revision_url, *raw_urls] if url)
     blockers: List[str] = []
 
     if not source_url:
@@ -135,7 +135,7 @@ def _verify_method_refs(
 
 
 def _raw_urls(code_refs: Iterable[str]) -> List[str]:
-    return [url for url, _anchor in _raw_targets(code_refs)]
+    return _dedupe(url for url, _anchor in _raw_targets(code_refs))
 
 
 def _raw_targets(code_refs: Iterable[str]) -> List[tuple[str, str]]:
@@ -150,6 +150,17 @@ def _raw_targets(code_refs: Iterable[str]) -> List[tuple[str, str]]:
         if target:
             urls.append((target, anchor))
     return urls
+
+
+def _dedupe(values: Iterable[str]) -> List[str]:
+    seen = set()
+    out = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
 
 
 def _check_url(url: str, *, timeout: float, urlopen: Callable[..., object]) -> str:

@@ -182,8 +182,19 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertEqual(by_method["Tree of Thoughts"]["source_revision"], "8050e67d0e3a0fddc424d7fa5801538722a4c4cc")
             self.assertIn("8050e67d0e3a0fddc424d7fa5801538722a4c4cc", by_method["Tree of Thoughts"]["source_revision_url"])
             self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["source_files"])
-            self.assertIn("raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm", by_method["Tree of Thoughts"]["official_code_refs"])
-            self.assertIn("::method_select", by_method["Tree of Thoughts"]["official_code_refs"])
+            tot_refs = by_method["Tree of Thoughts"]["official_code_refs"]
+            self.assertIn("raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm", tot_refs)
+            for anchor in (
+                "::def solve",
+                "::args.method_generate == 'sample'",
+                "::args.method_generate == 'propose'",
+                "::args.method_evaluate == 'vote'",
+                "::args.method_evaluate == 'value'",
+                "::args.method_select == 'sample'",
+                "::args.method_select == 'greedy'",
+                "::args.n_select_sample",
+            ):
+                self.assertIn(anchor, tot_refs)
             rest_refs = by_method["PRM-guided MCTS (ReST-MCTS-style)"]["official_code_refs"]
             for anchor in (
                 "::def MCTS_search",
@@ -231,6 +242,13 @@ class Q2MethodContractsTest(unittest.TestCase):
             def read(self) -> bytes:
                 return (
                     b"def solve\n"
+                    b"args.method_generate == 'sample'\n"
+                    b"args.method_generate == 'propose'\n"
+                    b"args.method_evaluate == 'vote'\n"
+                    b"args.method_evaluate == 'value'\n"
+                    b"args.method_select == 'sample'\n"
+                    b"args.method_select == 'greedy'\n"
+                    b"args.n_select_sample\n"
                     b"step-level correctness labels\n"
                     b"def MCTS_search\n"
                     b"def executeRound\n"
@@ -257,12 +275,12 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertTrue(any("raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm" in url for url in seen_urls))
             self.assertTrue(any("github.com/THUDM/ReST-MCTS/commit" in url for url in seen_urls))
             by_method = {row["Method"]: row for row in manifest["rows"]}
-            self.assertEqual(by_method["Tree of Thoughts"]["raw_anchor_match_count"], 1)
+            self.assertEqual(by_method["Tree of Thoughts"]["raw_anchor_match_count"], 8)
             self.assertEqual(by_method["Target-PRM priority"]["raw_anchor_match_count"], 1)
             self.assertEqual(by_method["PRM-guided MCTS (ReST-MCTS-style)"]["raw_anchor_match_count"], 9)
             locations = json.loads(by_method["Tree of Thoughts"]["raw_anchor_locations"])
-            self.assertTrue(any("::def solve" in key for key in locations))
-            self.assertIn(1, next(iter(locations.values())))
+            solve_key = next(key for key in locations if "::def solve" in key)
+            self.assertIn(1, locations[solve_key])
 
     def test_source_ref_verifier_rejects_online_raw_anchor_mismatch(self) -> None:
         class FakeResponse:
@@ -307,8 +325,10 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertIn("cgr_exp/scheduling_tot_q2.py", by_method["Tree of Thoughts"]["Local code paths"])
             self.assertEqual(by_method["Tree of Thoughts"]["Source revision"], "8050e67d0e3a0fddc424d7fa5801538722a4c4cc")
             self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["Official source files"])
-            self.assertIn("src/tot/methods/bfs.py::method_select", by_method["Tree of Thoughts"]["Official code refs"])
-            self.assertIn("generation, evaluation", by_method["Tree of Thoughts"]["Official source anchors"])
+            self.assertIn("src/tot/methods/bfs.py::args.method_select == 'greedy'", by_method["Tree of Thoughts"]["Official code refs"])
+            self.assertIn("args.n_select_sample", by_method["Tree of Thoughts"]["Official code refs"])
+            self.assertIn("sample/propose", by_method["Tree of Thoughts"]["Official source anchors"])
+            self.assertIn("vote/value", by_method["Tree of Thoughts"]["Official source anchors"])
             self.assertIn("method_generate", by_method["Tree of Thoughts"]["Official primitives"])
             self.assertIn("MCTS/mcts.py::def selectNode", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["Official code refs"])
             self.assertIn("MCTS/mcts.py::def greedyPolicy", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["Official code refs"])

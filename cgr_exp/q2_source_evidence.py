@@ -116,13 +116,17 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
         "source_files": ["src/tot/methods/bfs.py"],
         "official_code_refs": [
             "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::def solve",
-            "github@8050e67d0e3a0fddc424d7fa5801538722a4c4cc: princeton-nlp/tree-of-thought-llm/src/tot/methods/bfs.py::method_generate",
-            "github@8050e67d0e3a0fddc424d7fa5801538722a4c4cc: princeton-nlp/tree-of-thought-llm/src/tot/methods/bfs.py::method_evaluate",
-            "github@8050e67d0e3a0fddc424d7fa5801538722a4c4cc: princeton-nlp/tree-of-thought-llm/src/tot/methods/bfs.py::method_select",
+            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::args.method_generate == 'sample'",
+            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::args.method_generate == 'propose'",
+            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::args.method_evaluate == 'vote'",
+            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::args.method_evaluate == 'value'",
+            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::args.method_select == 'sample'",
+            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::args.method_select == 'greedy'",
+            "raw: https://raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm/8050e67d0e3a0fddc424d7fa5801538722a4c4cc/src/tot/methods/bfs.py::args.n_select_sample",
         ],
         "official_source_anchors": [
             "README/run.py: ToT+BFS selected by method_generate/method_evaluate/method_select",
-            "src/tot/methods/bfs.py: generation, evaluation, and greedy/sample selection loop",
+            "src/tot/methods/bfs.py: solve dispatches method_generate sample/propose, method_evaluate vote/value, and method_select sample/greedy top-b selection",
         ],
         "official_primitives": [
             "method_generate",

@@ -12,6 +12,7 @@ from cgr_exp.experiment_status_report import build_current_experiment_status
 from cgr_exp.experiments import PRESETS, run_experiment
 from cgr_exp.game24_experiments import run_game24_offline_experiment
 from cgr_exp.game24_llm_pilot import ScriptedGame24Client, run_game24_llm_pilot, run_game24_llm_pilot_from_env
+from cgr_exp.harness_ranker import run_workflow_source_validation
 from cgr_exp.run_experiment import main as run_experiment_main
 from cgr_exp.scheduling_certification import run_scheduling_certification_experiment
 from cgr_exp.scheduling_diagnosis import run_scheduling_transfer_diagnosis
@@ -95,6 +96,7 @@ COMMANDS = [
     "audit-certification-tables",
     "audit-secret-safety",
     "build-current-experiment-status",
+    "run-workflow-source-validation",
 ]
 
 
@@ -232,6 +234,11 @@ def main() -> None:
             p.add_argument("--job-count", type=int, default=6)
             p.add_argument("--machine-count", type=int, default=3)
             p.add_argument("--cpsat-time-limit-seconds", type=float, default=5.0)
+        if name == "run-workflow-source-validation":
+            p.add_argument("--train-count", type=int, default=80)
+            p.add_argument("--validation-count", type=int, default=30)
+            p.add_argument("--epochs", type=int, default=20)
+            p.add_argument("--max-states-per-task", type=int, default=200)
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -1437,6 +1444,34 @@ def main() -> None:
             print(f"wrote {args.output_dir / 'secret_safety_audit.csv'}")
             if not manifest["secrets_ready"]:
                 raise SystemExit(f"secret safety audit failed: {manifest['finding_count']} finding(s)")
+            return
+        if args.command == "run-workflow-source-validation":
+            manifest = run_workflow_source_validation(
+                args.output_dir,
+                train_count=args.train_count,
+                validation_count=args.validation_count,
+                seed=args.seed,
+                epochs=args.epochs,
+                max_states_per_task=args.max_states_per_task,
+            )
+            command_manifest = {
+                "command": args.command,
+                "seed": args.seed,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "benchmark": manifest["benchmark"],
+                "max_states_per_task": args.max_states_per_task,
+                "train_pair_count": manifest["train_pair_count"],
+                "validation_pair_count": manifest["validation_pair_count"],
+                "tau3_train_trajectories_used": manifest["tau3_train_trajectories_used"],
+                "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
+                "learned_score_authorizes_pruning": manifest["learned_score_authorizes_pruning"],
+                "tool_names_used_as_features": manifest["tool_names_used_as_features"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'canonical_harness_source_validation.csv'}")
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

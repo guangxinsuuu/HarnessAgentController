@@ -414,6 +414,9 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
     if not protocol["manifest_found"]:
         return protocol
     data = _read_json_or_empty(manifest_path)
+    source_generator = data.get("source_generator")
+    if not isinstance(source_generator, Mapping):
+        source_generator = {}
     protocol.update(
         {
             "benchmark": data.get("benchmark", ""),
@@ -423,6 +426,12 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
             "oracle_labels_in_inference_features": _as_bool(data.get("oracle_labels_in_inference_features")),
             "learned_score_authorizes_pruning": _as_bool(data.get("learned_score_authorizes_pruning")),
             "tool_names_used_as_features": _as_bool(data.get("tool_names_used_as_features")),
+            "source_generator_distribution_fixed_before_target_test_evaluation": _as_bool(
+                source_generator.get("source_generator_distribution_fixed_before_target_test_evaluation")
+            ),
+            "tau3_heldout_test_seen_before_freeze": _as_bool(source_generator.get("tau3_heldout_test_seen_before_freeze")),
+            "source_generator_uses_tau3_trajectories": _as_bool(source_generator.get("tau3_trajectories_used")),
+            "source_generator_anonymized_tool_names": _as_bool(source_generator.get("anonymized_tool_names")),
             "train_count": data.get("train_count", ""),
             "validation_count": data.get("validation_count", ""),
             "seed": data.get("seed", ""),
@@ -535,6 +544,14 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
                 blockers.append("source controller uses tool names as features")
             if not source_protocol.get("controller_checkpoint_frozen"):
                 blockers.append("source controller checkpoint freeze evidence missing")
+            if source_protocol.get("source_generator_uses_tau3_trajectories"):
+                blockers.append("source generator used tau3 trajectories")
+            if source_protocol.get("tau3_heldout_test_seen_before_freeze"):
+                blockers.append("tau3 heldout test influenced source generator freeze")
+            if not source_protocol.get("source_generator_distribution_fixed_before_target_test_evaluation"):
+                blockers.append("source generator freeze evidence missing")
+            if not source_protocol.get("source_generator_anonymized_tool_names"):
+                blockers.append("source generator tool-name anonymization evidence missing")
             trace_summary = audit_tau3_controller_trace(out_dir / f"{row_dir.name}_trace_audit", row_dir / "tau3_controller_trace.jsonl")
             if trace_summary["event_count"] <= 0:
                 blockers.append("controller trace missing")

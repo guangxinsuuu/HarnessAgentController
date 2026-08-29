@@ -46,6 +46,8 @@ class HarnessContractTest(unittest.TestCase):
             self.assertFalse(saved["oracle_labels_in_inference_features"])
             self.assertFalse(saved["tool_names_used_as_features"])
             self.assertTrue(saved["controller_checkpoint_frozen"])
+            self.assertTrue(saved["source_generator"]["source_generator_distribution_fixed_before_target_test_evaluation"])
+            self.assertFalse(saved["source_generator"]["tau3_heldout_test_seen_before_freeze"])
             self.assertGreater(saved["train_pair_count"], 0)
 
     def test_tau3_adapter_outputs_canonical_features_without_oracle_or_tool_identity(self) -> None:
@@ -85,4 +87,3 @@ class HarnessContractTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

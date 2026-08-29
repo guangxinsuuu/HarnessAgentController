@@ -278,6 +278,10 @@ class Tau3NativeTest(unittest.TestCase):
                             "tau3_train_trajectories_used": False,
                             "oracle_labels_in_inference_features": False,
                             "tool_names_used_as_features": False,
+                            "source_generator_distribution_fixed_before_target_test_evaluation": True,
+                            "tau3_heldout_test_seen_before_freeze": False,
+                            "source_generator_uses_tau3_trajectories": False,
+                            "source_generator_anonymized_tool_names": True,
                         },
                     }
                 ),
@@ -366,6 +370,43 @@ class Tau3NativeTest(unittest.TestCase):
             readiness = audit_table10_tau3_readiness(root / "audit", [canonical], expected_test_count=2)
             self.assertFalse(readiness["all_rows_result_ready"])
             self.assertIn("source controller used tau3 train trajectories", readiness["audit_rows"][0]["result_blockers"])
+
+    def test_audits_table10_tau3_readiness_rejects_source_generator_target_tuning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            canonical = root / "solver_canonical_retail"
+            source = root / "source"
+            canonical.mkdir()
+            source.mkdir()
+            _write_row(canonical, "retail", method="Solver-derived canonical controller", task_count=2, status="complete")
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
+            manifest_path = source / "canonical_harness_source_validation.json"
+            source_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            source_manifest["source_generator"]["source_generator_distribution_fixed_before_target_test_evaluation"] = False
+            source_manifest["source_generator"]["tau3_heldout_test_seen_before_freeze"] = True
+            source_manifest["source_generator"]["anonymized_tool_names"] = False
+            manifest_path.write_text(json.dumps(source_manifest), encoding="utf-8")
+            (canonical / "tau3_native_command.json").write_text(json.dumps({"solver_ranker_checkpoint": str(source / "generic_harness_ranker.json")}), encoding="utf-8")
+            (canonical / "tau3_controller_trace.jsonl").write_text(
+                json.dumps(
+                    {
+                        "scoring_mode": "canonical_ranker",
+                        "ranker_checkpoint_loaded": True,
+                        "oracle_visible_to_controller": False,
+                        "oracle_used_for_candidate_generation": False,
+                        "oracle_used_for_filtering": False,
+                        "tool_names_used_as_features": False,
+                        "candidate_scores": [{"candidate_index": 0, "score": 1.0}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            readiness = audit_table10_tau3_readiness(root / "audit", [canonical], expected_test_count=2)
+            blockers = readiness["audit_rows"][0]["result_blockers"]
+            self.assertIn("tau3 heldout test influenced source generator freeze", blockers)
+            self.assertIn("source generator freeze evidence missing", blockers)
+            self.assertIn("source generator tool-name anonymization evidence missing", blockers)
 
     def test_audits_table10_tau3_readiness_labels_missing_expected_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -526,6 +567,12 @@ def _write_source_manifest(path: Path, *, tau3_train_trajectories_used: bool) ->
                 "oracle_labels_in_inference_features": False,
                 "learned_score_authorizes_pruning": False,
                 "tool_names_used_as_features": False,
+                "source_generator": {
+                    "tau3_trajectories_used": False,
+                    "tau3_heldout_test_seen_before_freeze": False,
+                    "source_generator_distribution_fixed_before_target_test_evaluation": True,
+                    "anonymized_tool_names": True,
+                },
                 "train_count": 3,
                 "validation_count": 2,
                 "seed": 0,

@@ -119,6 +119,7 @@ def _render_markdown(
             "",
             f"Implementation/source matrix: `{q2_implementation_matrix}`.",
             "Remaining Q2 run queue: `runs/q2_remaining_runs/q2_remaining_runs.md`.",
+            "Q2 run preflight: `runs/q2_run_preflight/q2_run_preflight.md`.",
             "",
             "## Q4 tau/tau2 Tool-Agent Evaluation",
             "",

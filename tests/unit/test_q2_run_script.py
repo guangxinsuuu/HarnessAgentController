@@ -13,6 +13,8 @@ class Q2RunScriptTest(unittest.TestCase):
         text = script.read_text(encoding="utf-8")
         self.assertNotIn("sk-", text)
         self.assertIn("preflight", text)
+        self.assertIn("build-q2-run-preflight", text)
+        self.assertIn("RUN_PREFLIGHT_DIR", text)
         self.assertIn("missing CGR_LLM_API_KEY", text)
         self.assertIn("require_cpsat", text)
         self.assertIn("ortools.sat.python", text)
@@ -63,6 +65,7 @@ class Q2RunScriptTest(unittest.TestCase):
                 "SOURCE_AUDIT_DIR": str(root / "source_audit"),
                 "SOURCE_REF_DIR": str(root / "source_refs"),
                 "IMPLEMENTATION_MATRIX_DIR": str(root / "matrix"),
+                "RUN_PREFLIGHT_DIR": str(root / "run_preflight"),
                 "TEST_COUNT": "1",
             }
             env.pop("CGR_LLM_API_KEY", None)
@@ -83,6 +86,7 @@ class Q2RunScriptTest(unittest.TestCase):
             self.assertTrue((root / "source_audit" / "q2_source_evidence_audit.csv").exists())
             self.assertTrue((root / "source_refs" / "q2_source_ref_verification.csv").exists())
             self.assertTrue((root / "matrix" / "q2_implementation_matrix.csv").exists())
+            self.assertTrue((root / "run_preflight" / "q2_run_preflight.csv").exists())
 
     def test_q2_runbook_uses_current_protocol_directories(self) -> None:
         text = Path("docs/q2_runbook.md").read_text(encoding="utf-8")

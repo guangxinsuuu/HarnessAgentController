@@ -59,6 +59,7 @@ AUDIT_DIR="${AUDIT_DIR:-runs/q2_table_current_seed0_protocol_v2_audit}"
 SOURCE_AUDIT_DIR="${SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"
 SOURCE_REF_DIR="${SOURCE_REF_DIR:-runs/q2_source_ref_verification}"
 IMPLEMENTATION_MATRIX_DIR="${IMPLEMENTATION_MATRIX_DIR:-runs/q2_implementation_matrix}"
+RUN_PREFLIGHT_DIR="${RUN_PREFLIGHT_DIR:-runs/q2_run_preflight}"
 
 usage() {
   cat <<'EOF'
@@ -237,6 +238,7 @@ preflight() {
   print "source_audit_dir: ${SOURCE_AUDIT_DIR}"
   print "source_ref_dir: ${SOURCE_REF_DIR}"
   print "implementation_matrix_dir: ${IMPLEMENTATION_MATRIX_DIR}"
+  print "run_preflight_dir: ${RUN_PREFLIGHT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: missing"
   else
@@ -245,6 +247,32 @@ preflight() {
   implementation_matrix
   source_audit
   source_ref_verify
+  "${PYTHON_BIN}" -m cgr_exp.cli build-q2-run-preflight \
+    --output-dir "${RUN_PREFLIGHT_DIR}" \
+    --seed "${SEED}" \
+    --train-count "${TRAIN_COUNT}" \
+    --validation-count "${VALIDATION_COUNT}" \
+    --test-count "${TEST_COUNT}" \
+    --job-count "${JOB_COUNT}" \
+    --machine-count "${MACHINE_COUNT}" \
+    --node-budget "${NODE_BUDGET}" \
+    --action-budget "${ACTION_BUDGET}" \
+    --records-per-instance "${RECORDS_PER_INSTANCE}" \
+    --rank-epochs "${RANK_EPOCHS}" \
+    --model "${MODEL}" \
+    --perturbation "${PERTURBATION}" \
+    --native-dir "${NATIVE_DIR}" \
+    --learned-dir "${LEARNED_DIR}" \
+    --tot-dir "${TOT_DIR}" \
+    --sample-count "${SAMPLE_COUNT}" \
+    --native-parallel-episodes "${NATIVE_PARALLEL_EPISODES}" \
+    --search-parallel-episodes "${SEARCH_PARALLEL_EPISODES}" \
+    --tot-parallel-episodes "${TOT_PARALLEL_EPISODES}" \
+    --batch-size "${BATCH_SIZE}" \
+    --target-prm-train-count "${TARGET_PRM_TRAIN_COUNT}" \
+    --tot-breadth "${TOT_BREADTH}" \
+    --tot-value-samples "${TOT_VALUE_SAMPLES}" \
+    --overwrite
   audit_table
 }
 

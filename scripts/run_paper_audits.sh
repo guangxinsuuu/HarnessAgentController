@@ -39,6 +39,7 @@ Q2_SOURCE_AUDIT_DIR="${Q2_SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"
 Q2_SOURCE_REF_DIR="${Q2_SOURCE_REF_DIR:-runs/q2_source_ref_verification}"
 Q2_IMPLEMENTATION_MATRIX_DIR="${Q2_IMPLEMENTATION_MATRIX_DIR:-runs/q2_implementation_matrix}"
 Q2_REMAINING_RUNS_DIR="${Q2_REMAINING_RUNS_DIR:-runs/q2_remaining_runs}"
+Q2_RUN_PREFLIGHT_DIR="${Q2_RUN_PREFLIGHT_DIR:-runs/q2_run_preflight}"
 
 Q4_TABLE_AUDIT_DIR="${Q4_TABLE_AUDIT_DIR:-runs/q4_tau_table_current_audit}"
 Q4_SOURCE_AUDIT_DIR="${Q4_SOURCE_AUDIT_DIR:-runs/q4_tau_source_evidence_audit}"
@@ -130,6 +131,7 @@ print_summary() {
   print "certification_audit_dir: ${CERTIFICATION_AUDIT_DIR}"
   print "status_report_dir: ${STATUS_REPORT_DIR}"
   print "q2_remaining_runs_dir: ${Q2_REMAINING_RUNS_DIR}"
+  print "q2_run_preflight_dir: ${Q2_RUN_PREFLIGHT_DIR}"
   print "q4_adapter_contract_dir: ${Q4_ADAPTER_CONTRACT_DIR}"
   print "secret_audit_dir: ${SECRET_AUDIT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
@@ -165,6 +167,16 @@ build_q2_remaining_runs() {
     --overwrite
 }
 
+build_q2_run_preflight() {
+  "${PYTHON_BIN}" -m cgr_exp.cli build-q2-run-preflight \
+    --output-dir "${Q2_RUN_PREFLIGHT_DIR}" \
+    --test-count "${TEST_COUNT}" \
+    --native-dir "${Q2_NATIVE_DIR}" \
+    --learned-dir "${Q2_LEARNED_DIR}" \
+    --tot-dir "${Q2_TOT_DIR}" \
+    --overwrite
+}
+
 case "${MODE}" in
   all)
     print_summary
@@ -173,6 +185,7 @@ case "${MODE}" in
     audit_certification
     audit_secret_safety
     build_q2_remaining_runs
+    build_q2_run_preflight
     build_status_report
     ;;
   q2)
@@ -191,6 +204,7 @@ case "${MODE}" in
     print_summary
     audit_secret_safety
     build_q2_remaining_runs
+    build_q2_run_preflight
     build_status_report
     ;;
   -h|--help|help) usage ;;

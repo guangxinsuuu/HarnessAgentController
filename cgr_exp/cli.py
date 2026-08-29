@@ -32,6 +32,7 @@ from cgr_exp.scheduling_transfer import (
 from cgr_exp.secret_safety import audit_secret_safety
 from cgr_exp.q2_implementation_matrix import build_q2_implementation_matrix
 from cgr_exp.q2_remaining_runs import build_q2_remaining_runs
+from cgr_exp.q2_run_preflight import build_q2_run_preflight
 from cgr_exp.q2_source_evidence import audit_q2_source_evidence
 from cgr_exp.q2_source_ref_verifier import verify_q2_source_refs
 from cgr_exp.q4_tau_source_evidence import audit_q4_tau_source_evidence
@@ -72,6 +73,7 @@ COMMANDS = [
     "audit-table5-q2",
     "build-q2-implementation-matrix",
     "build-q2-remaining-runs",
+    "build-q2-run-preflight",
     "audit-q2-source-evidence",
     "verify-q2-source-refs",
     "audit-q4-tau-source-evidence",
@@ -237,6 +239,29 @@ def main() -> None:
         if name == "build-q2-remaining-runs":
             p.add_argument("--q2-readiness", type=Path, default=Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv"))
             p.add_argument("--certification-readiness", type=Path, default=Path("runs/certification_tables_readiness/certification_tables_readiness.csv"))
+        if name == "build-q2-run-preflight":
+            p.add_argument("--model", default=None)
+            p.add_argument("--train-count", type=int, default=200)
+            p.add_argument("--validation-count", type=int, default=50)
+            p.add_argument("--test-count", type=int, default=100)
+            p.add_argument("--job-count", type=int, default=6)
+            p.add_argument("--machine-count", type=int, default=3)
+            p.add_argument("--node-budget", type=int, default=80)
+            p.add_argument("--action-budget", type=int, default=6)
+            p.add_argument("--records-per-instance", type=int, default=60)
+            p.add_argument("--rank-epochs", type=int, default=25)
+            p.add_argument("--perturbation", default="mixed")
+            p.add_argument("--native-dir", type=Path, default=Path("runs/q2_native_llm_baselines_100_seed0_sc_v2"))
+            p.add_argument("--learned-dir", type=Path, default=Path("runs/q2_learned_search_100_seed0_rest_gate_v2"))
+            p.add_argument("--tot-dir", type=Path, default=Path("runs/q2_tot_bfs_100_seed0_tot_gate_v2"))
+            p.add_argument("--sample-count", type=int, default=8)
+            p.add_argument("--native-parallel-episodes", type=int, default=8)
+            p.add_argument("--search-parallel-episodes", type=int, default=6)
+            p.add_argument("--tot-parallel-episodes", type=int, default=6)
+            p.add_argument("--batch-size", type=int, default=4)
+            p.add_argument("--target-prm-train-count", type=int, default=100)
+            p.add_argument("--tot-breadth", type=int, default=5)
+            p.add_argument("--tot-value-samples", type=int, default=3)
         if name == "run-scheduling-outcome-prm":
             p.add_argument("--source-run-dir", type=Path, required=True)
             p.add_argument("--train-count", type=int, default=200)
@@ -1133,6 +1158,47 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'q2_remaining_runs.csv'}")
+            return
+        if args.command == "build-q2-run-preflight":
+            manifest = build_q2_run_preflight(
+                args.output_dir,
+                seed=args.seed,
+                train_count=args.train_count,
+                validation_count=args.validation_count,
+                test_count=args.test_count,
+                job_count=args.job_count,
+                machine_count=args.machine_count,
+                node_budget=args.node_budget,
+                action_budget=args.action_budget,
+                records_per_instance=args.records_per_instance,
+                rank_epochs=args.rank_epochs,
+                model=args.model,
+                perturbation=args.perturbation,
+                native_dir=args.native_dir,
+                learned_dir=args.learned_dir,
+                tot_dir=args.tot_dir,
+                sample_count=args.sample_count,
+                native_parallel_episodes=args.native_parallel_episodes,
+                search_parallel_episodes=args.search_parallel_episodes,
+                tot_parallel_episodes=args.tot_parallel_episodes,
+                batch_size=args.batch_size,
+                target_prm_train_count=args.target_prm_train_count,
+                tot_breadth=args.tot_breadth,
+                tot_value_samples=args.tot_value_samples,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "test_count": args.test_count,
+                "total_remaining_units": manifest["total_remaining_units"],
+                "total_worst_case_requests": manifest["total_worst_case_requests"],
+                "api_key_present": manifest["api_key_present"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q2_run_preflight.csv'}")
             return
         if args.command == "run-table6-authority":
             corruption_seeds = tuple(int(part) for part in args.corruption_seeds.split(",") if part.strip())

@@ -30,6 +30,7 @@ Machine audit: `runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readines
 
 Implementation/source matrix: `runs/q2_implementation_matrix/q2_implementation_matrix.csv`.
 Remaining Q2 run queue: `runs/q2_remaining_runs/q2_remaining_runs.md`.
+Q2 run preflight: `runs/q2_run_preflight/q2_run_preflight.md`.
 
 ## Q4 tau/tau2 Tool-Agent Evaluation
 

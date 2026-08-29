@@ -12,3 +12,5 @@ __pycache__/
 runs/*
 !runs/current_experiment_summary.md
 !runs/game24_final_archive.md
+docs/command_manifest.json
+docs/current_experiment_status.json

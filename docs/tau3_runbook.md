@@ -176,3 +176,8 @@ Canonical rows must show evidence for:
 - contract-coverage stress passed
 - canonical ranker trace events
 - complete tool call, LLM call, token, and wall-clock accounting
+
+Routine status generation should write to `runs/current_experiment_status`,
+which is the default used by `scripts/run_paper_audits.sh`. Only write status
+artifacts directly under `docs/` when intentionally refreshing a checked-in
+paper snapshot.

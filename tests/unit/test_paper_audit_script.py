@@ -25,6 +25,7 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("build-current-experiment-status", text)
         self.assertIn("llm_key: not required", text)
         self.assertIn("STATUS_REPORT_DIR", text)
+        self.assertIn('STATUS_REPORT_DIR="${STATUS_REPORT_DIR:-runs/current_experiment_status}"', text)
         self.assertIn("Q2_REMAINING_RUNS_DIR", text)
         self.assertIn("build-q2-remaining-runs", text)
         self.assertIn("Q2_RUN_PREFLIGHT_DIR", text)

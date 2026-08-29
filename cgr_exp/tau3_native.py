@@ -632,6 +632,9 @@ def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_t
     rows = []
     for row_dir in _table10_default_row_dirs(base_dir, best_of_n):
         domain, method = _table10_expected_label(row_dir)
+        runtime_kind = _table10_runtime_kind(method)
+        api_required = runtime_kind in {"api_native", "api_solver_controller"}
+        derived_from_native = runtime_kind == "derived_from_native"
         q4_row = _read_json_or_empty(row_dir / "q4_tau_row.json")
         result_path = _find_official_results(row_dir)
         rewards_by_task: Dict[str, List[float]] = {}
@@ -661,6 +664,7 @@ def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_t
         task_count = _row_int(q4_row, "task_count", len(rewards_by_task)) if q4_row else len(rewards_by_task)
         simulation_count = _row_int(q4_row, "simulation_count", len(sims)) if q4_row else len(sims)
         expected_simulations = expected_test_count * 4
+        expected_api_simulations = expected_simulations if api_required else 0
         status = str(q4_row.get("status", "missing" if result_path is None else "partial_unaggregated"))
         pending_without_results = bool(q4_row) and status != "complete" and result_path is None
         pass1 = q4_row.get("pass^1") if q4_row else (_pass_hat(rewards_by_task, 1) if rewards_by_task else "")
@@ -670,6 +674,9 @@ def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_t
                 "Domain": domain,
                 "Method": method,
                 "row_dir": str(row_dir),
+                "runtime_kind": runtime_kind,
+                "api_required": api_required,
+                "derived_from_native": derived_from_native,
                 "status": status,
                 "q4_row_present": bool(q4_row),
                 "official_results_present": result_path is not None,
@@ -680,6 +687,7 @@ def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_t
                 "task_progress": _progress_fraction(task_count, expected_test_count),
                 "simulation_count": simulation_count,
                 "expected_simulation_count": expected_simulations,
+                "expected_api_simulation_count": expected_api_simulations,
                 "simulation_progress": _progress_fraction(simulation_count, expected_simulations),
                 "pass^1": pass1,
                 "pass^4": pass4,
@@ -1150,6 +1158,16 @@ def _table10_expected_label(row_dir: Path) -> tuple[str, str]:
     return domain, "missing row"
 
 
+def _table10_runtime_kind(method: str) -> str:
+    if method == "Best-of-N":
+        return "derived_from_native"
+    if method == "Native tool-calling rerun":
+        return "api_native"
+    if "Solver-derived" in method:
+        return "api_solver_controller"
+    return "unknown"
+
+
 def _table10_default_row_dirs(base_dir: Path, best_of_n: int) -> List[Path]:
     return [
         base_dir / "native_retail",
@@ -1383,16 +1401,19 @@ def _table10_progress_markdown(manifest: Mapping[str, object]) -> str:
         f"Base dir: `{manifest['base_dir']}`",
         f"Complete rows: `{manifest['complete_rows']}/{manifest['total_rows']}`",
         "",
-        "| Domain | Method | Status | Tasks | Simulations | pass^1 | pass^4 | Note |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
+        "| Domain | Method | Runtime | API | Status | Tasks | Simulations | API sims | pass^1 | pass^4 | Note |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for row in manifest["rows"]:
         cells = [
             str(row["Domain"]),
             str(row["Method"]),
+            str(row.get("runtime_kind", "")),
+            "yes" if row.get("api_required") else "no",
             str(row["status"]),
             f"{row['task_count']}/{row['expected_task_count']}",
             f"{row['simulation_count']}/{row['expected_simulation_count']}",
+            str(row.get("expected_api_simulation_count", "")),
             _fmt_maybe_float(row.get("pass^1"), 4),
             _fmt_maybe_float(row.get("pass^4"), 4),
             str(row.get("note", "")),

@@ -784,14 +784,24 @@ class Tau3NativeTest(unittest.TestCase):
             rows = {(row["Domain"], row["Method"]): row for row in manifest["rows"]}
             native = rows[("retail", "Native tool-calling rerun")]
             self.assertEqual(native["status"], "partial_unaggregated")
+            self.assertEqual(native["runtime_kind"], "api_native")
+            self.assertTrue(native["api_required"])
+            self.assertFalse(native["derived_from_native"])
+            self.assertEqual(native["expected_api_simulation_count"], 16)
             self.assertEqual(native["task_count"], 2)
             self.assertEqual(native["simulation_count"], 3)
             self.assertAlmostEqual(native["task_progress"], 0.5)
             self.assertAlmostEqual(native["simulation_progress"], 3 / 16)
+            best = rows[("retail", "Best-of-N")]
+            self.assertEqual(best["runtime_kind"], "derived_from_native")
+            self.assertFalse(best["api_required"])
+            self.assertTrue(best["derived_from_native"])
+            self.assertEqual(best["expected_api_simulation_count"], 0)
             self.assertTrue((root / "progress" / "table10_tau3_progress.csv").exists())
             text = (root / "progress" / "table10_tau3_progress.md").read_text(encoding="utf-8")
             self.assertIn("Table10 Tau3 Progress", text)
             self.assertIn("2/4", text)
+            self.assertIn("derived_from_native", text)
 
     def test_summarizes_pending_tau3_artifact_without_results_as_rerunnable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -803,6 +813,10 @@ class Tau3NativeTest(unittest.TestCase):
             manifest = summarize_table10_tau3_progress(root / "progress", base_dir=base, expected_test_count=4, best_of_n=4)
             rows = {(row["Domain"], row["Method"]): row for row in manifest["rows"]}
             solver_row = rows[("retail", "Solver-derived controller")]
+            self.assertEqual(solver_row["runtime_kind"], "api_solver_controller")
+            self.assertTrue(solver_row["api_required"])
+            self.assertFalse(solver_row["derived_from_native"])
+            self.assertEqual(solver_row["expected_api_simulation_count"], 16)
             self.assertTrue(solver_row["q4_row_present"])
             self.assertFalse(solver_row["official_results_present"])
             self.assertTrue(solver_row["pending_without_official_results"])

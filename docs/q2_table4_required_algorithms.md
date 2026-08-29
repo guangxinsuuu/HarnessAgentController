@@ -55,7 +55,7 @@ preserve the official algorithmic primitive that makes the method what it is.
 | Self-Consistency | Multiple independent CoT samples followed by answer aggregation. Aggregation must operate on final schedules, not intermediate oracle labels. | `cgr_exp/scheduling_native_q2.py` | Implemented; requires complete 100-instance artifact. |
 | Best-of-N | Multiple independent final-answer samples followed by verifier/reward selection. If the verifier selects the minimum verified objective, the row must be named or footnoted as verifier-selected. | `cgr_exp/scheduling_native_q2.py` | Implemented as `Best-of-N + verifier`; requires complete 100-instance artifact. |
 | Tree of Thoughts | Native ToT BFS adaptation: generate candidate thoughts/actions, evaluate frontier states with LLM value/vote style scoring, and select the top breadth for the next level. | `cgr_exp/scheduling_tot_q2.py` | Implemented; only artifacts from `run-scheduling-tot-q2` may populate this row. Older GPT-frontier-rank diagnostics must not populate this row. |
-| Target-PRM | Process-reward-style controller trained on target LLM-induced intermediate Scheduling states from disjoint target training instances. | `cgr_exp/scheduling_transfer.py` | Implemented as in-domain PRM-style priority; not zero-shot. |
+| Target-PRM | Process-reward-style controller trained on target LLM-induced intermediate Scheduling states from disjoint target training instances, with same-parent frontier sibling comparisons prioritized before cross-parent same-task pairs. | `cgr_exp/scheduling_transfer.py` | Implemented as in-domain PRM-style priority; not zero-shot. |
 | PRM-guided MCTS (ReST-MCTS-style) | MCTS search component using a process reward/value model for selection, expansion evaluation, and backup. | `cgr_exp/scheduling_transfer.py` | Implemented only as the ReST-MCTS-style search component. Do not claim full ReST-MCTS* unless iterative policy/value self-training is added. |
 | Solver prior | Solver-induced source trajectories train a frozen controller, then evaluate zero-shot on real LLM-induced target search. | `cgr_exp/scheduling_transfer.py` | Implemented as our zero-shot transfer row. |
 | Solver prior + certification | Same frozen solver-trained controller plus pruning authorized only by verified feasibility/lower-bound logic. Learned scores may rank but must not authorize pruning. | `cgr_exp/scheduling_transfer.py`, `cgr_exp/certification/prune.py` | Implemented; Q2 promotion should use on-demand LLM proposal accounting. |
@@ -97,6 +97,8 @@ preserve the official algorithmic primitive that makes the method what it is.
 - Target-PRM and ReST-MCTS-style rows must include target PRM trace records,
   training pairs, a PRM ranker artifact, Q2 method alignment, and no overlap
   between target PRM training task IDs and held-out evaluation task IDs.
+- Target-PRM label manifests must declare process-first pair sampling and
+  record positive same-parent frontier sibling comparison candidates.
 - ReST-MCTS-style rows must additionally declare the MCTS search primitives:
   selection, expansion, simulation/evaluation, and backpropagation, plus PRM
   process-reward guidance. A plain Target-PRM priority artifact is not enough.

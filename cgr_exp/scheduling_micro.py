@@ -365,7 +365,7 @@ def make_scheduling_ranking_pairs(records: Sequence[SchedulingTraceRecord], max_
         if record.parent_id is not None:
             by_task_parent.setdefault((record.task_id, record.parent_id), []).append(record)
     pairs: List[Pair] = []
-    by_task_pairs: Dict[str, List[Pair]] = {}
+    by_task_sibling_pairs: Dict[str, List[Pair]] = {}
     for (task_id, _parent_id), rows in by_task_parent.items():
         if len(rows) < 2:
             continue
@@ -380,22 +380,33 @@ def make_scheduling_ranking_pairs(records: Sequence[SchedulingTraceRecord], max_
                     local.append((left.features, right.features))
                 elif right_key < left_key:
                     local.append((right.features, left.features))
-        by_task_pairs.setdefault(task_id, []).extend(local)
+        by_task_sibling_pairs.setdefault(task_id, []).extend(local)
     for task_id, rows in by_task.items():
-        local = by_task_pairs.setdefault(task_id, [])
+        sibling_pairs = by_task_sibling_pairs.setdefault(task_id, [])
+        global_pairs: List[Pair] = []
         for i in range(len(rows)):
             for j in range(i + 1, len(rows)):
                 left = rows[i]
                 right = rows[j]
+                if left.parent_id is not None and left.parent_id == right.parent_id:
+                    continue
                 left_key = _ranking_key(left)
                 right_key = _ranking_key(right)
                 if left_key < right_key:
-                    local.append((left.features, right.features))
+                    global_pairs.append((left.features, right.features))
                 elif right_key < left_key:
-                    local.append((right.features, left.features))
-    for local in by_task_pairs.values():
-        rng.shuffle(local)
-        pairs.extend(local[:max_pairs_per_task])
+                    global_pairs.append((right.features, left.features))
+        rng.shuffle(sibling_pairs)
+        rng.shuffle(global_pairs)
+        if sibling_pairs:
+            sibling_quota = min(len(sibling_pairs), max(1, max_pairs_per_task // 2))
+        else:
+            sibling_quota = 0
+        selected = sibling_pairs[:sibling_quota]
+        selected.extend(global_pairs[: max(0, max_pairs_per_task - len(selected))])
+        if len(selected) < max_pairs_per_task:
+            selected.extend(sibling_pairs[sibling_quota:max_pairs_per_task])
+        pairs.extend(selected[:max_pairs_per_task])
     rng.shuffle(pairs)
     return pairs
 

@@ -1745,6 +1745,44 @@ class Table5Q2Test(unittest.TestCase):
             self.assertIn("must include non-root intermediate states", audit_rows["Target-PRM priority"]["result_blockers"])
             self.assertIn("must record frontier parent groups", audit_rows["Target-PRM priority"]["result_blockers"])
 
+    def test_readiness_audit_rejects_backfilled_legacy_target_prm_pairs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prm = root / "prm"
+            prm.mkdir()
+            _write_csv(
+                prm / "scheduling_llm_pilot_table.csv",
+                [
+                    {
+                        "Policy": "Target-PRM",
+                        "success": "0.8",
+                        "gap": "0.1",
+                        "nodes_mean": "80",
+                        "proposal_calls_mean": "80",
+                        "value_calls": "0",
+                        "proposal_tokens": "1000",
+                        "value_tokens": "0",
+                        "total_tokens": "1000",
+                        "on_demand_total_tokens": "1000",
+                    }
+                ],
+            )
+            _write_csv(prm / "scheduling_llm_pilot_per_instance.csv", [{"Policy": "Target-PRM", "task_id": "heldout-0"}])
+            (prm / "target_prm_ranker.json").write_text("{}", encoding="utf-8")
+            (prm / "target_prm_trace_records.jsonl").write_text(json.dumps({"task_id": "train-0"}) + "\n", encoding="utf-8")
+            (prm / "target_prm_train_pairs.jsonl").write_text(json.dumps({"left": 0, "right": 1}) + "\n", encoding="utf-8")
+            _write_learned_metrics(prm, ["Target-PRM priority"], ["Target-PRM"])
+            _write_target_prm_label_manifest(prm)
+            label_manifest = json.loads((prm / "target_prm_label_manifest.json").read_text(encoding="utf-8"))
+            label_manifest["pair_sampling_version"] = "backfilled_from_legacy_pairs"
+            (prm / "target_prm_label_manifest.json").write_text(json.dumps(label_manifest), encoding="utf-8")
+
+            out = root / "out"
+            audit_table5_q2_readiness(out, solver_prior_dir=root / "missing", target_prm_dir=prm, expected_test_count=1)
+            audit_rows = {row["Method"]: row for row in _read_csv(out / "table5_q2_readiness.csv")}
+            self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
+            self.assertIn("must come from process_first_v2 pair sampling", audit_rows["Target-PRM priority"]["result_blockers"])
+
     def test_readiness_audit_rejects_rest_mcts_manifest_claiming_full_self_training(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2284,12 +2322,16 @@ def _write_target_prm_label_manifest(path: Path) -> None:
                 "state_distribution": "target LLM-induced Scheduling trajectories from disjoint training instances",
                 "terminal_outcome_only": False,
                 "uses_intermediate_states": True,
+                "pair_sampling_version": "process_first_v2",
+                "pair_sampling": "process-first: same-parent frontier sibling pairs are reserved before cross-parent same-task pairs fill the per-task budget",
                 "process_label_record_count": 1,
                 "target_pair_count": 1,
                 "finite_best_descendant_labels": 1,
                 "infeasible_best_descendant_labels": 0,
                 "max_record_depth": 1,
                 "frontier_parent_group_count": 1,
+                "sibling_pair_candidate_count": 1,
+                "cross_parent_pair_candidate_count": 1,
                 "oracle_labels_in_inference_features": False,
             }
         ),

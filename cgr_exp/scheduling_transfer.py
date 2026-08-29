@@ -1065,7 +1065,17 @@ def run_scheduling_llm_pilot(
         _write_trace_records(out_dir / "target_prm_trace_records.jsonl", target_prm_records)
         _write_pairs(out_dir / "target_prm_train_pairs.jsonl", target_prm_pairs)
         (out_dir / "target_prm_label_manifest.json").write_text(
-            json.dumps(_target_prm_label_manifest(metrics, target_prm_records, target_prm_pairs, target_prm_train_ids), indent=2, sort_keys=True),
+            json.dumps(
+                _target_prm_label_manifest(
+                    metrics,
+                    target_prm_records,
+                    target_prm_pairs,
+                    target_prm_train_ids,
+                    pair_sampling_version="process_first_v2",
+                ),
+                indent=2,
+                sort_keys=True,
+            ),
             encoding="utf-8",
         )
         _write_csv(out_dir / "target_prm_training_proposal_cache.csv", target_prm_cache_rows)
@@ -1116,7 +1126,13 @@ def backfill_scheduling_llm_pilot_audit_artifacts(out_dir: Path) -> Dict[str, ob
         target_train_ids = metrics.get("target_prm_training_instance_ids")
         if not isinstance(target_train_ids, list) or not target_train_ids:
             target_train_ids = sorted({str(row.get("task_id", "")) for row in target_records if str(row.get("task_id", ""))})
-        label_manifest = _target_prm_label_manifest(metrics, target_records, target_pairs, [str(item) for item in target_train_ids])
+        label_manifest = _target_prm_label_manifest(
+            metrics,
+            target_records,
+            target_pairs,
+            [str(item) for item in target_train_ids],
+            pair_sampling_version="backfilled_from_legacy_pairs",
+        )
         (out_dir / "target_prm_label_manifest.json").write_text(json.dumps(label_manifest, indent=2, sort_keys=True), encoding="utf-8")
 
     manifest = {
@@ -2285,12 +2301,17 @@ def _target_prm_label_manifest(
     target_records: Sequence[object],
     target_pairs: Sequence[object],
     target_train_ids: Sequence[str],
+    pair_sampling_version: str = "process_first_v2",
 ) -> Dict[str, object]:
     finite_labels = 0
     infeasible_labels = 0
     depths = []
     parent_ids = set()
+    records_by_task_parent: Dict[tuple[str, str], List[object]] = {}
+    records_by_task: Dict[str, List[object]] = {}
     for record in target_records:
+        task_id = str(_record_get(record, "task_id", ""))
+        records_by_task.setdefault(task_id, []).append(record)
         value = float(_record_get(record, "best_descendant_objective", float("inf")))
         if value == float("inf"):
             infeasible_labels += 1
@@ -2300,12 +2321,17 @@ def _target_prm_label_manifest(
         parent_id = _record_get(record, "parent_id", None)
         if parent_id is not None:
             parent_ids.add(str(parent_id))
+            records_by_task_parent.setdefault((task_id, str(parent_id)), []).append(record)
+    sibling_pair_candidates = sum(_comparable_pair_count(rows) for rows in records_by_task_parent.values())
+    cross_parent_pair_candidates = sum(_cross_parent_comparable_pair_count(rows) for rows in records_by_task.values())
     return {
         "supervision": "target_process_frontier_ranking",
         "label_source": "exact_residual_scheduling_oracle_on_target_llm_states",
         "state_distribution": "target LLM-induced Scheduling trajectories from disjoint training instances",
         "terminal_outcome_only": False,
         "uses_intermediate_states": True,
+        "pair_sampling_version": pair_sampling_version,
+        "pair_sampling": "process-first: same-parent frontier sibling pairs are reserved before cross-parent same-task pairs fill the per-task budget",
         "process_label_fields": [
             "best_descendant_objective",
             "future_search_cost",
@@ -2329,6 +2355,8 @@ def _target_prm_label_manifest(
         "infeasible_best_descendant_labels": infeasible_labels,
         "max_record_depth": max(depths) if depths else 0,
         "frontier_parent_group_count": len(parent_ids),
+        "sibling_pair_candidate_count": sibling_pair_candidates,
+        "cross_parent_pair_candidate_count": cross_parent_pair_candidates,
         "pseudo_oracle_labels_used": False,
         "oracle_label_fields": list(ORACLE_LABEL_FIELDS),
         "oracle_labels_in_inference_features": bool(metrics["semantic_state_schema"]["oracle_labels_in_inference_features"]),
@@ -2341,6 +2369,37 @@ def _record_get(record: object, key: str, default: object = None) -> object:
     if isinstance(record, Mapping):
         return record.get(key, default)
     return getattr(record, key, default)
+
+
+def _comparable_pair_count(records: Sequence[object]) -> int:
+    count = 0
+    for i in range(len(records)):
+        for j in range(i + 1, len(records)):
+            if _record_ranking_key(records[i]) != _record_ranking_key(records[j]):
+                count += 1
+    return count
+
+
+def _cross_parent_comparable_pair_count(records: Sequence[object]) -> int:
+    count = 0
+    for i in range(len(records)):
+        for j in range(i + 1, len(records)):
+            left_parent = _record_get(records[i], "parent_id", None)
+            right_parent = _record_get(records[j], "parent_id", None)
+            if left_parent is not None and left_parent == right_parent:
+                continue
+            if _record_ranking_key(records[i]) != _record_ranking_key(records[j]):
+                count += 1
+    return count
+
+
+def _record_ranking_key(record: object) -> tuple[float, float, float, float]:
+    return (
+        float(_record_get(record, "best_descendant_objective", float("inf"))),
+        float(_record_get(record, "future_search_cost", float("inf"))),
+        -float(_record_get(record, "depth", 0)),
+        float(_record_get(record, "lower_bound", float("inf"))),
+    )
 
 
 def _mean_std(values: Sequence[float]) -> tuple[float, float]:

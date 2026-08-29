@@ -560,8 +560,11 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertEqual(label_manifest["label_source"], "exact_residual_scheduling_oracle_on_target_llm_states")
             self.assertFalse(label_manifest["terminal_outcome_only"])
             self.assertTrue(label_manifest["uses_intermediate_states"])
+            self.assertEqual(label_manifest["pair_sampling_version"], "process_first_v2")
+            self.assertIn("process-first", label_manifest["pair_sampling"])
             self.assertGreater(label_manifest["target_pair_count"], 0)
             self.assertGreater(label_manifest["process_label_record_count"], 0)
+            self.assertGreater(label_manifest["sibling_pair_candidate_count"], 0)
             self.assertFalse(label_manifest["oracle_labels_in_inference_features"])
 
     def test_scheduling_llm_pilot_can_include_rest_mcts_and_solver_certification_rows(self) -> None:
@@ -669,6 +672,7 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertIn("Solver-trained MLP + certified pruning", repaired["learned_search_protocol"]["policies"])
             label_manifest = json.loads((root / "target_prm_label_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(label_manifest["supervision"], "target_process_frontier_ranking")
+            self.assertEqual(label_manifest["pair_sampling_version"], "backfilled_from_legacy_pairs")
             self.assertGreater(label_manifest["process_label_record_count"], 0)
             self.assertGreater(label_manifest["frontier_parent_group_count"], 0)
 
@@ -683,8 +687,10 @@ class SchedulingTransferTest(unittest.TestCase):
             )
             with (audit_out / "table5_q2_readiness.csv").open(newline="", encoding="utf-8") as handle:
                 audit_rows = {row["Method"]: row for row in csv.DictReader(handle)}
-            self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "True")
-            self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "True")
+            self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "False")
+            self.assertIn("must come from process_first_v2 pair sampling", audit_rows["Target-PRM priority"]["result_blockers"])
+            self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "False")
+            self.assertIn("must come from process_first_v2 pair sampling", audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_blockers"])
             self.assertEqual(audit_rows["Solver-trained priority"]["result_ready"], "True")
 
     def test_scheduling_llm_pilot_resume_requires_each_requested_policy(self) -> None:

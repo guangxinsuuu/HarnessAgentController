@@ -665,12 +665,18 @@ def _invalid_required_artifacts(row: Mapping[str, object]) -> List[str]:
                 invalid.append("target_prm_label_manifest.json must record positive process label count")
             if label_manifest.get("uses_intermediate_states") is not True:
                 invalid.append("target_prm_label_manifest.json must declare intermediate state supervision")
+            if str(label_manifest.get("pair_sampling_version")) != "process_first_v2":
+                invalid.append("target_prm_label_manifest.json must come from process_first_v2 pair sampling")
+            if "process-first" not in str(label_manifest.get("pair_sampling", "")):
+                invalid.append("target_prm_label_manifest.json must declare process-first pair sampling")
             if _as_float(label_manifest.get("finite_best_descendant_labels")) <= 0:
                 invalid.append("target_prm_label_manifest.json must record finite best-descendant labels")
             if _as_float(label_manifest.get("max_record_depth")) <= 0:
                 invalid.append("target_prm_label_manifest.json must include non-root intermediate states")
             if _as_float(label_manifest.get("frontier_parent_group_count")) <= 0:
                 invalid.append("target_prm_label_manifest.json must record frontier parent groups")
+            if _as_float(label_manifest.get("sibling_pair_candidate_count")) <= 0:
+                invalid.append("target_prm_label_manifest.json must record process sibling pair candidates")
         for filename in ("target_prm_trace_records.jsonl", "target_prm_train_pairs.jsonl"):
             path = source_dir / filename
             if path.exists() and path.stat().st_size > 0:

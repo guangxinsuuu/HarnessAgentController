@@ -8,6 +8,7 @@ from pathlib import Path
 
 from cgr_exp.scheduling_micro import (
     SCHEDULING_FEATURE_NAMES,
+    SchedulingTraceRecord,
     collect_solver_trace_records,
     generate_scheduling_micro_instances,
     make_scheduling_ranking_pairs,
@@ -52,6 +53,25 @@ class SchedulingMicroTest(unittest.TestCase):
         self.assertEqual(left, right)
         self.assertGreater(len(left), 0)
 
+    def test_ranking_pairs_preserve_process_sibling_pairs(self) -> None:
+        records = [
+            _record("a", "p1", 10, [1.0]),
+            _record("b", "p1", 11, [2.0]),
+            _record("c", "p1", 12, [3.0]),
+            _record("d", "p2", 20, [4.0]),
+            _record("e", "p2", 21, [5.0]),
+            _record("f", "p3", 30, [6.0]),
+        ]
+        pairs = make_scheduling_ranking_pairs(records, max_pairs_per_task=4, seed=3)
+        parent_by_feature = {tuple(record.features): record.parent_id for record in records}
+        sibling_pairs = [
+            pair
+            for pair in pairs
+            if parent_by_feature[tuple(pair[0])] == parent_by_feature[tuple(pair[1])]
+        ]
+        self.assertGreaterEqual(len(sibling_pairs), 2)
+        self.assertLessEqual(len(pairs), 4)
+
     def test_micro_experiment_writes_sharded_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             metrics = run_scheduling_micro_experiment(
@@ -81,6 +101,27 @@ class SchedulingMicroTest(unittest.TestCase):
             saved = json.loads((Path(tmp) / "scheduling_micro_metrics.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["splits"], {"test": 3, "train": 5, "validation": 2})
             self.assertIn("frontier_top1_accuracy", saved["methods"]["MLP"])
+
+
+def _record(node_id: str, parent_id: str, best_descendant_objective: float, features: list[float]) -> SchedulingTraceRecord:
+    return SchedulingTraceRecord(
+        task_id="task",
+        split="train",
+        node_id=node_id,
+        parent_id=parent_id,
+        depth=1,
+        incumbent=None,
+        lower_bound=best_descendant_objective,
+        bound_gap=0.0,
+        child_count=0,
+        best_descendant_objective=best_descendant_objective,
+        future_search_cost=best_descendant_objective,
+        eventual_outcome="complete",
+        prune_reason="",
+        features=features,
+        feature_names=["id"],
+        state={},
+    )
 
 
 if __name__ == "__main__":

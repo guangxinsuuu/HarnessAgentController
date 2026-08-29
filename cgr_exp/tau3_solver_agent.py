@@ -4,7 +4,7 @@ from copy import deepcopy
 from typing import Any, List, Optional
 
 from tau2.agent.base_agent import ValidAgentInputMessage
-from tau2.agent.llm_agent import LLMAgent, LLMAgentState, SYSTEM_PROMPT
+from tau2.agent.llm_agent import LLMAgent, LLMAgentState
 from tau2.data_model.message import APICompatibleMessage, AssistantMessage, Message, MultiToolMessage, SystemMessage, ToolMessage, UserMessage
 from tau2.environment.tool import Tool
 from tau2.utils.llm_utils import generate
@@ -29,17 +29,6 @@ class Tau3SolverControllerAgent(LLMAgent):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self.candidate_count = max(1, int(candidate_count))
 
-    @property
-    def system_prompt(self) -> str:
-        instruction = (
-            "You are a customer service agent that helps the user according to the <policy> provided below.\n"
-            "In each turn you can either send a message to the user or make one tool call. You cannot do both.\n"
-            "Prefer actions that preserve eligibility for future verified tool-state progress: gather missing identifiers before writes, "
-            "avoid repeating the same exact read unless needed, and complete the user request once the tool state supports it.\n"
-            "Always make sure you generate valid JSON only."
-        )
-        return SYSTEM_PROMPT.format(domain_policy=self.domain_policy, agent_instruction=instruction)
-
     def get_init_state(self, message_history: Optional[list[Message]] = None) -> LLMAgentState:
         if message_history is None:
             message_history = []
@@ -56,10 +45,19 @@ class Tau3SolverControllerAgent(LLMAgent):
         else:
             state.messages.append(message)
         candidates = self._sample_candidates(state)
-        selected = max(candidates, key=lambda candidate: self._score_candidate(candidate, state.messages))
+        selected = self._select_candidate(candidates, state.messages)
         selected = self._attach_total_sampling_cost(selected, candidates)
         state.messages.append(selected)
         return selected, state
+
+    def _select_candidate(self, candidates: List[AssistantMessage], history: List[APICompatibleMessage]) -> AssistantMessage:
+        greedy = candidates[0]
+        if greedy.content and not greedy.tool_calls:
+            return greedy
+        tool_candidates = [candidate for candidate in candidates if candidate.tool_calls and not candidate.content]
+        if tool_candidates:
+            return max(tool_candidates, key=lambda candidate: self._score_candidate(candidate, history))
+        return greedy
 
     def _sample_candidates(self, state: LLMAgentState) -> List[AssistantMessage]:
         candidates: List[AssistantMessage] = []
@@ -67,8 +65,8 @@ class Tau3SolverControllerAgent(LLMAgent):
             llm_args = deepcopy(self.llm_args)
             if "seed" in llm_args:
                 llm_args["seed"] = int(llm_args["seed"]) + idx
-            if self.candidate_count > 1:
-                llm_args.setdefault("temperature", 0.2)
+            if idx > 0 and self.candidate_count > 1:
+                llm_args["temperature"] = max(float(llm_args.get("temperature", 0.0)), 0.2)
             candidate = generate(
                 model=self.llm,
                 tools=self.tools,

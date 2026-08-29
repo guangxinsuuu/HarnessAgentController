@@ -91,6 +91,8 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("OPENAI_API_KEY", text)
         self.assertIn("CGR_LLM_API_KEY", text)
         self.assertIn("CANDIDATE_WORKERS=4", text)
+        self.assertIn("CANDIDATE_RETRIES=2", text)
+        self.assertIn("candidate_sample_failures", text)
         self.assertIn("tool-identity stress passed", text)
         self.assertIn("contract-coverage stress passed", text)
         self.assertIn("result_ready=True", text)
@@ -309,6 +311,7 @@ class Tau3NativeTest(unittest.TestCase):
                         "ranker_checkpoint_loaded": True,
                         "certified_filter_enabled": True,
                         "certified_pruned_count": 1,
+                        "candidate_sample_failures": 1,
                         "oracle_visible_to_controller": False,
                         "oracle_used_for_candidate_generation": False,
                         "oracle_used_for_filtering": False,
@@ -328,6 +331,7 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(manifest["ranker_checkpoint_loaded_events"], 1)
             self.assertEqual(manifest["certified_filter_enabled_events"], 1)
             self.assertEqual(manifest["certified_pruned_candidates"], 1)
+            self.assertEqual(manifest["candidate_sample_failures"], 1)
             self.assertAlmostEqual(manifest["certified_prune_rate"], 0.5)
             self.assertFalse(manifest["oracle_visible_to_controller"])
             self.assertFalse(manifest["tool_names_used_as_features"])

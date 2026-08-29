@@ -68,6 +68,8 @@ class Tau3RunConfig:
     solver_ranker_checkpoint: Optional[Path] = None
     enable_certified_filter: bool = False
     candidate_workers: int = 1
+    candidate_retries: int = 2
+    candidate_retry_backoff: float = 0.5
 
 
 def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
@@ -102,6 +104,8 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         "workers": config.workers,
         "solver_ranker_checkpoint": None if config.solver_ranker_checkpoint is None else str(config.solver_ranker_checkpoint),
         "candidate_workers": config.candidate_workers,
+        "candidate_retries": config.candidate_retries,
+        "candidate_retry_backoff": config.candidate_retry_backoff,
         "source_controller_protocol": _source_controller_protocol(config.solver_ranker_checkpoint),
         "enable_certified_filter": config.enable_certified_filter,
         "controller_trace_path": None if controller_trace_path is None else str(controller_trace_path),
@@ -158,6 +162,8 @@ def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subpr
         llm_args = json.loads(config.agent_llm_args)
         llm_args.setdefault("cgr_candidate_count", 4)
         llm_args.setdefault("cgr_candidate_workers", config.candidate_workers)
+        llm_args.setdefault("cgr_candidate_retries", config.candidate_retries)
+        llm_args.setdefault("cgr_candidate_retry_backoff", config.candidate_retry_backoff)
         if config.solver_ranker_checkpoint is not None:
             llm_args["cgr_ranker_checkpoint"] = str(config.solver_ranker_checkpoint)
         if config.enable_certified_filter:
@@ -797,6 +803,7 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
     ranker_loaded = 0
     certified_filter_enabled_events = 0
     certified_pruned_candidates = 0
+    candidate_sample_failures = 0
     candidate_count = 0
     scored_candidate_count = 0
     oracle_visible = False
@@ -816,6 +823,8 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
             certified_filter_enabled_events += 1 if row.get("certified_filter_enabled") else 0
             pruned_count = _as_float(row.get("certified_pruned_count"))
             certified_pruned_candidates += int(pruned_count) if not math.isnan(pruned_count) else 0
+            failure_count = _as_float(row.get("candidate_sample_failures"))
+            candidate_sample_failures += int(failure_count) if not math.isnan(failure_count) else 0
             candidate_scores = row.get("candidate_scores")
             if isinstance(candidate_scores, list):
                 candidate_count += len(candidate_scores)
@@ -832,6 +841,7 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
         "ranker_checkpoint_loaded_events": ranker_loaded,
         "certified_filter_enabled_events": certified_filter_enabled_events,
         "certified_pruned_candidates": certified_pruned_candidates,
+        "candidate_sample_failures": candidate_sample_failures,
         "certified_prune_rate": 0.0 if candidate_count == 0 else certified_pruned_candidates / candidate_count,
         "mean_candidate_count": 0.0 if event_count == 0 else candidate_count / event_count,
         "mean_scored_candidate_count": 0.0 if event_count == 0 else scored_candidate_count / event_count,

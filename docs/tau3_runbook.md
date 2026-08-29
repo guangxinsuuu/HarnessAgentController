@@ -93,6 +93,7 @@ BASE_DIR=runs/table10_tau3 \
 NUM_TRIALS=4 \
 MAX_CONCURRENCY=4 \
 CANDIDATE_WORKERS=4 \
+CANDIDATE_RETRIES=2 \
 SEED=0 \
 scripts/run_table10_tau3.sh solver-canonical-smoke
 ```
@@ -108,6 +109,7 @@ BASE_DIR=runs/table10_tau3 \
 NUM_TRIALS=4 \
 MAX_CONCURRENCY=4 \
 CANDIDATE_WORKERS=4 \
+CANDIDATE_RETRIES=2 \
 SEED=0 \
 scripts/run_table10_tau3.sh solver-canonical-certified-smoke
 ```
@@ -126,6 +128,7 @@ NUM_TASKS=100 \
 NUM_TRIALS=4 \
 MAX_CONCURRENCY=6 \
 CANDIDATE_WORKERS=4 \
+CANDIDATE_RETRIES=2 \
 PARALLEL_DOMAINS=1 \
 PARALLEL_METHOD_GROUPS=0 \
 SEED=0 \
@@ -144,6 +147,8 @@ reach roughly `8 * MAX_CONCURRENCY`.
 For solver-controller rows, `CANDIDATE_WORKERS` also parallelizes the internal
 candidate samples at each decision point; set `CANDIDATE_WORKERS=1` for a
 strictly serial controller run.
+`CANDIDATE_RETRIES` controls per-candidate transient API retry attempts; trace
+audits report `candidate_sample_failures` after retries.
 
 ## Multi-Seed
 

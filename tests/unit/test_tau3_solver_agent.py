@@ -137,6 +137,65 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertEqual([candidate.tool_calls[0].arguments["order_id"] for candidate in candidates], ["7", "8", "9"])
         self.assertEqual(sorted(seen), [(7, 0), (8, 0.2), (9, 0.2)])
 
+    def test_candidate_sampling_retries_transient_failure(self) -> None:
+        attempts: dict[int, int] = {}
+
+        def flaky_generate(**kwargs):
+            seed = kwargs["seed"]
+            attempts[seed] = attempts.get(seed, 0) + 1
+            if seed == 8 and attempts[seed] == 1:
+                raise RuntimeError("transient")
+            return AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": str(seed)})],
+            )
+
+        agent = Tau3SolverControllerAgent(
+            [as_tool(_get_order)],
+            "policy",
+            "mock",
+            {"temperature": 0, "seed": 7},
+            candidate_count=2,
+            candidate_workers=2,
+            candidate_retries=1,
+            candidate_retry_backoff=0,
+        )
+        state = agent.get_init_state()
+        with patch("cgr_exp.tau3_solver_agent.generate", side_effect=flaky_generate):
+            candidates = agent._sample_candidates(state)
+        self.assertEqual([candidate.tool_calls[0].arguments["order_id"] for candidate in candidates], ["7", "8"])
+        self.assertEqual(agent._last_sample_failures, 0)
+        self.assertEqual(attempts[8], 2)
+
+    def test_candidate_sampling_keeps_successful_candidates_after_one_final_failure(self) -> None:
+        def partially_failing_generate(**kwargs):
+            seed = kwargs["seed"]
+            if seed == 8:
+                raise RuntimeError("persistent")
+            return AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": str(seed)})],
+            )
+
+        agent = Tau3SolverControllerAgent(
+            [as_tool(_get_order)],
+            "policy",
+            "mock",
+            {"temperature": 0, "seed": 7},
+            candidate_count=2,
+            candidate_workers=2,
+            candidate_retries=1,
+            candidate_retry_backoff=0,
+        )
+        state = agent.get_init_state()
+        with patch("cgr_exp.tau3_solver_agent.generate", side_effect=partially_failing_generate):
+            candidates = agent._sample_candidates(state)
+        self.assertEqual([candidate.tool_calls[0].arguments["order_id"] for candidate in candidates], ["7"])
+        self.assertEqual(agent._last_sample_failures, 1)
+        self.assertEqual(agent._last_sample_failure_types, ["RuntimeError"])
+
     def test_certified_filter_prunes_unknown_tool_without_oracle(self) -> None:
         calls = [
             AssistantMessage(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -38,10 +38,16 @@ class Tau3SolverControllerAgent(LLMAgent):
         controller_trace_path: Optional[str] = None,
         enable_certified_filter: bool = False,
         candidate_workers: int = 1,
+        candidate_retries: int = 2,
+        candidate_retry_backoff: float = 0.5,
     ):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self.candidate_count = max(1, int(candidate_count))
         self.candidate_workers = max(1, int(candidate_workers))
+        self.candidate_retries = max(0, int(candidate_retries))
+        self.candidate_retry_backoff = max(0.0, float(candidate_retry_backoff))
+        self._last_sample_failures = 0
+        self._last_sample_failure_types: list[str] = []
         self.max_turns = max(1, int(max_turns))
         self.max_tool_budget = max(1, int(max_tool_budget))
         self.ranker_checkpoint = ranker_checkpoint
@@ -97,11 +103,47 @@ class Tau3SolverControllerAgent(LLMAgent):
 
     def _sample_candidates(self, state: LLMAgentState) -> List[AssistantMessage]:
         messages = state.system_messages + state.messages
+        self._last_sample_failures = 0
+        self._last_sample_failure_types = []
         if self.candidate_workers <= 1 or self.candidate_count == 1:
-            return [self._sample_candidate(idx, messages) for idx in range(self.candidate_count)]
+            indexed = []
+            for idx in range(self.candidate_count):
+                try:
+                    indexed.append((idx, self._sample_candidate_with_retry(idx, messages)))
+                except Exception as exc:
+                    self._last_sample_failures += 1
+                    self._last_sample_failure_types.append(type(exc).__name__)
+            if not indexed:
+                failures = ", ".join(self._last_sample_failure_types) or "unknown"
+                raise RuntimeError(f"all tau3 controller candidate samples failed after retries: {failures}")
+            return [candidate for _idx, candidate in sorted(indexed, key=lambda item: item[0])]
         workers = min(self.candidate_workers, self.candidate_count)
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            return list(executor.map(lambda idx: self._sample_candidate(idx, messages), range(self.candidate_count)))
+            futures = {executor.submit(self._sample_candidate_with_retry, idx, messages): idx for idx in range(self.candidate_count)}
+            indexed = []
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    indexed.append((idx, future.result()))
+                except Exception as exc:
+                    self._last_sample_failures += 1
+                    self._last_sample_failure_types.append(type(exc).__name__)
+            if not indexed:
+                failures = ", ".join(self._last_sample_failure_types) or "unknown"
+                raise RuntimeError(f"all tau3 controller candidate samples failed after retries: {failures}")
+            return [candidate for _idx, candidate in sorted(indexed, key=lambda item: item[0])]
+
+    def _sample_candidate_with_retry(self, idx: int, messages: List[APICompatibleMessage]) -> AssistantMessage:
+        last_exc: Optional[Exception] = None
+        for attempt in range(self.candidate_retries + 1):
+            try:
+                return self._sample_candidate(idx, messages)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < self.candidate_retries and self.candidate_retry_backoff > 0.0:
+                    time.sleep(self.candidate_retry_backoff * (attempt + 1))
+        assert last_exc is not None
+        raise last_exc
 
     def _sample_candidate(self, idx: int, messages: List[APICompatibleMessage]) -> AssistantMessage:
         llm_args = deepcopy(self.llm_args)
@@ -222,6 +264,10 @@ class Tau3SolverControllerAgent(LLMAgent):
             "timestamp": time.time(),
             "scoring_mode": scoring_mode,
             "candidate_count": len(candidates),
+            "candidate_sample_failures": self._last_sample_failures,
+            "candidate_sample_failure_types": sorted(set(self._last_sample_failure_types)),
+            "candidate_retries": self.candidate_retries,
+            "candidate_workers": self.candidate_workers,
             "selected_index": selected_index,
             "certified_filter_enabled": self.enable_certified_filter,
             "certified_pruned_count": len(pruned),
@@ -282,6 +328,8 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
     llm_args = deepcopy(kwargs.get("llm_args") or {})
     candidate_count = int(llm_args.pop("cgr_candidate_count", 4))
     candidate_workers = int(llm_args.pop("cgr_candidate_workers", 1))
+    candidate_retries = int(llm_args.pop("cgr_candidate_retries", 2))
+    candidate_retry_backoff = float(llm_args.pop("cgr_candidate_retry_backoff", 0.5))
     ranker_checkpoint = llm_args.pop("cgr_ranker_checkpoint", None)
     max_turns = int(llm_args.pop("cgr_max_turns", 200))
     max_tool_budget = int(llm_args.pop("cgr_max_tool_budget", max_turns))
@@ -294,6 +342,8 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
         llm_args=llm_args,
         candidate_count=candidate_count,
         candidate_workers=candidate_workers,
+        candidate_retries=candidate_retries,
+        candidate_retry_backoff=candidate_retry_backoff,
         ranker_checkpoint=ranker_checkpoint,
         max_turns=max_turns,
         max_tool_budget=max_tool_budget,

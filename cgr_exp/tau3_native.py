@@ -688,8 +688,9 @@ def build_table10_tau3_run_preflight(
     json_path = out_dir / "table10_tau3_run_preflight.json"
     md_path = out_dir / "table10_tau3_run_preflight.md"
     _write_csv(csv_path, rows)
-    api_key_env = "OPENAI_API_KEY"
-    api_key_present = bool(os.environ.get(api_key_env))
+    api_key_envs = ["OPENAI_API_KEY", "CGR_LLM_API_KEY"]
+    present_api_key_envs = [name for name in api_key_envs if os.environ.get(name)]
+    api_key_present = bool(present_api_key_envs)
     manifest = {
         "artifact": "table10_tau3_run_preflight",
         "base_dir": str(base_dir),
@@ -707,7 +708,9 @@ def build_table10_tau3_run_preflight(
         "tau_python_bin": tau_python_bin,
         "parallel_domains": parallel_domains,
         "parallel_method_groups": parallel_method_groups,
-        "api_key_env": api_key_env,
+        "api_key_env": "OPENAI_API_KEY",
+        "accepted_api_key_envs": api_key_envs,
+        "present_api_key_envs": present_api_key_envs,
         "api_key_present": api_key_present,
         "recommended_next_requires_api_key": bool(next_run and next_run.get("api_required")),
         "recommended_next_api_key_ready": bool((not next_run) or (not next_run.get("api_required")) or api_key_present),
@@ -1208,13 +1211,14 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         f"Candidate retry backoff: `{manifest['candidate_retry_backoff']}`",
         f"Parallel domains: `{manifest['parallel_domains']}`",
         f"Parallel method groups: `{manifest['parallel_method_groups']}`",
-        f"API key env: `{manifest['api_key_env']}`",
+        f"API key envs: `{', '.join(str(item) for item in manifest.get('accepted_api_key_envs', [manifest['api_key_env']]))}`",
+        f"Present API key envs: `{', '.join(str(item) for item in manifest.get('present_api_key_envs', [])) or 'none'}`",
         f"API key present: `{manifest['api_key_present']}`",
         f"Max API-backed effective concurrency: `{manifest['max_api_backed_effective_concurrency']}`",
         f"All rows ready: `{manifest['all_rows_result_ready']}`",
         f"Recommended next run group: `{manifest['recommended_next_run_group'] or 'none'}`",
         "",
-        "Set `OPENAI_API_KEY` before API-backed run groups. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; solver-controller rows also multiply active requests by `CANDIDATE_WORKERS`. `best-of-n` and `build_and_audit` reuse local artifacts.",
+        "Set `OPENAI_API_KEY` or `CGR_LLM_API_KEY` before API-backed run groups; the runner maps `CGR_LLM_API_KEY` into `OPENAI_API_KEY` for tau2/litellm. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; solver-controller rows also multiply active requests by `CANDIDATE_WORKERS`. `best-of-n` and `build_and_audit` reuse local artifacts.",
         "",
         "Resume policy: generated commands use `--auto-resume --overwrite`; `--overwrite` only permits writing into an existing output directory, while `--force` is the opt-in switch that ignores existing tau2 results and reruns from scratch.",
         "",

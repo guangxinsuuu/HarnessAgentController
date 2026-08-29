@@ -708,12 +708,30 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertFalse(manifest["api_key_present"])
             self.assertTrue(manifest["recommended_next_requires_api_key"])
             self.assertFalse(manifest["recommended_next_api_key_ready"])
+            self.assertEqual(manifest["accepted_api_key_envs"], ["OPENAI_API_KEY", "CGR_LLM_API_KEY"])
             self.assertIn("scripts/run_table10_tau3.sh native-full", manifest["recommended_next_command"])
             text = (root / "preflight" / "table10_tau3_run_preflight.md").read_text(encoding="utf-8")
             self.assertIn("API key present: `False`", text)
+            self.assertIn("Present API key envs: `none`", text)
             self.assertIn("Warning: recommended next run needs `OPENAI_API_KEY`", text)
             self.assertIn("Resume policy:", text)
             self.assertIn("`--force` is the opt-in switch", text)
+
+    def test_table10_preflight_accepts_cgr_llm_api_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            source = base / "source_controller_seed0"
+            source.mkdir(parents=True)
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
+            with patch.dict(os.environ, {"CGR_LLM_API_KEY": "test-key"}, clear=True):
+                manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
+            self.assertTrue(manifest["api_key_present"])
+            self.assertEqual(manifest["present_api_key_envs"], ["CGR_LLM_API_KEY"])
+            self.assertTrue(manifest["recommended_next_api_key_ready"])
+            text = (root / "preflight" / "table10_tau3_run_preflight.md").read_text(encoding="utf-8")
+            self.assertIn("Present API key envs: `CGR_LLM_API_KEY`", text)
+            self.assertNotIn("test-key", text)
 
     def test_table10_preflight_reports_parallel_method_group_concurrency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

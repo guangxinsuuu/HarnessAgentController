@@ -1784,6 +1784,9 @@ def _evaluate_one_level2_episode(
                 "value_calls": value_cost.evaluation_calls,
                 "value_tokens": value_cost.input_tokens + value_cost.output_tokens,
                 "on_demand_total_tokens": accounting_proposer.total_tokens + value_cost.input_tokens + value_cost.output_tokens,
+                "on_demand_proposal_wall_clock_seconds": accounting_proposer.wall_clock_seconds,
+                "value_wall_clock_seconds": value_cost.wall_clock_seconds,
+                "on_demand_wall_clock_seconds": accounting_proposer.wall_clock_seconds + value_cost.wall_clock_seconds,
                 "total_tokens": 0,
                 "false_prunes": result.false_prune_count,
                 "budget_exhausted": result.budget_exhausted or (result.best_objective != result.optimum and result.expanded_nodes >= node_budget),
@@ -1830,6 +1833,9 @@ def _summarize_policy_rows(by_policy: Dict[str, List[Dict[str, object]]]) -> Lis
             "value_tokens": sum(int(row["value_tokens"]) for row in rows),
             "total_tokens": sum(int(row["total_tokens"]) for row in rows),
             "on_demand_total_tokens": sum(int(row.get("on_demand_total_tokens", row["total_tokens"])) for row in rows),
+            "on_demand_proposal_wall_clock_seconds": sum(float(row.get("on_demand_proposal_wall_clock_seconds", 0.0)) for row in rows),
+            "value_wall_clock_seconds": sum(float(row.get("value_wall_clock_seconds", 0.0)) for row in rows),
+            "on_demand_wall_clock_seconds": sum(float(row.get("on_demand_wall_clock_seconds", 0.0)) for row in rows),
             "false_prunes": sum(int(row["false_prunes"]) for row in rows),
             "frontier_decisions": sum(int(row["frontier_decisions"]) for row in rows),
             "frontier_top1_accuracy": _weighted_mean(rows, "frontier_top1_accuracy", "frontier_decisions"),
@@ -2725,7 +2731,15 @@ def _coerce_result_row(row: Dict[str, object]) -> Dict[str, object]:
     ):
         if field in coerced:
             coerced[field] = int(float(coerced[field]))
-    for field in ("gap", "frontier_top1_accuracy", "pairwise_accuracy", "selection_regret_mean"):
+    for field in (
+        "gap",
+        "frontier_top1_accuracy",
+        "pairwise_accuracy",
+        "selection_regret_mean",
+        "on_demand_proposal_wall_clock_seconds",
+        "value_wall_clock_seconds",
+        "on_demand_wall_clock_seconds",
+    ):
         if field in coerced:
             coerced[field] = float(coerced[field])
     return coerced

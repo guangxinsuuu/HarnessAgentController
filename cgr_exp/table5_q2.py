@@ -1118,7 +1118,11 @@ def _row_from_scheduling_artifacts(
     total_calls = proposal_calls + value_calls
     token_field = "on_demand_total_tokens" if source_row.get("on_demand_total_tokens") not in (None, "") else "total_tokens"
     token_source = "on-demand per-policy accounting" if token_field == "on_demand_total_tokens" else "shared-cache fallback accounting"
-    wall_clock = _wall_clock_seconds(source_dir)
+    wall_clock = (
+        _as_float(source_row.get("on_demand_wall_clock_seconds"))
+        if source_row.get("on_demand_wall_clock_seconds") not in (None, "")
+        else _wall_clock_seconds(source_dir)
+    )
     return {
         "Method": method,
         "Transfer setting": transfer_setting,

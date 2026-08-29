@@ -593,6 +593,8 @@ class SchedulingTransferTest(unittest.TestCase):
             self.assertEqual(metrics["target_training_trace_count"], 0)
             self.assertGreater(metrics["solver_prm_trace_record_count"], 0)
             self.assertGreater(metrics["solver_prm_pair_count"], 0)
+            self.assertIn("on_demand_wall_clock_seconds", metrics["methods"]["Solver-PRM"])
+            self.assertGreaterEqual(metrics["methods"]["Solver-PRM"]["on_demand_wall_clock_seconds"], 0.0)
             solver_prm_protocol = metrics["learned_search_protocol"]["policies"]["Solver-PRM"]
             self.assertEqual(solver_prm_protocol["training_distribution"], "solver-induced Scheduling source trajectories only")
             self.assertTrue(solver_prm_protocol["zero_shot_transfer"])

@@ -19,7 +19,11 @@ versions. A future Q4 implementation should therefore state whether it targets
 the original tau-bench protocol or the current tau2/tau3 successor protocol.
 The machine-readable checklist lives in
 `cgr_exp/q4_tau_source_evidence.py`, and the source-ref verifier checks full
-GitHub SHAs, pinned raw-source URLs, and symbol/anchor references.
+GitHub SHAs, pinned raw-source URLs, and symbol/anchor references. Its default
+mode is offline and deterministic; `--online` additionally verifies that the
+pinned revision and raw-source URLs are reachable, and records
+`raw_anchor_locations` for matched raw-source anchors so the official benchmark
+line evidence can be inspected directly.
 The native-adapter acceptance contract can be generated with
 `build-q4-tau-adapter-contract`; it records the required official protocol
 components, row-specific method primitives, and artifact schema that any future

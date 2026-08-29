@@ -68,6 +68,9 @@ class Q4TauSourceEvidenceTest(unittest.TestCase):
             by_benchmark = {row["Benchmark"]: row for row in manifest["rows"]}
             self.assertEqual(by_benchmark["tau-bench"]["raw_anchor_match_count"], 1)
             self.assertEqual(by_benchmark["tau2-bench"]["raw_anchor_match_count"], 1)
+            locations = json.loads(by_benchmark["tau-bench"]["raw_anchor_locations"])
+            self.assertTrue(any("dynamic conversations between a user" in key for key in locations))
+            self.assertIn(1, next(iter(locations.values())))
 
     def test_source_ref_verifier_rejects_online_raw_anchor_mismatch(self) -> None:
         class FakeResponse:

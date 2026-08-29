@@ -48,10 +48,15 @@ style baselines that must not be described as full official replications.
   - Source revision pinned for Q2 evidence:
     `2d5f488c3d6e24f99d50a9860e818383b1bb5883`.
   - README describes process-reward-guided tree search plus self-training.
-  - `MCTS/mcts.py` implements MCTS rounds with selection, expansion, simulation, and backpropagation.
-  - Machine-readable evidence records symbol-level refs for
-    `MCTS/mcts.py::selection`, `::expansion`, `::simulation/evaluation`,
-    `::backpropagation`, and `MCTS/base.py::treeNode`.
+  - At the algorithmic level, the required retained primitive is MCTS
+    selection, expansion, simulation, and backpropagation.
+  - `MCTS/mcts.py` implements MCTS rounds through `MCTS_search`,
+    `executeRound`, `selectNode`, `expand`, `simulation`, and
+    `back_propagate`.
+  - Machine-readable evidence records raw-source function refs for
+    `MCTS/mcts.py::def MCTS_search`, `::def executeRound`,
+    `::def selectNode`, `::def expand`, `::def simulation`,
+    `::def back_propagate`, and `MCTS/base.py::class treeNode`.
 
 ## Machine-Checked Source Primitive Contract
 

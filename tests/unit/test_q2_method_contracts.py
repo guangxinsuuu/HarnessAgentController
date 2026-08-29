@@ -184,7 +184,10 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertIn("src/tot/methods/bfs.py", by_method["Tree of Thoughts"]["source_files"])
             self.assertIn("raw.githubusercontent.com/princeton-nlp/tree-of-thought-llm", by_method["Tree of Thoughts"]["official_code_refs"])
             self.assertIn("::method_select", by_method["Tree of Thoughts"]["official_code_refs"])
-            self.assertIn("THUDM/ReST-MCTS/MCTS/mcts.py::selection", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["official_code_refs"])
+            rest_refs = by_method["PRM-guided MCTS (ReST-MCTS-style)"]["official_code_refs"]
+            for anchor in ("::def MCTS_search", "::def executeRound", "::def selectNode", "::def expand", "::def simulation", "::def back_propagate"):
+                self.assertIn(anchor, rest_refs)
+            self.assertIn("MCTS/base.py::class treeNode", rest_refs)
             self.assertIn("openai/prm800k/data/*.jsonl::label.steps", by_method["Target-PRM priority"]["official_code_refs"])
             self.assertIn("method_generate", by_method["Tree of Thoughts"]["official_source_anchors"])
             self.assertIn("process-supervision", by_method["Target-PRM priority"]["official_source_anchors"])
@@ -217,7 +220,17 @@ class Q2MethodContractsTest(unittest.TestCase):
                 return None
 
             def read(self) -> bytes:
-                return b"def solve\nstep-level correctness labels\ndef MCTS_search\n"
+                return (
+                    b"def solve\n"
+                    b"step-level correctness labels\n"
+                    b"def MCTS_search\n"
+                    b"def executeRound\n"
+                    b"def selectNode\n"
+                    b"def expand\n"
+                    b"def simulation\n"
+                    b"def back_propagate\n"
+                    b"class treeNode\n"
+                )
 
         seen_urls = []
 
@@ -235,7 +248,7 @@ class Q2MethodContractsTest(unittest.TestCase):
             by_method = {row["Method"]: row for row in manifest["rows"]}
             self.assertEqual(by_method["Tree of Thoughts"]["raw_anchor_match_count"], 1)
             self.assertEqual(by_method["Target-PRM priority"]["raw_anchor_match_count"], 1)
-            self.assertEqual(by_method["PRM-guided MCTS (ReST-MCTS-style)"]["raw_anchor_match_count"], 1)
+            self.assertEqual(by_method["PRM-guided MCTS (ReST-MCTS-style)"]["raw_anchor_match_count"], 7)
             locations = json.loads(by_method["Tree of Thoughts"]["raw_anchor_locations"])
             self.assertTrue(any("::def solve" in key for key in locations))
             self.assertIn(1, next(iter(locations.values())))
@@ -286,6 +299,8 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertIn("src/tot/methods/bfs.py::method_select", by_method["Tree of Thoughts"]["Official code refs"])
             self.assertIn("generation, evaluation", by_method["Tree of Thoughts"]["Official source anchors"])
             self.assertIn("method_generate", by_method["Tree of Thoughts"]["Official primitives"])
+            self.assertIn("MCTS/mcts.py::def selectNode", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["Official code refs"])
+            self.assertIn("MCTS/base.py::class treeNode", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["Official code refs"])
             self.assertIn("target_prm_ranker.json", by_method["Target-PRM priority"]["Required result artifacts"])
             self.assertIn("not full ReST-MCTS iterative self-training", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["Non-claims"])
 

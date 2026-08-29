@@ -176,15 +176,16 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
         "source_files": ["MCTS/mcts.py", "MCTS/base.py", "README.md"],
         "official_code_refs": [
             "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def MCTS_search",
-            "github@2d5f488c3d6e24f99d50a9860e818383b1bb5883: THUDM/ReST-MCTS/MCTS/mcts.py::selection",
-            "github@2d5f488c3d6e24f99d50a9860e818383b1bb5883: THUDM/ReST-MCTS/MCTS/mcts.py::expansion",
-            "github@2d5f488c3d6e24f99d50a9860e818383b1bb5883: THUDM/ReST-MCTS/MCTS/mcts.py::simulation/evaluation",
-            "github@2d5f488c3d6e24f99d50a9860e818383b1bb5883: THUDM/ReST-MCTS/MCTS/mcts.py::backpropagation",
-            "github@2d5f488c3d6e24f99d50a9860e818383b1bb5883: THUDM/ReST-MCTS/MCTS/base.py::treeNode",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def executeRound",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def selectNode",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def expand",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def simulation",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def back_propagate",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/base.py::class treeNode",
         ],
         "official_source_anchors": [
             "README: MCTS mode uses propose_method, value_method, iteration_limit, and branch",
-            "MCTS implementation: selection, expansion, simulation/evaluation, and backpropagation",
+            "MCTS implementation: MCTS_search, executeRound, selectNode, expand, simulation, and back_propagate",
         ],
         "official_primitives": [
             "MCTS selection",

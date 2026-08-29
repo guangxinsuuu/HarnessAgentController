@@ -181,6 +181,12 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(row["simulation_count"], 8)
             self.assertTrue((out / "q4_tau_row.json").exists())
             self.assertTrue((out / "q4_tau_per_instance.csv").exists())
+            per_instance = (out / "q4_tau_per_instance.csv").read_text(encoding="utf-8")
+            self.assertIn("task_success_count", per_instance)
+            self.assertIn("task_best_reward", per_instance)
+            self.assertIn("task_pass^1", per_instance)
+            self.assertIn("task_pass^4", per_instance)
+            self.assertIn("task_termination_reasons", per_instance)
 
     def test_aggregate_skips_directory_named_results_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -322,6 +328,9 @@ class Tau3NativeTest(unittest.TestCase):
             per_instance = (root / "best" / "q4_tau_per_instance.csv").read_text(encoding="utf-8")
             self.assertIn("selected_rollout_id", per_instance)
             self.assertIn("candidate_rewards", per_instance)
+            self.assertIn("first_reward", per_instance)
+            self.assertIn("best_reward", per_instance)
+            self.assertIn("any_success", per_instance)
             self.assertIn("rollout_coverage_ready", per_instance)
 
     def test_audits_tau3_controller_trace(self) -> None:

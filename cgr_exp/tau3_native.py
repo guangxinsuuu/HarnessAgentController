@@ -323,7 +323,17 @@ def aggregate_tau3_official_results(
         )
     for row in rows:
         task_id = str(row["task_id"])
-        row["rollout_count"] = len(rewards_by_task.get(task_id, []))
+        rewards = rewards_by_task.get(task_id, [])
+        terms = [str(sim.get("termination_reason", "")) for sim in sims if str(sim.get("task_id", "")) == task_id]
+        task_success_count = sum(1 for value in rewards if value >= 1.0 - 1e-6)
+        row["rollout_count"] = len(rewards)
+        row["task_success_count"] = task_success_count
+        row["task_failure_count"] = max(0, len(rewards) - task_success_count)
+        row["task_best_reward"] = max(rewards) if rewards else ""
+        row["task_pass^1"] = _pass_hat({task_id: rewards}, 1) if rewards else ""
+        row["task_pass^4"] = _pass_hat({task_id: rewards}, 4) if len(rewards) >= 4 else ""
+        row["task_termination_reasons"] = json.dumps(_count_values(terms), sort_keys=True)
+        row["task_error_count"] = sum(1 for term in terms if term not in {"user_stop", "agent_stop"})
 
     pass1 = _pass_hat(rewards_by_task, 1)
     pass4 = _pass_hat(rewards_by_task, 4) if expected_trials >= 4 else float("nan")
@@ -762,8 +772,12 @@ def build_tau3_best_of_n_from_native(out_dir: Path, native_dir: Path, n: int = 4
                 "task_id": task_id,
                 "selected_rollout_id": selected.get("id", ""),
                 "candidate_rewards": json.dumps(candidate_rewards),
+                "first_reward": candidate_rewards[0] if candidate_rewards else "",
+                "best_reward": max(candidate_rewards) if candidate_rewards else "",
                 "selected_reward": reward,
                 "success": 1 if success else 0,
+                "first_success": 1 if candidate_rewards and candidate_rewards[0] >= 1.0 - 1e-6 else 0,
+                "any_success": 1 if any(value >= 1.0 - 1e-6 for value in candidate_rewards) else 0,
                 "sampled_rollouts": len(candidates),
                 "expected_rollouts": n,
                 "rollout_coverage_ready": len(candidates) >= n,
@@ -772,6 +786,7 @@ def build_tau3_best_of_n_from_native(out_dir: Path, native_dir: Path, n: int = 4
                 "llm_calls": task_calls,
                 "duration_seconds": task_wall,
                 "selected_termination_reason": selected_term,
+                "candidate_termination_reasons": json.dumps(_count_values(str(sim.get("termination_reason", "")) for sim in candidates), sort_keys=True),
             }
         )
     task_count = len(selected_rows)
@@ -1338,6 +1353,14 @@ def _pass_hat(rewards_by_task: Mapping[str, Sequence[float]], k: int) -> float:
         else:
             values.append(math.comb(c, k) / math.comb(n, k))
     return sum(values) / len(values) if values else float("nan")
+
+
+def _count_values(values: Iterable[str]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for value in values:
+        key = str(value)
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _count_agent_tool_calls(messages: Sequence[object]) -> int:

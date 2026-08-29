@@ -40,6 +40,8 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("ensure_source_controller", text)
         self.assertIn("progress)", text)
         self.assertIn("FORCE_SOURCE_CONTROLLER", text)
+        self.assertIn("audit_controller_trace_pair solver_canonical_smoke", text)
+        self.assertIn("audit_controller_trace_pair solver_canonical_certified_smoke", text)
         result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 

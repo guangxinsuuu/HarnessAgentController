@@ -275,24 +275,22 @@ audit_table() {
 }
 
 audit_solver_canonical_traces() {
-  "${PYTHON_BIN}" -m cgr_exp.cli audit-tau3-controller-trace \
-    --output-dir "${BASE_DIR}/solver_canonical_retail_trace_audit" \
-    --trace-path "${BASE_DIR}/solver_canonical_retail/tau3_controller_trace.jsonl" \
-    --overwrite
-  "${PYTHON_BIN}" -m cgr_exp.cli audit-tau3-controller-trace \
-    --output-dir "${BASE_DIR}/solver_canonical_airline_trace_audit" \
-    --trace-path "${BASE_DIR}/solver_canonical_airline/tau3_controller_trace.jsonl" \
-    --overwrite
+  audit_controller_trace_pair solver_canonical
 }
 
 audit_solver_canonical_certified_traces() {
+  audit_controller_trace_pair solver_canonical_certified
+}
+
+audit_controller_trace_pair() {
+  local suffix="$1"
   "${PYTHON_BIN}" -m cgr_exp.cli audit-tau3-controller-trace \
-    --output-dir "${BASE_DIR}/solver_canonical_certified_retail_trace_audit" \
-    --trace-path "${BASE_DIR}/solver_canonical_certified_retail/tau3_controller_trace.jsonl" \
+    --output-dir "${BASE_DIR}/${suffix}_retail_trace_audit" \
+    --trace-path "${BASE_DIR}/${suffix}_retail/tau3_controller_trace.jsonl" \
     --overwrite
   "${PYTHON_BIN}" -m cgr_exp.cli audit-tau3-controller-trace \
-    --output-dir "${BASE_DIR}/solver_canonical_certified_airline_trace_audit" \
-    --trace-path "${BASE_DIR}/solver_canonical_certified_airline/tau3_controller_trace.jsonl" \
+    --output-dir "${BASE_DIR}/${suffix}_airline_trace_audit" \
+    --trace-path "${BASE_DIR}/${suffix}_airline/tau3_controller_trace.jsonl" \
     --overwrite
 }
 
@@ -337,6 +335,7 @@ case "${1:-}" in
     run_preflight
     ensure_source_controller
     run_domain_pair 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
+    audit_controller_trace_pair solver_canonical_smoke
     ;;
   solver-canonical-full)
     run_preflight
@@ -348,6 +347,7 @@ case "${1:-}" in
     run_preflight
     ensure_source_controller
     run_domain_pair 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
+    audit_controller_trace_pair solver_canonical_certified_smoke
     ;;
   solver-canonical-certified-full)
     run_preflight

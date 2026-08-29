@@ -116,6 +116,18 @@ SEED=0 \
 scripts/run_table10_tau3.sh solver-canonical-certified-smoke
 ```
 
+Smoke targets automatically write trace audits next to the smoke rows:
+
+- `solver_canonical_smoke_retail_trace_audit/tau3_controller_trace_audit.csv`
+- `solver_canonical_smoke_airline_trace_audit/tau3_controller_trace_audit.csv`
+- `solver_canonical_certified_smoke_retail_trace_audit/tau3_controller_trace_audit.csv`
+- `solver_canonical_certified_smoke_airline_trace_audit/tau3_controller_trace_audit.csv`
+
+For canonical smoke to be valid, the trace audit should show
+`canonical_feature_schema_match=True`, `canonical_feature_count_match=True`,
+`ranker_checkpoint_loaded_events>0`, and all oracle visibility/use flags
+`False`.
+
 ## Full Rows
 
 Run all Table10 rows:

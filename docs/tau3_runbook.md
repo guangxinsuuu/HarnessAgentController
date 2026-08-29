@@ -1,0 +1,178 @@
+# Tau3 Canonical Harness Runbook
+
+This runbook is for Table10 tau3/tau2 maintained-protocol evaluation.
+It keeps native end-to-end rows, Best-of-N reuse, legacy solver-controller
+rows, canonical controller rows, and certified-controller rows under one
+auditable protocol.
+
+## Protocol
+
+- Use tau2/tau3 official text half-duplex runtime, user simulator, task
+  verifier, and pass-k aggregation.
+- Use `OPENAI_API_KEY` for tau2/litellm. If only `CGR_LLM_API_KEY` is set,
+  `scripts/run_table10_tau3.sh` maps it to `OPENAI_API_KEY` before API-backed
+  runs.
+- Build the source controller before canonical tau3 runs. This is local and
+  does not use the API.
+- Promote rows only when `table10_tau3_readiness.csv` marks them ready.
+- Do not use tau3 train trajectories, tau3 held-out outcomes, or oracle labels
+  as controller inference features.
+
+## Preflight
+
+```bash
+cd /Users/neilsu/Desktop/iclr27
+PYTHON_BIN=/opt/anaconda3/bin/python \
+TAU_PYTHON_BIN=/opt/anaconda3/bin/python \
+BASE_DIR=runs/table10_tau3 \
+NUM_TASKS=100 \
+NUM_TRIALS=4 \
+SEED=0 \
+scripts/run_table10_tau3.sh preflight-runs
+```
+
+Read:
+
+```bash
+cat runs/table10_tau3/run_preflight/table10_tau3_run_preflight.md
+```
+
+If the source controller is missing, the recommended next command should be:
+
+```bash
+BASE_DIR=runs/table10_tau3 SEED=0 scripts/run_table10_tau3.sh source-controller
+```
+
+## Source Controller
+
+```bash
+PYTHON_BIN=/opt/anaconda3/bin/python \
+BASE_DIR=runs/table10_tau3 \
+SEED=0 \
+SOURCE_TRAIN_COUNT=80 \
+SOURCE_VALIDATION_COUNT=30 \
+SOURCE_EPOCHS=20 \
+SOURCE_MAX_STATES=200 \
+scripts/run_table10_tau3.sh source-controller
+```
+
+Required source artifacts:
+
+- `source_controller_seed0/generic_harness_ranker.json`
+- `source_controller_seed0/canonical_harness_source_validation.json`
+- `source_controller_seed0/canonical_harness_tool_identity_stress.csv`
+- `source_controller_seed0/canonical_harness_contract_coverage_stress.csv`
+
+## Smoke Runs
+
+Set the API key before smoke or full API-backed runs:
+
+```bash
+export OPENAI_API_KEY="$CGR_LLM_API_KEY"
+```
+
+Canonical controller smoke:
+
+```bash
+PYTHON_BIN=/opt/anaconda3/bin/python \
+TAU_PYTHON_BIN=/opt/anaconda3/bin/python \
+AGENT_LLM=openai/gpt-4o-mini \
+USER_LLM=openai/gpt-4o-mini \
+BASE_DIR=runs/table10_tau3 \
+NUM_TRIALS=4 \
+MAX_CONCURRENCY=4 \
+SEED=0 \
+scripts/run_table10_tau3.sh solver-canonical-smoke
+```
+
+Certified canonical controller smoke:
+
+```bash
+PYTHON_BIN=/opt/anaconda3/bin/python \
+TAU_PYTHON_BIN=/opt/anaconda3/bin/python \
+AGENT_LLM=openai/gpt-4o-mini \
+USER_LLM=openai/gpt-4o-mini \
+BASE_DIR=runs/table10_tau3 \
+NUM_TRIALS=4 \
+MAX_CONCURRENCY=4 \
+SEED=0 \
+scripts/run_table10_tau3.sh solver-canonical-certified-smoke
+```
+
+## Full Rows
+
+Run all Table10 rows:
+
+```bash
+PYTHON_BIN=/opt/anaconda3/bin/python \
+TAU_PYTHON_BIN=/opt/anaconda3/bin/python \
+AGENT_LLM=openai/gpt-4o-mini \
+USER_LLM=openai/gpt-4o-mini \
+BASE_DIR=runs/table10_tau3 \
+NUM_TASKS=100 \
+NUM_TRIALS=4 \
+MAX_CONCURRENCY=6 \
+PARALLEL_DOMAINS=1 \
+PARALLEL_METHOD_GROUPS=0 \
+SEED=0 \
+scripts/run_table10_tau3.sh full
+```
+
+For faster but heavier API usage:
+
+```bash
+PARALLEL_METHOD_GROUPS=1 scripts/run_table10_tau3.sh full
+```
+
+With `PARALLEL_DOMAINS=1`, effective API concurrency is roughly
+`2 * MAX_CONCURRENCY`. With `PARALLEL_METHOD_GROUPS=1`, the `full` target can
+reach roughly `8 * MAX_CONCURRENCY`.
+
+## Multi-Seed
+
+Run seeds into separate base directories or keep the same base directory with
+seed-specific source-controller subdirectories:
+
+```bash
+for seed in 0 1 2; do
+  BASE_DIR="runs/table10_tau3_seed${seed}" \
+  SEED="${seed}" \
+  NUM_TASKS=100 \
+  NUM_TRIALS=4 \
+  MAX_CONCURRENCY=6 \
+  scripts/run_table10_tau3.sh full
+done
+```
+
+The preflight is seed-aware and should point to
+`source_controller_seed${seed}/generic_harness_ranker.json`.
+
+## Resume
+
+API-backed tau3 runs use the official tau2 `--auto-resume` path. If a run
+stops after partial simulations, rerun the same command with the same
+`BASE_DIR`, `SEED`, `NUM_TASKS`, and `NUM_TRIALS`.
+
+Do not change the source-controller checkpoint, model, or task count when
+resuming a row intended for the same table.
+
+## Promotion Gate
+
+```bash
+BASE_DIR=runs/table10_tau3 \
+NUM_TASKS=100 \
+BEST_OF_N=4 \
+scripts/run_table10_tau3.sh build
+```
+
+Promote only rows whose readiness audit has `result_ready=True`.
+Canonical rows must show evidence for:
+
+- source generator frozen before target test
+- no tau3 trajectory training
+- no oracle label inference leakage
+- anonymous source tools
+- tool-identity stress passed
+- contract-coverage stress passed
+- canonical ranker trace events
+- complete tool call, LLM call, token, and wall-clock accounting

@@ -62,6 +62,21 @@ class Tau3NativeTest(unittest.TestCase):
             result = subprocess.run(["zsh", str(script), "native-full"], check=False, text=True, capture_output=True, env=env)
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_tau3_runbook_documents_current_execution_protocol(self) -> None:
+        text = Path("docs/tau3_runbook.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/run_table10_tau3.sh preflight-runs", text)
+        self.assertIn("scripts/run_table10_tau3.sh source-controller", text)
+        self.assertIn("scripts/run_table10_tau3.sh solver-canonical-smoke", text)
+        self.assertIn("scripts/run_table10_tau3.sh solver-canonical-certified-smoke", text)
+        self.assertIn("scripts/run_table10_tau3.sh full", text)
+        self.assertIn("scripts/run_table10_tau3.sh build", text)
+        self.assertIn("source_controller_seed${seed}/generic_harness_ranker.json", text)
+        self.assertIn("OPENAI_API_KEY", text)
+        self.assertIn("CGR_LLM_API_KEY", text)
+        self.assertIn("tool-identity stress passed", text)
+        self.assertIn("contract-coverage stress passed", text)
+        self.assertIn("result_ready=True", text)
+
     def test_builds_official_tau2_cli_command(self) -> None:
         cfg = Tau3RunConfig(
             output_dir=Path("runs/x"),

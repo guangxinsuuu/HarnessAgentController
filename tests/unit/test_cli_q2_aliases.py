@@ -103,6 +103,58 @@ class CliQ2AliasesTest(unittest.TestCase):
             self.assertEqual(manifest["all_external_sources_ready"], True)
             self.assertTrue((out / "q2_source_evidence_audit.csv").exists())
 
+    def test_scheduling_tot_q2_cli_exposes_and_accepts_mock(self) -> None:
+        help_result = subprocess.run(
+            [sys.executable, "-m", "cgr_exp.cli", "run-scheduling-tot-q2", "--help"],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("--mock", help_result.stdout)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "tot"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "run-scheduling-tot-q2",
+                    "--output-dir",
+                    str(out),
+                    "--seed",
+                    "3",
+                    "--train-count",
+                    "1",
+                    "--validation-count",
+                    "0",
+                    "--test-count",
+                    "1",
+                    "--job-count",
+                    "4",
+                    "--machine-count",
+                    "2",
+                    "--node-budget",
+                    "8",
+                    "--action-budget",
+                    "2",
+                    "--breadth",
+                    "2",
+                    "--value-samples",
+                    "1",
+                    "--mock",
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out / "command_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["command"], "run-scheduling-tot-q2")
+            self.assertTrue(manifest["mock"])
+            self.assertTrue((out / "scheduling_tot_q2_table.csv").exists())
+
     def test_q2_implementation_matrix_cli_writes_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "matrix"

@@ -242,6 +242,7 @@ def main() -> None:
             p.add_argument("--parallel-episodes", type=int, default=1)
             p.add_argument("--resume", action="store_true", default=False)
             p.add_argument("--perturbation", default="mixed")
+            p.add_argument("--mock", action="store_true", default=False)
         if name == "build-q2-remaining-runs":
             p.add_argument("--q2-readiness", type=Path, default=Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv"))
             p.add_argument("--certification-readiness", type=Path, default=Path("runs/certification_tables_readiness/certification_tables_readiness.csv"))

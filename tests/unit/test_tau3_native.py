@@ -230,6 +230,8 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(readiness["all_rows_result_ready"])
             rows = {row["Method"]: row for row in readiness["audit_rows"]}
             self.assertTrue(rows["Solver-derived canonical controller"]["result_ready"])
+            self.assertEqual(rows["Solver-derived canonical controller"]["source_artifact"], str(canonical))
+            self.assertEqual(rows["Solver-derived canonical controller"]["source_policy"], "official tau3 maintained protocol")
 
     def test_audits_table10_tau3_readiness_rejects_missing_canonical_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -240,10 +242,29 @@ class Tau3NativeTest(unittest.TestCase):
             (canonical / "tau3_native_command.json").write_text(json.dumps({"solver_ranker_checkpoint": "ranker.json"}), encoding="utf-8")
             readiness = audit_table10_tau3_readiness(root / "audit", [canonical], expected_test_count=2)
             self.assertFalse(readiness["all_rows_result_ready"])
-            self.assertIn("Solver-derived canonical controller", readiness["pending_or_partial_rows"])
+            self.assertIn("retail: Solver-derived canonical controller", readiness["pending_or_partial_rows"])
             blockers = readiness["audit_rows"][0]["result_blockers"]
             self.assertIn("partial: 1/2", blockers)
             self.assertIn("controller trace missing", blockers)
+
+    def test_audits_table10_tau3_readiness_labels_missing_expected_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            readiness = audit_table10_tau3_readiness(
+                root / "audit",
+                [
+                    root / "native_retail",
+                    root / "best_of_4_airline",
+                    root / "solver_canonical_certified_retail",
+                ],
+                expected_test_count=2,
+            )
+            rows = {(row["Domain"], row["Method"]): row for row in readiness["audit_rows"]}
+            self.assertIn(("retail", "Native tool-calling rerun"), rows)
+            self.assertIn(("airline", "Best-of-N"), rows)
+            self.assertIn(("retail", "Solver-derived canonical controller + certified filter"), rows)
+            self.assertIn("retail: Native tool-calling rerun", readiness["pending_or_partial_rows"])
+            self.assertEqual(rows[("airline", "Best-of-N")]["source_artifact"], str(root / "best_of_4_airline"))
 
     def test_builds_table10_tau3_run_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

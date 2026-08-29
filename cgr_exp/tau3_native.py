@@ -484,7 +484,7 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
         "table": "Table 10 tau3 maintained-protocol evaluation",
         "expected_test_count": expected_test_count,
         "all_rows_result_ready": all(row["result_ready"] for row in audit_rows),
-        "pending_or_partial_rows": [row["Method"] for row in audit_rows if not row["result_ready"]],
+        "pending_or_partial_rows": [_table10_row_id(row) for row in audit_rows if not row["result_ready"]],
         "audit_rows": audit_rows,
         "produced_artifacts": ["table10_tau3_readiness.csv", "table10_tau3_readiness.json"],
     }
@@ -767,12 +767,15 @@ def _write_pending_row(out_dir: Path, *, method: str, domain: str, status: str) 
 
 
 def _table10_audit_row(row_dir: Path, row: Mapping[str, object], blockers: Sequence[str], expected_test_count: int) -> Dict[str, object]:
-    method = str(row.get("Method", "missing row"))
+    expected_domain, expected_method = _table10_expected_label(row_dir)
+    method = str(row.get("Method") or expected_method or "missing row")
     task_count = int(_as_float(row.get("task_count")) if not math.isnan(_as_float(row.get("task_count"))) else 0)
     return {
         "Method": method,
-        "Domain": row.get("Domain", ""),
+        "Domain": row.get("Domain") or expected_domain,
         "row_dir": str(row_dir),
+        "source_artifact": str(row_dir),
+        "source_policy": "official tau3 maintained protocol",
         "status": row.get("status", "missing"),
         "task_count": task_count,
         "expected_test_count": expected_test_count,
@@ -786,6 +789,34 @@ def _read_json_or_empty(path: Path) -> Dict[str, object]:
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
     return data if isinstance(data, dict) else {}
+
+
+def _table10_row_id(row: Mapping[str, object]) -> str:
+    domain = str(row.get("Domain", "")).strip()
+    method = str(row.get("Method", "")).strip()
+    if domain and method:
+        return f"{domain}: {method}"
+    return method or domain or "missing row"
+
+
+def _table10_expected_label(row_dir: Path) -> tuple[str, str]:
+    name = row_dir.name
+    domain = ""
+    if name.endswith("_retail"):
+        domain = "retail"
+    elif name.endswith("_airline"):
+        domain = "airline"
+    if name.startswith("native_"):
+        return domain, "Native tool-calling rerun"
+    if name.startswith("best_of_"):
+        return domain, "Best-of-N"
+    if name.startswith("solver_canonical_certified_"):
+        return domain, "Solver-derived canonical controller + certified filter"
+    if name.startswith("solver_canonical_"):
+        return domain, "Solver-derived canonical controller"
+    if name.startswith("solver_"):
+        return domain, "Solver-derived controller"
+    return domain, "missing row"
 
 
 def _table10_default_row_dirs(base_dir: Path, best_of_n: int) -> List[Path]:

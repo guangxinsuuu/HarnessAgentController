@@ -614,7 +614,7 @@ def build_table10_tau3_run_preflight(
     out_dir.mkdir(parents=True, exist_ok=True)
     row_dirs = _table10_default_row_dirs(base_dir, best_of_n)
     readiness = audit_table10_tau3_readiness(out_dir / "readiness", row_dirs, expected_test_count=expected_test_count)
-    rows = []
+    rows = [_table10_source_controller_preflight_row(base_dir)]
     for group, command, required_dirs in _table10_run_groups(
         base_dir=base_dir,
         expected_test_count=expected_test_count,
@@ -1054,7 +1054,7 @@ def _methods_for_dirs(audit_rows: Sequence[Mapping[str, object]], dirs: Sequence
 
 def _table10_next_run_group(rows: Sequence[Mapping[str, object]]) -> Optional[Mapping[str, object]]:
     by_group = {str(row.get("run_group", "")): row for row in rows}
-    for group in ("native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"):
+    for group in ("source_controller", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"):
         row = by_group.get(group)
         if row and not bool(row.get("ready")):
             return row
@@ -1064,8 +1064,51 @@ def _table10_next_run_group(rows: Sequence[Mapping[str, object]]) -> Optional[Ma
     return None
 
 
+def _table10_source_controller_preflight_row(base_dir: Path) -> Dict[str, object]:
+    checkpoint = base_dir / "source_controller_seed0" / "generic_harness_ranker.json"
+    protocol = _source_controller_protocol(checkpoint)
+    blockers = []
+    if not checkpoint.exists():
+        blockers.append("generic_harness_ranker.json missing")
+    if not protocol.get("manifest_found"):
+        blockers.append("canonical_harness_source_validation.json missing")
+    if protocol.get("tau3_train_trajectories_used"):
+        blockers.append("source controller used tau3 train trajectories")
+    if protocol.get("oracle_labels_in_inference_features"):
+        blockers.append("source controller leaks oracle labels")
+    if protocol.get("tool_names_used_as_features"):
+        blockers.append("source controller uses tool names as features")
+    if protocol.get("source_generator_uses_tau3_trajectories"):
+        blockers.append("source generator used tau3 trajectories")
+    if protocol.get("tau3_heldout_test_seen_before_freeze"):
+        blockers.append("tau3 heldout test influenced source generator freeze")
+    if protocol.get("manifest_found") and not protocol.get("controller_checkpoint_frozen"):
+        blockers.append("source controller checkpoint freeze evidence missing")
+    if protocol.get("manifest_found") and not protocol.get("source_generator_distribution_fixed_before_target_test_evaluation"):
+        blockers.append("source generator freeze evidence missing")
+    if protocol.get("manifest_found") and not protocol.get("source_generator_anonymized_tool_names"):
+        blockers.append("source generator tool-name anonymization evidence missing")
+    if protocol.get("manifest_found") and not protocol.get("tool_identity_generalization_ready"):
+        blockers.append("tool-identity generalization stress missing or failed")
+    if protocol.get("manifest_found") and not protocol.get("contract_coverage_stress_ready"):
+        blockers.append("contract coverage stress missing or failed")
+    return {
+        "run_group": "source_controller",
+        "ready": not blockers,
+        "methods": "GenericHarnessRanker source controller",
+        "remaining_rows": 0 if not blockers else 1,
+        "api_required": False,
+        "resume_safe": True,
+        "effective_max_concurrency": 0,
+        "command": f"BASE_DIR={base_dir} scripts/run_table10_tau3.sh source-controller",
+        "blockers": "; ".join(blockers),
+        "source_controller_checkpoint": str(checkpoint),
+        "source_controller_protocol": protocol.get("manifest", ""),
+    }
+
+
 def _table10_effective_concurrency(group: str, max_concurrency: int, parallel_domains: bool, parallel_method_groups: bool) -> int:
-    if group == "build_and_audit":
+    if group in {"build_and_audit", "source_controller"}:
         return 0
     domain_factor = 2 if parallel_domains else 1
     method_factor = 4 if group == "full" and parallel_method_groups else 1

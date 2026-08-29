@@ -497,10 +497,13 @@ class Tau3NativeTest(unittest.TestCase):
                 tau_python_bin="/tmp/python",
             )
             groups = {row["run_group"]: row for row in manifest["rows"]}
+            self.assertIn("source_controller", groups)
             self.assertIn("full", groups)
             self.assertIn("native_full", groups)
             self.assertIn("solver_canonical_full", groups)
             self.assertIn("solver_canonical_certified_full", groups)
+            self.assertFalse(groups["source_controller"]["api_required"])
+            self.assertEqual(groups["source_controller"]["effective_max_concurrency"], 0)
             self.assertTrue(groups["full"]["api_required"])
             self.assertIn("build_and_audit", groups)
             self.assertTrue(groups["native_full"]["api_required"])
@@ -510,8 +513,8 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(groups["native_full"]["effective_max_concurrency"], 4)
             self.assertEqual(groups["full"]["effective_max_concurrency"], 4)
             self.assertEqual(manifest["max_api_backed_effective_concurrency"], 4)
-            self.assertEqual(manifest["recommended_next_run_group"], "native_full")
-            self.assertIn("scripts/run_table10_tau3.sh native-full", manifest["recommended_next_command"])
+            self.assertEqual(manifest["recommended_next_run_group"], "source_controller")
+            self.assertIn("scripts/run_table10_tau3.sh source-controller", manifest["recommended_next_command"])
             self.assertIn("scripts/run_table10_tau3.sh full", groups["full"]["command"])
             self.assertIn("PARALLEL_METHOD_GROUPS=0", groups["full"]["command"])
             self.assertIn("scripts/run_table10_tau3.sh native-full", groups["native_full"]["command"])
@@ -523,6 +526,9 @@ class Tau3NativeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             base = root / "runs"
+            source = base / "source_controller_seed0"
+            source.mkdir(parents=True)
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
             for row_dir, domain, method in (
                 (base / "native_retail", "retail", "Native tool-calling rerun"),
                 (base / "native_airline", "airline", "Native tool-calling rerun"),
@@ -539,6 +545,19 @@ class Tau3NativeTest(unittest.TestCase):
             manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
             self.assertEqual(manifest["recommended_next_run_group"], "legacy_solver_full")
             self.assertIn("scripts/run_table10_tau3.sh solver-full", manifest["recommended_next_command"])
+
+    def test_table10_preflight_recommends_native_after_source_controller_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            source = base / "source_controller_seed0"
+            source.mkdir(parents=True)
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
+            manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
+            groups = {row["run_group"]: row for row in manifest["rows"]}
+            self.assertTrue(groups["source_controller"]["ready"])
+            self.assertEqual(manifest["recommended_next_run_group"], "native_full")
+            self.assertIn("scripts/run_table10_tau3.sh native-full", manifest["recommended_next_command"])
 
     def test_table10_preflight_reports_parallel_method_group_concurrency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -134,6 +134,8 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("source_controller_seed${seed}/generic_harness_ranker.json", text)
         self.assertIn("OPENAI_API_KEY", text)
         self.assertIn("CGR_LLM_API_KEY", text)
+        self.assertIn("If `PYTHON_BIN` is not set", text)
+        self.assertIn("TAU_PYTHON_BIN` defaults", text)
         self.assertIn("CANDIDATE_WORKERS=4", text)
         self.assertIn("CANDIDATE_RETRIES=2", text)
         self.assertIn("candidate_sample_failures", text)

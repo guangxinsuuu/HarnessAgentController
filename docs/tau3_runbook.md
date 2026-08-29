@@ -13,6 +13,9 @@ auditable protocol.
   runner maps `CGR_LLM_API_KEY` into `OPENAI_API_KEY` before calling
   tau2/litellm, so setting either one is enough when using
   `scripts/run_table10_tau3.sh`.
+- If `PYTHON_BIN` is not set, the runner selects `/opt/anaconda3/bin/python`
+  when it exists, then falls back to `python3`. `TAU_PYTHON_BIN` defaults to
+  the same interpreter unless explicitly overridden.
 - Build the source controller before canonical tau3 runs. This is local and
   does not use the API.
 - Promote rows only when `table10_tau3_readiness.csv` marks them ready.

@@ -24,6 +24,7 @@ from cgr_exp.scheduling_structured_q2 import run_scheduling_structured_q2
 from cgr_exp.scheduling_tot_q2 import run_scheduling_tot_q2, run_scheduling_tot_q2_from_env
 from cgr_exp.scheduling_transfer import (
     ScriptedSchedulingClient,
+    backfill_scheduling_llm_pilot_audit_artifacts,
     preflight_scheduling_llm_pilot,
     run_scheduling_fewshot_curve,
     run_scheduling_llm_pilot,
@@ -54,6 +55,7 @@ COMMANDS = [
     "run-scheduling-certification",
     "preflight-scheduling-llm-pilot",
     "run-scheduling-llm-pilot",
+    "backfill-scheduling-llm-pilot-audit-artifacts",
     "run-scheduling-native-q2",
     "run-scheduling-structured-q2",
     "run-scheduling-tot-q2",
@@ -918,6 +920,21 @@ def main() -> None:
                 f"worst_case_requests={preflight['worst_case_request_count_upper_bound']} "
                 f"wrote {args.output_dir / 'scheduling_llm_pilot_preflight.json'}"
             )
+            return
+        if args.command == "backfill-scheduling-llm-pilot-audit-artifacts":
+            manifest = backfill_scheduling_llm_pilot_audit_artifacts(args.output_dir)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "observed_policy_names": manifest["observed_policy_names"],
+                "q2_methods": manifest["q2_methods"],
+                "wrote_target_prm_label_manifest": manifest["wrote_target_prm_label_manifest"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'backfill_scheduling_llm_pilot_audit_manifest.json'}")
             return
         if args.command == "run-scheduling-diagnosis":
             metrics = run_scheduling_transfer_diagnosis(

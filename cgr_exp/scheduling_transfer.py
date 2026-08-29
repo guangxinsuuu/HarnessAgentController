@@ -10,7 +10,7 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Mapping, Sequence
 
 from cgr_exp.budgets import BudgetState
 from cgr_exp.certification.prune import should_prune
@@ -1085,6 +1085,54 @@ def run_scheduling_llm_pilot(
         source_policy_rows=source_policy_rows,
     )
     return metrics
+
+
+def backfill_scheduling_llm_pilot_audit_artifacts(out_dir: Path) -> Dict[str, object]:
+    metrics_path = out_dir / "scheduling_llm_pilot_metrics.json"
+    if not metrics_path.exists():
+        raise FileNotFoundError(f"missing {metrics_path}")
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    table_rows = _read_csv_rows(out_dir / "scheduling_llm_pilot_table.csv")
+    if table_rows:
+        observed_policy_names = [str(row.get("Policy", "")) for row in table_rows if str(row.get("Policy", ""))]
+    else:
+        observed_policy_names = [str(name) for name in metrics.get("methods", {}).keys()]
+    q2_methods = _q2_methods_for_level2_policies(observed_policy_names)
+    metrics["q2_method_alignment"] = q2_method_contracts(q2_methods)
+    metrics["source_evidence"] = q2_source_evidence_for_methods(q2_methods)
+    metrics["learned_search_protocol"] = _learned_search_protocol_manifest(
+        observed_policy_names,
+        include_target_prm="Target-PRM" in observed_policy_names,
+        include_rest_mcts="PRM-guided MCTS (ReST-MCTS-style)" in observed_policy_names,
+        include_solver_certification="Solver-trained MLP + certified pruning" in observed_policy_names,
+    )
+    if "shared_proposal_replay" not in metrics or not metrics["shared_proposal_replay"]:
+        metrics["shared_proposal_replay"] = _summarize_cache_rows(_read_csv_rows(out_dir / "scheduling_llm_pilot_proposal_cache.csv"))
+    metrics_path.write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
+
+    target_records = _read_jsonl_rows(out_dir / "target_prm_trace_records.jsonl")
+    target_pairs = _read_jsonl_rows(out_dir / "target_prm_train_pairs.jsonl")
+    if target_records or target_pairs:
+        target_train_ids = metrics.get("target_prm_training_instance_ids")
+        if not isinstance(target_train_ids, list) or not target_train_ids:
+            target_train_ids = sorted({str(row.get("task_id", "")) for row in target_records if str(row.get("task_id", ""))})
+        label_manifest = _target_prm_label_manifest(metrics, target_records, target_pairs, [str(item) for item in target_train_ids])
+        (out_dir / "target_prm_label_manifest.json").write_text(json.dumps(label_manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+    manifest = {
+        "command": "backfill-scheduling-llm-pilot-audit-artifacts",
+        "output_dir": str(out_dir),
+        "status": "complete",
+        "observed_policy_names": observed_policy_names,
+        "q2_methods": q2_methods,
+        "wrote_metrics_manifest": str(metrics_path),
+        "wrote_target_prm_label_manifest": (out_dir / "target_prm_label_manifest.json").exists(),
+        "target_prm_trace_record_count": len(target_records),
+        "target_prm_pair_count": len(target_pairs),
+        "produced_artifacts": sorted(path.name for path in out_dir.iterdir() if path.is_file()),
+    }
+    (out_dir / "backfill_scheduling_llm_pilot_audit_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
 
 
 @dataclass
@@ -2233,7 +2281,7 @@ def _source_label_manifest(metrics: Dict[str, object], source_records: Sequence[
 
 
 def _target_prm_label_manifest(
-    metrics: Dict[str, object],
+    metrics: Mapping[str, object],
     target_records: Sequence[object],
     target_pairs: Sequence[object],
     target_train_ids: Sequence[str],
@@ -2243,13 +2291,13 @@ def _target_prm_label_manifest(
     depths = []
     parent_ids = set()
     for record in target_records:
-        value = float(getattr(record, "best_descendant_objective", float("inf")))
+        value = float(_record_get(record, "best_descendant_objective", float("inf")))
         if value == float("inf"):
             infeasible_labels += 1
         else:
             finite_labels += 1
-        depths.append(int(getattr(record, "depth", 0)))
-        parent_id = getattr(record, "parent_id", None)
+        depths.append(int(_record_get(record, "depth", 0)))
+        parent_id = _record_get(record, "parent_id", None)
         if parent_id is not None:
             parent_ids.add(str(parent_id))
     return {
@@ -2287,6 +2335,12 @@ def _target_prm_label_manifest(
         "inference_feature_schema": "feature_schema.json",
         "not_zero_shot": True,
     }
+
+
+def _record_get(record: object, key: str, default: object = None) -> object:
+    if isinstance(record, Mapping):
+        return record.get(key, default)
+    return getattr(record, key, default)
 
 
 def _mean_std(values: Sequence[float]) -> tuple[float, float]:

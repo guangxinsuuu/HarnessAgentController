@@ -22,6 +22,19 @@ prefer_existing_dir() {
   print "${primary}"
 }
 
+prefer_existing_artifact_dir() {
+  local artifact="$1"
+  shift
+  local candidate
+  for candidate in "$@"; do
+    if [[ -f "${candidate}/${artifact}" ]]; then
+      print "${candidate}"
+      return
+    fi
+  done
+  print "$1"
+}
+
 if [[ -z "${Q2_STRUCTURED_DIR:-}" ]]; then
   Q2_STRUCTURED_DIR="$(prefer_existing_dir runs/q2_structured_100_seed0_runtime_v2 runs/q2_structured_100_seed0)"
 fi
@@ -29,7 +42,7 @@ if [[ -z "${Q2_NATIVE_DIR:-}" ]]; then
   Q2_NATIVE_DIR="$(prefer_existing_dir runs/q2_native_llm_baselines_100_seed0_sc_v2 runs/q2_native_llm_baselines_100_seed0)"
 fi
 if [[ -z "${Q2_LEARNED_DIR:-}" ]]; then
-  Q2_LEARNED_DIR="$(prefer_existing_dir runs/q2_learned_search_100_seed0_rest_gate_v2 runs/scheduling_table5_prm_rest_cert_100_seed0 runs/scheduling_llm_pilot_real_100_seed0)"
+  Q2_LEARNED_DIR="$(prefer_existing_artifact_dir scheduling_llm_pilot_table.csv runs/q2_learned_search_100_seed0_rest_gate_v2 runs/scheduling_table5_prm_rest_cert_100_seed0 runs/scheduling_llm_pilot_real_100_seed0)"
 fi
 if [[ -z "${Q2_TOT_DIR:-}" ]]; then
   Q2_TOT_DIR="$(prefer_existing_dir runs/q2_tot_bfs_100_seed0_tot_gate_v2 runs/scheduling_missing_gpt_frontier_rank_100_seed0)"
@@ -82,6 +95,11 @@ audit_q2() {
   "${PYTHON_BIN}" -m cgr_exp.cli audit-q2-local-primitives \
     --output-dir "${Q2_LOCAL_PRIMITIVE_AUDIT_DIR}" \
     --overwrite
+  if [[ -f "${Q2_LEARNED_DIR}/scheduling_llm_pilot_metrics.json" ]]; then
+    "${PYTHON_BIN}" -m cgr_exp.cli backfill-scheduling-llm-pilot-audit-artifacts \
+      --output-dir "${Q2_LEARNED_DIR}" \
+      --overwrite
+  fi
   "${PYTHON_BIN}" -m cgr_exp.cli audit-table4-q2 \
     --output-dir "${Q2_TABLE_AUDIT_DIR}" \
     --expected-test-count "${TEST_COUNT}" \

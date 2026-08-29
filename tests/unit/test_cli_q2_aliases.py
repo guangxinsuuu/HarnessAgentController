@@ -23,6 +23,7 @@ class CliQ2AliasesTest(unittest.TestCase):
         self.assertIn("audit-q2-local-primitives", COMMANDS)
         self.assertIn("build-q2-remaining-runs", COMMANDS)
         self.assertIn("build-q2-run-preflight", COMMANDS)
+        self.assertIn("backfill-scheduling-llm-pilot-audit-artifacts", COMMANDS)
         self.assertIn("build-q4-tau-adapter-contract", COMMANDS)
 
     def test_table4_and_legacy_table5_aliases_expose_same_q2_arguments(self) -> None:

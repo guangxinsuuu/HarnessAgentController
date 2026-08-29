@@ -14,6 +14,7 @@ from cgr_exp.scheduling_transfer import (
     SharedSchedulingProposalCache,
     PRMGuidedMCTSStylePolicy,
     ScriptedSchedulingClient,
+    backfill_scheduling_llm_pilot_audit_artifacts,
     canonical_scheduling_state,
     canonical_state_hash,
     make_level2_scheduling_episodes,
@@ -22,6 +23,7 @@ from cgr_exp.scheduling_transfer import (
     run_scheduling_llm_pilot,
     run_scheduling_zero_shot_transfer,
 )
+from cgr_exp.table5_q2 import audit_table5_q2_readiness
 
 
 class SchedulingTransferTest(unittest.TestCase):
@@ -626,6 +628,64 @@ class SchedulingTransferTest(unittest.TestCase):
                 "target_prm_train_pairs.jsonl",
             ):
                 self.assertTrue((root / name).exists(), name)
+
+    def test_backfill_scheduling_llm_pilot_audit_artifacts_repairs_legacy_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_scheduling_llm_pilot(
+                root,
+                client=ScriptedSchedulingClient(model="mock-scheduling"),
+                model="mock-scheduling",
+                seed=32,
+                train_count=8,
+                validation_count=3,
+                test_count=2,
+                job_count=5,
+                machine_count=2,
+                node_budget=35,
+                action_budget=5,
+                records_per_instance=10,
+                rank_epochs=4,
+                perturbation="canonical",
+                batch_size=1,
+                include_target_prm=True,
+                include_rest_mcts=True,
+                include_solver_certification=True,
+                target_prm_train_count=4,
+            )
+            metrics_path = root / "scheduling_llm_pilot_metrics.json"
+            legacy_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            for key in ("q2_method_alignment", "source_evidence", "learned_search_protocol"):
+                legacy_metrics.pop(key, None)
+            metrics_path.write_text(json.dumps(legacy_metrics, indent=2, sort_keys=True), encoding="utf-8")
+            (root / "target_prm_label_manifest.json").unlink()
+
+            manifest = backfill_scheduling_llm_pilot_audit_artifacts(root)
+
+            self.assertTrue(manifest["wrote_target_prm_label_manifest"])
+            repaired = json.loads(metrics_path.read_text(encoding="utf-8"))
+            self.assertIn("Target-PRM priority", repaired["q2_method_alignment"])
+            self.assertIn("PRM-guided MCTS (ReST-MCTS-style)", repaired["source_evidence"])
+            self.assertIn("Solver-trained MLP + certified pruning", repaired["learned_search_protocol"]["policies"])
+            label_manifest = json.loads((root / "target_prm_label_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(label_manifest["supervision"], "target_process_frontier_ranking")
+            self.assertGreater(label_manifest["process_label_record_count"], 0)
+            self.assertGreater(label_manifest["frontier_parent_group_count"], 0)
+
+            audit_out = root / "audit"
+            audit_table5_q2_readiness(
+                audit_out,
+                solver_prior_dir=root,
+                target_prm_dir=root,
+                rest_mcts_dir=root,
+                solver_certification_dir=root,
+                expected_test_count=2,
+            )
+            with (audit_out / "table5_q2_readiness.csv").open(newline="", encoding="utf-8") as handle:
+                audit_rows = {row["Method"]: row for row in csv.DictReader(handle)}
+            self.assertEqual(audit_rows["Target-PRM priority"]["result_ready"], "True")
+            self.assertEqual(audit_rows["PRM-guided MCTS (ReST-MCTS-style)"]["result_ready"], "True")
+            self.assertEqual(audit_rows["Solver-trained priority"]["result_ready"], "True")
 
     def test_scheduling_llm_pilot_resume_requires_each_requested_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

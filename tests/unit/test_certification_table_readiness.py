@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from cgr_exp.certification_authority_audit import audit_certification_authority_source
 from cgr_exp.certification_table_readiness import audit_certification_tables
 from cgr_exp.scheduling_certification import run_scheduling_certification_experiment
 from cgr_exp.table6_authority import run_table6_authority_experiment
@@ -45,7 +46,15 @@ class CertificationTableReadinessTest(unittest.TestCase):
                 rank_epochs=3,
                 corruption_seeds=(0,),
             )
-            manifest = audit_certification_tables(root / "audit", certification_dir=cert, authority_dir=auth, expected_test_count=3)
+            source_audit = root / "authority_source"
+            audit_certification_authority_source(source_audit)
+            manifest = audit_certification_tables(
+                root / "audit",
+                certification_dir=cert,
+                authority_dir=auth,
+                expected_test_count=3,
+                authority_source_audit=source_audit / "certification_authority_source_audit.csv",
+            )
             self.assertTrue(manifest["all_rows_ready"])
 
     def test_audit_keeps_missing_artifacts_pending(self) -> None:
@@ -141,6 +150,29 @@ class CertificationTableReadinessTest(unittest.TestCase):
             self.assertIn("Uncertain-only 20% row must not convert uncertain constraints", row["result_blockers"])
             self.assertIn("Uncertain-only 20% row must not reject actions", row["result_blockers"])
             self.assertIn("Learned-score pruning clean row must trigger positive learned-score prunes", row["result_blockers"])
+
+    def test_audit_rejects_failed_authority_source_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            failed = root / "failed_authority_source.csv"
+            _write_csv(
+                failed,
+                [
+                    {
+                        "Check": "learned_score_has_no_pruning_authority",
+                        "authority_source_ready": "False",
+                        "blockers": "forbidden authority anchors present: if learned_score",
+                    }
+                ],
+            )
+            manifest = audit_certification_tables(
+                root / "audit",
+                expected_test_count=1,
+                authority_source_audit=failed,
+            )
+            for row in manifest["rows"]:
+                self.assertFalse(row["result_ready"])
+                self.assertIn("certification authority source audit failed", row["result_blockers"])
 
 
 def _write_csv(path: Path, rows) -> None:

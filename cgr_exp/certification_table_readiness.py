@@ -21,12 +21,14 @@ def audit_certification_tables(
     certification_dir: Optional[Path] = None,
     authority_dir: Optional[Path] = None,
     expected_test_count: int = 100,
+    authority_source_audit: Optional[Path] = None,
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = [
         _clean_certification_row(certification_dir, expected_test_count),
         _grounding_robustness_row(authority_dir, expected_test_count),
     ]
+    _apply_authority_source_audit(rows, authority_source_audit)
     csv_path = out_dir / "certification_tables_readiness.csv"
     json_path = out_dir / "certification_tables_readiness.json"
     _write_csv(csv_path, rows)
@@ -36,11 +38,36 @@ def audit_certification_tables(
         "all_rows_ready": all(row["result_ready"] for row in rows),
         "pending_or_blocked_rows": [row["Table"] for row in rows if not row["result_ready"]],
         "protocol_required": CERTIFICATION_PROTOCOL_REQUIRED,
+        "authority_source_audit": None if authority_source_audit is None else str(authority_source_audit),
         "rows": rows,
         "produced_artifacts": [csv_path.name, json_path.name],
     }
     json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
+
+
+def _apply_authority_source_audit(rows: List[Dict[str, object]], authority_source_audit: Optional[Path]) -> None:
+    if authority_source_audit is None:
+        return
+    audit_rows = _read_csv(authority_source_audit)
+    if not audit_rows:
+        for row in rows:
+            _append_blocker(row, "certification authority source audit missing")
+        return
+    failed = [
+        f"{audit_row.get('Check', '')}: {audit_row.get('blockers', '')}"
+        for audit_row in audit_rows
+        if str(audit_row.get("authority_source_ready", "")).lower() != "true"
+    ]
+    if failed:
+        for row in rows:
+            _append_blocker(row, "certification authority source audit failed: " + "; ".join(failed))
+
+
+def _append_blocker(row: Dict[str, object], blocker: str) -> None:
+    existing = str(row.get("result_blockers", "")).strip()
+    row["result_blockers"] = "; ".join(part for part in [existing, blocker] if part)
+    row["result_ready"] = False
 
 
 def _clean_certification_row(source_dir: Optional[Path], expected_test_count: int) -> Dict[str, object]:

@@ -13,6 +13,7 @@ DEFAULT_Q4_READINESS = Path("runs/q4_tau_table_current_audit/q4_tau_readiness.cs
 DEFAULT_CERT_READINESS = Path("runs/certification_tables_readiness/certification_tables_readiness.csv")
 DEFAULT_Q2_MATRIX = Path("runs/q2_implementation_matrix/q2_implementation_matrix.csv")
 DEFAULT_Q2_LOCAL_PRIMITIVES = Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv")
+DEFAULT_CERT_AUTHORITY_SOURCE = Path("runs/certification_authority_source_audit/certification_authority_source_audit.csv")
 
 
 def build_current_experiment_status(
@@ -23,6 +24,7 @@ def build_current_experiment_status(
     certification_readiness: Path = DEFAULT_CERT_READINESS,
     q2_implementation_matrix: Path = DEFAULT_Q2_MATRIX,
     q2_local_primitives: Path = DEFAULT_Q2_LOCAL_PRIMITIVES,
+    certification_authority_source: Path = DEFAULT_CERT_AUTHORITY_SOURCE,
     audit_command: str = "PYTHON_BIN=.venv/bin/python scripts/run_paper_audits.sh all",
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -31,18 +33,21 @@ def build_current_experiment_status(
     cert_rows = _read_csv(certification_readiness)
     q2_matrix_rows = _read_csv(q2_implementation_matrix)
     q2_local_primitive_rows = _read_csv(q2_local_primitives)
+    cert_authority_source_rows = _read_csv(certification_authority_source)
     markdown = _render_markdown(
         q2_rows=q2_rows,
         q4_rows=q4_rows,
         cert_rows=cert_rows,
         q2_matrix_rows=q2_matrix_rows,
         q2_local_primitive_rows=q2_local_primitive_rows,
+        cert_authority_source_rows=cert_authority_source_rows,
         audit_command=audit_command,
         q2_readiness=q2_readiness,
         q4_readiness=q4_readiness,
         certification_readiness=certification_readiness,
         q2_implementation_matrix=q2_implementation_matrix,
         q2_local_primitives=q2_local_primitives,
+        certification_authority_source=certification_authority_source,
     )
     md_path = out_dir / "current_experiment_status.md"
     json_path = out_dir / "current_experiment_status.json"
@@ -56,6 +61,7 @@ def build_current_experiment_status(
             "certification_readiness": str(certification_readiness),
             "q2_implementation_matrix": str(q2_implementation_matrix),
             "q2_local_primitives": str(q2_local_primitives),
+            "certification_authority_source": str(certification_authority_source),
         },
         "q2_rows": _row_count(q2_rows),
         "q2_ready_rows": _ready_count(q2_rows),
@@ -65,6 +71,8 @@ def build_current_experiment_status(
         "q4_ready_rows": _ready_count(q4_rows),
         "certification_rows": _row_count(cert_rows),
         "certification_ready_rows": _ready_count(cert_rows),
+        "certification_authority_source_rows": _row_count(cert_authority_source_rows),
+        "certification_authority_source_ready_rows": _authority_source_ready_count(cert_authority_source_rows),
         "produced_artifacts": [md_path.name, json_path.name],
     }
     json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
@@ -78,12 +86,14 @@ def _render_markdown(
     cert_rows: List[Dict[str, str]],
     q2_matrix_rows: List[Dict[str, str]],
     q2_local_primitive_rows: List[Dict[str, str]],
+    cert_authority_source_rows: List[Dict[str, str]],
     audit_command: str,
     q2_readiness: Path,
     q4_readiness: Path,
     certification_readiness: Path,
     q2_implementation_matrix: Path,
     q2_local_primitives: Path,
+    certification_authority_source: Path,
 ) -> str:
     q2_status = _status_map(q2_rows, method_key="Method", ready_key="result_ready", blocker_key="result_blockers")
     q2_impl = {row.get("Method", ""): row for row in q2_matrix_rows}
@@ -195,6 +205,8 @@ def _render_markdown(
         [
             "",
             "Required certification authority contract:",
+            "",
+            f"Authority source audit: `{certification_authority_source}` ({_authority_source_summary(cert_authority_source_rows)}).",
             "",
             "- Verified lower-bound or feasibility logic is the only pruning authority.",
             "- Learned scores may rank frontier states only.",
@@ -323,6 +335,28 @@ def _local_primitive_summary(rows: List[Dict[str, str]]) -> str:
         if str(row.get("local_primitives_ready", "")).lower() != "true"
     ]
     return f"{ready}/{len(rows)} rows ready; blocked: {', '.join(blockers)}"
+
+
+def _authority_source_ready_count(rows: Iterable[Mapping[str, str]]) -> int:
+    count = 0
+    for row in rows:
+        if str(row.get("authority_source_ready", "")).lower() == "true":
+            count += 1
+    return count
+
+
+def _authority_source_summary(rows: List[Dict[str, str]]) -> str:
+    if not rows:
+        return "artifact missing"
+    ready = _authority_source_ready_count(rows)
+    if ready == len(rows):
+        return f"{ready}/{len(rows)} authority checks ready"
+    blockers = [
+        row.get("Check", "")
+        for row in rows
+        if str(row.get("authority_source_ready", "")).lower() != "true"
+    ]
+    return f"{ready}/{len(rows)} checks ready; blocked: {', '.join(blockers)}"
 
 
 def _read_csv(path: Path) -> List[Dict[str, str]]:

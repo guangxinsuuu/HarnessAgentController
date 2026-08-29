@@ -6,6 +6,7 @@ from pathlib import Path
 from dataclasses import replace
 
 from cgr_exp.analysis.statistics import write_seed_aggregate
+from cgr_exp.certification_authority_audit import audit_certification_authority_source
 from cgr_exp.certification_table_readiness import audit_certification_tables
 from cgr_exp.experiment_status_report import build_current_experiment_status
 from cgr_exp.experiments import PRESETS, run_experiment
@@ -84,6 +85,7 @@ COMMANDS = [
     "build-table-q4-tau",
     "audit-table-q4-tau",
     "run-table6-authority",
+    "audit-certification-authority-source",
     "audit-certification-tables",
     "audit-secret-safety",
     "build-current-experiment-status",
@@ -331,6 +333,9 @@ def main() -> None:
             p.add_argument("--certification-dir", type=Path, default=None)
             p.add_argument("--authority-dir", type=Path, default=None)
             p.add_argument("--expected-test-count", type=int, default=100)
+            p.add_argument("--authority-source-audit", type=Path, default=None)
+        if name == "audit-certification-authority-source":
+            pass
         if name == "audit-secret-safety":
             p.add_argument("--root", type=Path, default=Path("."))
         if name == "build-current-experiment-status":
@@ -339,6 +344,7 @@ def main() -> None:
             p.add_argument("--certification-readiness", type=Path, default=Path("runs/certification_tables_readiness/certification_tables_readiness.csv"))
             p.add_argument("--q2-implementation-matrix", type=Path, default=Path("runs/q2_implementation_matrix/q2_implementation_matrix.csv"))
             p.add_argument("--q2-local-primitives", type=Path, default=Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv"))
+            p.add_argument("--certification-authority-source", type=Path, default=Path("runs/certification_authority_source_audit/certification_authority_source_audit.csv"))
             p.add_argument("--audit-command", default="PYTHON_BIN=.venv/bin/python scripts/run_paper_audits.sh all")
     args, rest = parser.parse_known_args()
     if args.command in (None, "run-smoke"):
@@ -1248,12 +1254,25 @@ def main() -> None:
             (args.output_dir / "command_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table6_authority.csv'}")
             return
+        if args.command == "audit-certification-authority-source":
+            manifest = audit_certification_authority_source(args.output_dir)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "all_authority_source_ready": manifest["all_authority_source_ready"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'certification_authority_source_audit.csv'}")
+            return
         if args.command == "audit-certification-tables":
             manifest = audit_certification_tables(
                 args.output_dir,
                 certification_dir=args.certification_dir,
                 authority_dir=args.authority_dir,
                 expected_test_count=args.expected_test_count,
+                authority_source_audit=args.authority_source_audit,
             )
             command_manifest = {
                 "command": args.command,
@@ -1262,6 +1281,7 @@ def main() -> None:
                 "expected_test_count": args.expected_test_count,
                 "certification_dir": None if args.certification_dir is None else str(args.certification_dir),
                 "authority_dir": None if args.authority_dir is None else str(args.authority_dir),
+                "authority_source_audit": None if args.authority_source_audit is None else str(args.authority_source_audit),
                 "all_rows_ready": manifest["all_rows_ready"],
                 "produced_artifacts": manifest["produced_artifacts"],
             }
@@ -1293,6 +1313,7 @@ def main() -> None:
                 certification_readiness=args.certification_readiness,
                 q2_implementation_matrix=args.q2_implementation_matrix,
                 q2_local_primitives=args.q2_local_primitives,
+                certification_authority_source=args.certification_authority_source,
                 audit_command=args.audit_command,
             )
             command_manifest = {

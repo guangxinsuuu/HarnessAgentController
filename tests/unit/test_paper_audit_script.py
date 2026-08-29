@@ -21,6 +21,7 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("verify-q2-source-refs", text)
         self.assertIn("verify-q4-tau-source-refs", text)
         self.assertIn("audit-certification-tables", text)
+        self.assertIn("audit-certification-authority-source", text)
         self.assertIn("build-current-experiment-status", text)
         self.assertIn("llm_key: not required", text)
         self.assertIn("STATUS_REPORT_DIR", text)
@@ -36,6 +37,8 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("q4_adapter_contract_dir", text)
         self.assertIn("audit-secret-safety", text)
         self.assertIn("secret_audit_dir", text)
+        self.assertIn("certification_authority_source_audit_dir", text)
+        self.assertIn("--certification-authority-source", text)
         self.assertIn("prefer_existing_dir", text)
         self.assertIn("scheduling_table5_prm_rest_cert_100_seed0", text)
         self.assertIn("scheduling_missing_gpt_frontier_rank_100_seed0", text)
@@ -70,6 +73,7 @@ class PaperAuditScriptTest(unittest.TestCase):
                 "Q4_TARGET_PRM_DIR": str(root / "missing_q4_prm"),
                 "Q4_SOLVER_CONTROLLER_DIR": str(root / "missing_q4_solver"),
                 "CERTIFICATION_AUDIT_DIR": str(root / "cert_audit"),
+                "CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR": str(root / "cert_authority_source"),
                 "CERTIFICATION_DIR": str(root / "missing_cert"),
                 "AUTHORITY_DIR": str(root / "missing_authority"),
                 "STATUS_REPORT_DIR": str(root / "status"),
@@ -101,6 +105,7 @@ class PaperAuditScriptTest(unittest.TestCase):
             self.assertTrue((root / "q4_source_refs" / "q4_tau_source_ref_verification.csv").exists())
             self.assertTrue((root / "q4_contract" / "q4_tau_adapter_contract.csv").exists())
             self.assertTrue((root / "cert_audit" / "certification_tables_readiness.csv").exists())
+            self.assertTrue((root / "cert_authority_source" / "certification_authority_source_audit.csv").exists())
             self.assertTrue((root / "secret_audit" / "secret_safety_audit.csv").exists())
             self.assertTrue((root / "status" / "current_experiment_status.md").exists())
 
@@ -115,6 +120,7 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("q2_run_preflight/q2_run_preflight.md", text)
         self.assertIn("secret_safety_audit/secret_safety_audit.csv", text)
         self.assertIn("certification_tables_readiness/certification_tables_readiness.csv", text)
+        self.assertIn("certification_authority_source_audit/certification_authority_source_audit.csv", text)
         self.assertIn("All Q4 tau/tau2 rows remain pending", text)
         self.assertIn("Only rows marked ready", text)
 

@@ -53,6 +53,7 @@ Q4_TARGET_PRM_DIR="${Q4_TARGET_PRM_DIR:-runs/q4_tau_target_prm}"
 Q4_SOLVER_CONTROLLER_DIR="${Q4_SOLVER_CONTROLLER_DIR:-runs/q4_tau_solver_controller}"
 
 CERTIFICATION_AUDIT_DIR="${CERTIFICATION_AUDIT_DIR:-runs/certification_tables_readiness}"
+CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR="${CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR:-runs/certification_authority_source_audit}"
 CERTIFICATION_DIR="${CERTIFICATION_DIR:-runs/q2_structured_cert_reference_100_seed0}"
 AUTHORITY_DIR="${AUTHORITY_DIR:-runs/table7_grounding_robustness_100_seed0}"
 STATUS_REPORT_DIR="${STATUS_REPORT_DIR:-runs/current_experiment_status}"
@@ -120,11 +121,15 @@ audit_q4() {
 }
 
 audit_certification() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-certification-authority-source \
+    --output-dir "${CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR}" \
+    --overwrite
   "${PYTHON_BIN}" -m cgr_exp.cli audit-certification-tables \
     --output-dir "${CERTIFICATION_AUDIT_DIR}" \
     --certification-dir "${CERTIFICATION_DIR}" \
     --authority-dir "${AUTHORITY_DIR}" \
     --expected-test-count "${TEST_COUNT}" \
+    --authority-source-audit "${CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR}/certification_authority_source_audit.csv" \
     --overwrite
 }
 
@@ -134,6 +139,7 @@ print_summary() {
   print "q2_audit_dir: ${Q2_TABLE_AUDIT_DIR}"
   print "q4_audit_dir: ${Q4_TABLE_AUDIT_DIR}"
   print "certification_audit_dir: ${CERTIFICATION_AUDIT_DIR}"
+  print "certification_authority_source_audit_dir: ${CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR}"
   print "status_report_dir: ${STATUS_REPORT_DIR}"
   print "q2_local_primitive_audit_dir: ${Q2_LOCAL_PRIMITIVE_AUDIT_DIR}"
   print "q2_remaining_runs_dir: ${Q2_REMAINING_RUNS_DIR}"
@@ -155,6 +161,7 @@ build_status_report() {
     --certification-readiness "${CERTIFICATION_AUDIT_DIR}/certification_tables_readiness.csv" \
     --q2-implementation-matrix "${Q2_IMPLEMENTATION_MATRIX_DIR}/q2_implementation_matrix.csv" \
     --q2-local-primitives "${Q2_LOCAL_PRIMITIVE_AUDIT_DIR}/q2_local_primitive_audit.csv" \
+    --certification-authority-source "${CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR}/certification_authority_source_audit.csv" \
     --audit-command "PYTHON_BIN=${PYTHON_BIN} scripts/run_paper_audits.sh all" \
     --overwrite
 }

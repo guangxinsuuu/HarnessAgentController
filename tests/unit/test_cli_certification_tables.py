@@ -13,6 +13,7 @@ from cgr_exp.cli import COMMANDS
 class CliCertificationTablesTest(unittest.TestCase):
     def test_audit_certification_tables_command_is_registered(self) -> None:
         self.assertIn("audit-certification-tables", COMMANDS)
+        self.assertIn("audit-certification-authority-source", COMMANDS)
 
     def test_audit_certification_tables_exposes_artifact_inputs(self) -> None:
         result = subprocess.run(
@@ -24,6 +25,30 @@ class CliCertificationTablesTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         for flag in ("--certification-dir", "--authority-dir", "--expected-test-count"):
             self.assertIn(flag, result.stdout)
+        self.assertIn("--authority-source-audit", result.stdout)
+
+    def test_audit_certification_authority_source_cli_writes_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "authority_source"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "audit-certification-authority-source",
+                    "--output-dir",
+                    str(out),
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out / "command_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["command"], "audit-certification-authority-source")
+            self.assertTrue(manifest["all_authority_source_ready"])
+            self.assertTrue((out / "certification_authority_source_audit.csv").exists())
 
     def test_audit_certification_tables_cli_writes_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

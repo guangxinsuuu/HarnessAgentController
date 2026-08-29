@@ -18,6 +18,7 @@ class ExperimentStatusReportTest(unittest.TestCase):
             cert = root / "cert.csv"
             matrix = root / "matrix.csv"
             local_primitives = root / "local_primitives.csv"
+            authority_source = root / "authority_source.csv"
             _write_csv(
                 q2,
                 [
@@ -75,6 +76,15 @@ class ExperimentStatusReportTest(unittest.TestCase):
                     }
                 ],
             )
+            _write_csv(
+                authority_source,
+                [
+                    {
+                        "Check": "learned_score_has_no_pruning_authority",
+                        "authority_source_ready": "True",
+                    }
+                ],
+            )
             manifest = build_current_experiment_status(
                 root / "out",
                 q2_readiness=q2,
@@ -82,10 +92,12 @@ class ExperimentStatusReportTest(unittest.TestCase):
                 certification_readiness=cert,
                 q2_implementation_matrix=matrix,
                 q2_local_primitives=local_primitives,
+                certification_authority_source=authority_source,
             )
             self.assertEqual(manifest["q2_rows"], 1)
             self.assertEqual(manifest["q2_local_primitive_ready_rows"], 1)
             self.assertEqual(manifest["certification_ready_rows"], 1)
+            self.assertEqual(manifest["certification_authority_source_ready_rows"], 1)
             text = (root / "out" / "current_experiment_status.md").read_text(encoding="utf-8")
             self.assertIn("Direct / CoT", text)
             self.assertIn("runs/q2_native_llm_baselines_100_seed0", text)
@@ -97,9 +109,12 @@ class ExperimentStatusReportTest(unittest.TestCase):
             self.assertIn("runs/q4_tau_native", text)
             self.assertIn("native tau artifact missing", text)
             self.assertIn("runs/q2_structured_cert_reference_100_seed0", text)
+            self.assertIn("Authority source audit", text)
+            self.assertIn("1/1 authority checks ready", text)
             saved = json.loads((root / "out" / "current_experiment_status.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["artifact"], "current_experiment_status")
             self.assertEqual(saved["input_artifacts"]["q2_local_primitives"], str(local_primitives))
+            self.assertEqual(saved["input_artifacts"]["certification_authority_source"], str(authority_source))
 
 
 def _write_csv(path: Path, rows) -> None:

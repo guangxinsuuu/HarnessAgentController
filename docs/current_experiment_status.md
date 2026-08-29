@@ -66,6 +66,8 @@ Machine audit: `runs/certification_tables_readiness/certification_tables_readine
 
 Required certification authority contract:
 
+Authority source audit: `runs/certification_authority_source_audit/certification_authority_source_audit.csv` (3/3 authority checks ready).
+
 - Verified lower-bound or feasibility logic is the only pruning authority.
 - Learned scores may rank frontier states only.
 - Uncertain constraints may not authorize irreversible pruning.

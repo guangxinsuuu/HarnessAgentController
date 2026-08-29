@@ -945,6 +945,43 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("Resume policy:", text)
             self.assertIn("`--force` is the opt-in switch", text)
 
+    def test_table10_preflight_recommends_certified_smoke_after_canonical_smoke_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            source = base / "source_controller_seed0"
+            source.mkdir(parents=True)
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
+            for domain in ("retail", "airline"):
+                _write_canonical_solver_row(
+                    base / f"solver_canonical_smoke_{domain}",
+                    domain,
+                    source_dir=source,
+                    method="Solver-derived canonical controller",
+                )
+            manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
+            self.assertEqual(manifest["recommended_next_run_group"], "solver_canonical_certified_smoke")
+            self.assertEqual(manifest["recommended_next_summary"]["recommended_next_run_group"], "solver_canonical_certified_smoke")
+            self.assertIn("scripts/run_table10_tau3.sh solver-canonical-certified-smoke", manifest["recommended_next_command"])
+
+    def test_table10_preflight_recommends_native_full_after_smokes_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            source = base / "source_controller_seed0"
+            source.mkdir(parents=True)
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
+            for suffix, method in (
+                ("solver_canonical_smoke", "Solver-derived canonical controller"),
+                ("solver_canonical_certified_smoke", "Solver-derived canonical controller + certified filter"),
+            ):
+                for domain in ("retail", "airline"):
+                    _write_canonical_solver_row(base / f"{suffix}_{domain}", domain, source_dir=source, method=method)
+            manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
+            self.assertEqual(manifest["recommended_next_run_group"], "native_full")
+            self.assertEqual(manifest["recommended_next_summary"]["recommended_next_run_group"], "native_full")
+            self.assertIn("scripts/run_table10_tau3.sh native-full", manifest["recommended_next_command"])
+
     def test_table10_preflight_accepts_cgr_llm_api_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1146,6 +1183,60 @@ def _write_source_manifest(path: Path, *, tau3_train_trajectories_used: bool) ->
                 "seed": 0,
             }
         ),
+        encoding="utf-8",
+    )
+
+
+def _write_canonical_solver_row(
+    row_dir: Path,
+    domain: str,
+    *,
+    source_dir: Path,
+    method: str,
+    task_count: int = 2,
+) -> None:
+    row_dir.mkdir(parents=True, exist_ok=True)
+    _write_row(row_dir, domain, method=method, task_count=task_count, status="complete")
+    (row_dir / "tau3_native_command.json").write_text(
+        json.dumps(
+            {
+                "solver_ranker_checkpoint": str(source_dir / "generic_harness_ranker.json"),
+                "tau3_adapter_protocol": tau3_adapter_manifest(),
+                "source_controller_protocol": {
+                    "manifest_found": True,
+                    "controller_checkpoint_frozen": True,
+                    "tau3_train_trajectories_used": False,
+                    "oracle_labels_in_inference_features": False,
+                    "tool_names_used_as_features": False,
+                    "source_generator_distribution_fixed_before_target_test_evaluation": True,
+                    "tau3_heldout_test_seen_before_freeze": False,
+                    "source_generator_uses_tau3_trajectories": False,
+                    "source_generator_anonymized_tool_names": True,
+                    "tool_identity_generalization_ready": True,
+                    "contract_coverage_stress_ready": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    contract = canonical_contract_manifest()
+    (row_dir / "tau3_controller_trace.jsonl").write_text(
+        json.dumps(
+            {
+                "scoring_mode": "canonical_ranker",
+                "canonical_contract": contract["contract"],
+                "canonical_feature_schema_hash": contract["feature_schema_hash"],
+                "canonical_feature_count": len(canonical_feature_names()),
+                "ranker_checkpoint_loaded": True,
+                "oracle_visible_to_controller": False,
+                "oracle_used_for_candidate_generation": False,
+                "oracle_used_for_filtering": False,
+                "tool_names_used_as_features": False,
+                "certified_filter_enabled": "certified filter" in method,
+                "candidate_scores": [{"candidate_index": 0, "score": 1.0}],
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
 

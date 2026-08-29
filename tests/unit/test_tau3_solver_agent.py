@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from cgr_exp.harness_contract import canonical_feature_names
+from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
 from tau2.data_model.message import AssistantMessage, ToolCall, UserMessage
 from tau2.environment.tool import as_tool
@@ -100,8 +100,12 @@ class Tau3SolverAgentTest(unittest.TestCase):
                 selected, _state = agent.generate_next_message(UserMessage(role="user", content="change order A"), state)
             trace_text = trace.read_text(encoding="utf-8")
             trace_row = json.loads(trace_text)
+        contract = canonical_contract_manifest()
         self.assertEqual(selected.tool_calls[0].name, "get_order")
         self.assertEqual(trace_row["scoring_mode"], "canonical_ranker")
+        self.assertEqual(trace_row["canonical_contract"], contract["contract"])
+        self.assertEqual(trace_row["canonical_feature_schema_hash"], contract["feature_schema_hash"])
+        self.assertEqual(trace_row["canonical_feature_count"], len(canonical_feature_names()))
         self.assertTrue(trace_row["ranker_checkpoint_loaded"])
         self.assertFalse(trace_row["oracle_visible_to_controller"])
         self.assertFalse(trace_row["tool_names_used_as_features"])

@@ -7,6 +7,7 @@ from pathlib import Path
 import time
 from typing import Any, List, Optional
 
+from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
 from cgr_exp.tau3_contract_adapter import tau3_candidate_to_canonical
 
@@ -259,10 +260,14 @@ class Tau3SolverControllerAgent(LLMAgent):
             return
         self.controller_trace_path.parent.mkdir(parents=True, exist_ok=True)
         scored_by_index = {idx: score for idx, score, _tie in scored_candidates}
+        contract = canonical_contract_manifest()
         row = {
             "event": "tau3_controller_selection",
             "timestamp": time.time(),
             "scoring_mode": scoring_mode,
+            "canonical_contract": contract["contract"],
+            "canonical_feature_schema_hash": contract["feature_schema_hash"],
+            "canonical_feature_count": len(canonical_feature_names()),
             "candidate_count": len(candidates),
             "candidate_sample_failures": self._last_sample_failures,
             "candidate_sample_failure_types": sorted(set(self._last_sample_failure_types)),

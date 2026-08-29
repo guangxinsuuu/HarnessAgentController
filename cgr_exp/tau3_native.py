@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
+from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.q4_tau_source_evidence import TAU2_BENCH_SOURCE_URL, q4_tau_source_evidence
 
 TAU2_SOURCE_REVISION = "a2c024725189473d2d7cea3a5cfdbcc67478e41f"
@@ -37,6 +38,11 @@ TRACE_AUDIT_COLUMNS = [
     "oracle_used_for_candidate_generation",
     "oracle_used_for_filtering",
     "tool_names_used_as_features",
+    "canonical_contract",
+    "canonical_feature_schema_hash",
+    "canonical_feature_schema_match",
+    "canonical_feature_count",
+    "canonical_feature_count_match",
     "status",
 ]
 
@@ -603,6 +609,12 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
                 blockers.append("controller trace missing")
             if trace_summary["canonical_ranker_events"] <= 0:
                 blockers.append("canonical ranker events missing")
+            if trace_summary["ranker_checkpoint_loaded_events"] <= 0:
+                blockers.append("ranker checkpoint not observed in trace")
+            if not trace_summary.get("canonical_feature_schema_match"):
+                blockers.append("canonical feature schema hash missing or mismatched")
+            if not trace_summary.get("canonical_feature_count_match"):
+                blockers.append("canonical feature count missing or mismatched")
             if trace_summary["oracle_visible_to_controller"]:
                 blockers.append("oracle visible to controller")
             if trace_summary["oracle_used_for_candidate_generation"]:
@@ -946,6 +958,12 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
     oracle_generation = False
     oracle_filtering = False
     tool_name_features = False
+    expected_contract = canonical_contract_manifest()
+    expected_schema_hash = str(expected_contract["feature_schema_hash"])
+    expected_feature_count = len(canonical_feature_names())
+    observed_contracts: set[str] = set()
+    observed_schema_hashes: set[str] = set()
+    observed_feature_counts: set[int] = set()
     if trace_path.exists():
         for line in trace_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -969,6 +987,17 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
             oracle_generation = oracle_generation or bool(row.get("oracle_used_for_candidate_generation"))
             oracle_filtering = oracle_filtering or bool(row.get("oracle_used_for_filtering"))
             tool_name_features = tool_name_features or bool(row.get("tool_names_used_as_features"))
+            contract_name = str(row.get("canonical_contract", "")).strip()
+            if contract_name:
+                observed_contracts.add(contract_name)
+            schema_hash = str(row.get("canonical_feature_schema_hash", "")).strip()
+            if schema_hash:
+                observed_schema_hashes.add(schema_hash)
+            feature_count = _as_float(row.get("canonical_feature_count"))
+            if not math.isnan(feature_count):
+                observed_feature_counts.add(int(feature_count))
+    schema_match = bool(observed_schema_hashes) and observed_schema_hashes == {expected_schema_hash}
+    feature_count_match = bool(observed_feature_counts) and observed_feature_counts == {expected_feature_count}
     summary = {
         "trace_path": str(trace_path),
         "event_count": event_count,
@@ -985,6 +1014,11 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
         "oracle_used_for_candidate_generation": oracle_generation,
         "oracle_used_for_filtering": oracle_filtering,
         "tool_names_used_as_features": tool_name_features,
+        "canonical_contract": ";".join(sorted(observed_contracts)),
+        "canonical_feature_schema_hash": ";".join(sorted(observed_schema_hashes)),
+        "canonical_feature_schema_match": schema_match,
+        "canonical_feature_count": ";".join(str(value) for value in sorted(observed_feature_counts)),
+        "canonical_feature_count_match": feature_count_match,
         "status": "complete" if event_count > 0 else "empty_or_missing_trace",
     }
     _write_csv(out_dir / "tau3_controller_trace_audit.csv", [summary])
@@ -1096,6 +1130,11 @@ def _table10_audit_row(
         "contract_coverage_stress_ready": source_protocol.get("contract_coverage_stress_ready", ""),
         "contract_coverage_black_box_top1_delta_from_full": source_protocol.get("contract_coverage_black_box_top1_delta_from_full", ""),
         "canonical_ranker_events": trace_summary.get("canonical_ranker_events", ""),
+        "ranker_checkpoint_loaded_events": trace_summary.get("ranker_checkpoint_loaded_events", ""),
+        "canonical_feature_schema_hash": trace_summary.get("canonical_feature_schema_hash", ""),
+        "canonical_feature_schema_match": trace_summary.get("canonical_feature_schema_match", ""),
+        "canonical_feature_count": trace_summary.get("canonical_feature_count", ""),
+        "canonical_feature_count_match": trace_summary.get("canonical_feature_count_match", ""),
         "candidate_sample_failures": trace_summary.get("candidate_sample_failures", ""),
         "certified_prune_rate": trace_summary.get("certified_prune_rate", ""),
         "notes": notes,

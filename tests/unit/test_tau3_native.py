@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.tau3_native import (
     Tau3RunConfig,
     aggregate_tau3_official_results,
@@ -346,11 +347,15 @@ class Tau3NativeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             trace = root / "tau3_controller_trace.jsonl"
+            contract = canonical_contract_manifest()
             trace.write_text(
                 json.dumps(
                     {
                         "event": "tau3_controller_selection",
                         "scoring_mode": "canonical_ranker",
+                        "canonical_contract": contract["contract"],
+                        "canonical_feature_schema_hash": contract["feature_schema_hash"],
+                        "canonical_feature_count": len(canonical_feature_names()),
                         "ranker_checkpoint_loaded": True,
                         "certified_filter_enabled": True,
                         "certified_pruned_count": 1,
@@ -378,6 +383,10 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertAlmostEqual(manifest["certified_prune_rate"], 0.5)
             self.assertFalse(manifest["oracle_visible_to_controller"])
             self.assertFalse(manifest["tool_names_used_as_features"])
+            self.assertEqual(manifest["canonical_contract"], "CanonicalHarnessContractV1")
+            self.assertEqual(manifest["canonical_feature_schema_hash"], contract["feature_schema_hash"])
+            self.assertTrue(manifest["canonical_feature_schema_match"])
+            self.assertTrue(manifest["canonical_feature_count_match"])
             self.assertTrue((root / "audit" / "tau3_controller_trace_audit.csv").exists())
 
     def test_audits_table10_tau3_readiness_with_canonical_trace(self) -> None:
@@ -415,10 +424,14 @@ class Tau3NativeTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            contract = canonical_contract_manifest()
             (canonical / "tau3_controller_trace.jsonl").write_text(
                 json.dumps(
                     {
                         "scoring_mode": "canonical_ranker",
+                        "canonical_contract": contract["contract"],
+                        "canonical_feature_schema_hash": contract["feature_schema_hash"],
+                        "canonical_feature_count": len(canonical_feature_names()),
                         "ranker_checkpoint_loaded": True,
                         "certified_filter_enabled": False,
                         "certified_pruned_count": 0,
@@ -445,6 +458,9 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(canonical_row["tool_identity_generalization_ready"])
             self.assertTrue(canonical_row["contract_coverage_stress_ready"])
             self.assertEqual(canonical_row["canonical_ranker_events"], 1)
+            self.assertEqual(canonical_row["ranker_checkpoint_loaded_events"], 1)
+            self.assertTrue(canonical_row["canonical_feature_schema_match"])
+            self.assertTrue(canonical_row["canonical_feature_count_match"])
             self.assertEqual(canonical_row["candidate_sample_failures"], 2)
             self.assertIn("source generator frozen before target test", canonical_row["notes"])
             self.assertIn("tool-identity stress delta=0.0", canonical_row["notes"])
@@ -481,6 +497,53 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("partial: 1/2", blockers)
             self.assertIn("controller trace missing", blockers)
             self.assertIn("source controller manifest missing", blockers)
+
+    def test_audits_table10_tau3_readiness_rejects_missing_canonical_schema_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            canonical = root / "solver_canonical_retail"
+            source = root / "source"
+            canonical.mkdir()
+            source.mkdir()
+            _write_row(canonical, "retail", method="Solver-derived canonical controller", task_count=2, status="complete")
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
+            (canonical / "tau3_native_command.json").write_text(
+                json.dumps(
+                    {
+                        "solver_ranker_checkpoint": str(source / "generic_harness_ranker.json"),
+                        "source_controller_protocol": {
+                            "manifest_found": True,
+                            "controller_checkpoint_frozen": True,
+                            "tau3_train_trajectories_used": False,
+                            "oracle_labels_in_inference_features": False,
+                            "tool_names_used_as_features": False,
+                            "source_generator_distribution_fixed_before_target_test_evaluation": True,
+                            "tau3_heldout_test_seen_before_freeze": False,
+                            "source_generator_uses_tau3_trajectories": False,
+                            "source_generator_anonymized_tool_names": True,
+                            "tool_identity_generalization_ready": True,
+                            "contract_coverage_stress_ready": True,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (canonical / "tau3_controller_trace.jsonl").write_text(
+                json.dumps(
+                    {
+                        "scoring_mode": "canonical_ranker",
+                        "ranker_checkpoint_loaded": True,
+                        "candidate_scores": [{"candidate_index": 0, "score": 1.0}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            readiness = audit_table10_tau3_readiness(root / "audit", [canonical], expected_test_count=2)
+            self.assertFalse(readiness["all_rows_result_ready"])
+            blockers = readiness["audit_rows"][0]["result_blockers"]
+            self.assertIn("canonical feature schema hash missing or mismatched", blockers)
+            self.assertIn("canonical feature count missing or mismatched", blockers)
 
     def test_audits_table10_tau3_readiness_rejects_source_controller_leakage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

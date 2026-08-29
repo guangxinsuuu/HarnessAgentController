@@ -26,9 +26,16 @@ class Q2LocalPrimitiveAuditTest(unittest.TestCase):
             self.assertIn("method_generate", by_method["Tree of Thoughts"]["required_anchors"])
             self.assertIn("PRMGuidedMCTSStylePolicy", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["required_anchors"])
             self.assertIn("NewOptionalIntervalVar", by_method["CP-SAT"]["required_anchors"])
+            self.assertIn("cgr_exp/scheduling_tot_q2.py:", by_method["Tree of Thoughts"]["anchor_locations"])
+            self.assertIn("cgr_exp/scheduling_transfer.py:", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["anchor_locations"])
+            self.assertIn("cgr_exp/scheduling_structured_q2.py:", by_method["CP-SAT"]["anchor_locations"])
             for row in saved["rows"]:
                 self.assertEqual(row["missing_paths"], "", row["Method"])
                 self.assertEqual(row["missing_anchors"], "", row["Method"])
+                self.assertTrue(row["anchor_locations"], row["Method"])
+                locations = json.loads(row["anchor_locations_json"])
+                for anchor in row["required_anchors"].split("; "):
+                    self.assertTrue(locations[anchor], f"{row['Method']}: {anchor}")
 
 
 if __name__ == "__main__":

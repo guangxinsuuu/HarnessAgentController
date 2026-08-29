@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping
 
 
+MAX_CSV_LOCATIONS_PER_ANCHOR = 5
+
+
 Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
     "CP-SAT": {
         "paths": ["cgr_exp/scheduling_structured_q2.py"],
@@ -98,19 +101,51 @@ def _audit_method(method: str, spec: Mapping[str, object]) -> Dict[str, object]:
     paths = [Path(str(path)) for path in spec.get("paths", [])]
     anchors = [str(anchor) for anchor in spec.get("anchors", [])]
     missing_paths = [str(path) for path in paths if not path.exists()]
-    texts = {str(path): path.read_text(encoding="utf-8") for path in paths if path.exists()}
+    lines_by_path = {
+        str(path): path.read_text(encoding="utf-8").splitlines()
+        for path in paths
+        if path.exists()
+    }
+    locations_by_anchor = {
+        anchor: _anchor_locations(anchor, lines_by_path)
+        for anchor in anchors
+    }
     missing_anchors = []
-    for anchor in anchors:
-        if not any(anchor in text for text in texts.values()):
+    for anchor, locations in locations_by_anchor.items():
+        if not locations:
             missing_anchors.append(anchor)
     return {
         "Method": method,
         "local_paths": "; ".join(str(path) for path in paths),
         "required_anchors": "; ".join(anchors),
+        "anchor_locations": "; ".join(
+            f"{anchor}: {', '.join(_trim_locations(locations))}"
+            for anchor, locations in locations_by_anchor.items()
+            if locations
+        ),
         "missing_paths": "; ".join(missing_paths),
         "missing_anchors": "; ".join(missing_anchors),
+        "anchor_locations_json": json.dumps(locations_by_anchor, sort_keys=True),
         "local_primitives_ready": not missing_paths and not missing_anchors,
     }
+
+
+def _anchor_locations(anchor: str, lines_by_path: Mapping[str, List[str]]) -> List[str]:
+    locations = []
+    for path, lines in lines_by_path.items():
+        for idx, line in enumerate(lines, start=1):
+            if anchor in line:
+                locations.append(f"{path}:{idx}")
+    return locations
+
+
+def _trim_locations(locations: List[str]) -> List[str]:
+    if len(locations) <= MAX_CSV_LOCATIONS_PER_ANCHOR:
+        return locations
+    return [
+        *locations[:MAX_CSV_LOCATIONS_PER_ANCHOR],
+        f"...(+{len(locations) - MAX_CSV_LOCATIONS_PER_ANCHOR} more)",
+    ]
 
 
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:

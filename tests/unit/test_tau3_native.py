@@ -103,6 +103,8 @@ class Tau3NativeTest(unittest.TestCase):
                         "event": "tau3_controller_selection",
                         "scoring_mode": "canonical_ranker",
                         "ranker_checkpoint_loaded": True,
+                        "certified_filter_enabled": True,
+                        "certified_pruned_count": 1,
                         "oracle_visible_to_controller": False,
                         "oracle_used_for_candidate_generation": False,
                         "oracle_used_for_filtering": False,
@@ -120,6 +122,9 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(manifest["event_count"], 1)
             self.assertEqual(manifest["canonical_ranker_events"], 1)
             self.assertEqual(manifest["ranker_checkpoint_loaded_events"], 1)
+            self.assertEqual(manifest["certified_filter_enabled_events"], 1)
+            self.assertEqual(manifest["certified_pruned_candidates"], 1)
+            self.assertAlmostEqual(manifest["certified_prune_rate"], 0.5)
             self.assertFalse(manifest["oracle_visible_to_controller"])
             self.assertFalse(manifest["tool_names_used_as_features"])
             self.assertTrue((root / "audit" / "tau3_controller_trace_audit.csv").exists())

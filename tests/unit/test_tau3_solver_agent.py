@@ -108,6 +108,44 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertNotIn("get_order", trace_text)
         self.assertNotIn("update_order", trace_text)
 
+    def test_certified_filter_prunes_unknown_tool_without_oracle(self) -> None:
+        calls = [
+            AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="delete_customer", arguments={"customer_id": "C1"})],
+                cost=0.01,
+                usage={"prompt_tokens": 10, "completion_tokens": 1},
+            ),
+            AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": "A"})],
+                cost=0.02,
+                usage={"prompt_tokens": 11, "completion_tokens": 2},
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            trace = Path(tmp) / "trace.jsonl"
+            agent = Tau3SolverControllerAgent(
+                [as_tool(_get_order)],
+                "policy",
+                "mock",
+                {"temperature": 0},
+                candidate_count=2,
+                controller_trace_path=str(trace),
+                enable_certified_filter=True,
+            )
+            state = agent.get_init_state()
+            with patch("cgr_exp.tau3_solver_agent.generate", side_effect=calls):
+                selected, _state = agent.generate_next_message(UserMessage(role="user", content="check order A"), state)
+            trace_row = json.loads(trace.read_text(encoding="utf-8"))
+        self.assertEqual(selected.tool_calls[0].name, "get_order")
+        self.assertTrue(trace_row["certified_filter_enabled"])
+        self.assertEqual(trace_row["certified_pruned_count"], 1)
+        self.assertEqual(trace_row["certified_prune_reasons"], ["unknown_tool"])
+        self.assertFalse(trace_row["oracle_used_for_filtering"])
+
 
 def _get_order(order_id: str) -> str:
     """Get order."""

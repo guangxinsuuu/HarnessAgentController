@@ -28,6 +28,9 @@ TRACE_AUDIT_COLUMNS = [
     "canonical_ranker_events",
     "heuristic_events",
     "ranker_checkpoint_loaded_events",
+    "certified_filter_enabled_events",
+    "certified_pruned_candidates",
+    "certified_prune_rate",
     "mean_candidate_count",
     "mean_scored_candidate_count",
     "oracle_visible_to_controller",
@@ -63,6 +66,7 @@ class Tau3RunConfig:
     dry_run: bool = False
     force: bool = False
     solver_ranker_checkpoint: Optional[Path] = None
+    enable_certified_filter: bool = False
 
 
 def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
@@ -95,6 +99,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         "max_concurrency": config.max_concurrency,
         "workers": config.workers,
         "solver_ranker_checkpoint": None if config.solver_ranker_checkpoint is None else str(config.solver_ranker_checkpoint),
+        "enable_certified_filter": config.enable_certified_filter,
         "controller_trace_path": None if controller_trace_path is None else str(controller_trace_path),
         "official_source": str(TAU2_SUBMODULE),
         "source_url": TAU2_BENCH_SOURCE_URL,
@@ -142,6 +147,8 @@ def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subpr
         llm_args.setdefault("cgr_candidate_count", 4)
         if config.solver_ranker_checkpoint is not None:
             llm_args["cgr_ranker_checkpoint"] = str(config.solver_ranker_checkpoint)
+        if config.enable_certified_filter:
+            llm_args["cgr_enable_certified_filter"] = True
         llm_args["cgr_controller_trace_path"] = str(config.output_dir / "tau3_controller_trace.jsonl")
         llm_args.setdefault("cgr_max_turns", config.max_steps)
         llm_args.setdefault("cgr_max_tool_budget", config.max_steps)
@@ -430,6 +437,8 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
     canonical_events = 0
     heuristic_events = 0
     ranker_loaded = 0
+    certified_filter_enabled_events = 0
+    certified_pruned_candidates = 0
     candidate_count = 0
     scored_candidate_count = 0
     oracle_visible = False
@@ -446,6 +455,9 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
             canonical_events += 1 if mode == "canonical_ranker" else 0
             heuristic_events += 1 if mode == "heuristic" else 0
             ranker_loaded += 1 if row.get("ranker_checkpoint_loaded") else 0
+            certified_filter_enabled_events += 1 if row.get("certified_filter_enabled") else 0
+            pruned_count = _as_float(row.get("certified_pruned_count"))
+            certified_pruned_candidates += int(pruned_count) if not math.isnan(pruned_count) else 0
             candidate_scores = row.get("candidate_scores")
             if isinstance(candidate_scores, list):
                 candidate_count += len(candidate_scores)
@@ -460,6 +472,9 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
         "canonical_ranker_events": canonical_events,
         "heuristic_events": heuristic_events,
         "ranker_checkpoint_loaded_events": ranker_loaded,
+        "certified_filter_enabled_events": certified_filter_enabled_events,
+        "certified_pruned_candidates": certified_pruned_candidates,
+        "certified_prune_rate": 0.0 if candidate_count == 0 else certified_pruned_candidates / candidate_count,
         "mean_candidate_count": 0.0 if event_count == 0 else candidate_count / event_count,
         "mean_scored_candidate_count": 0.0 if event_count == 0 else scored_candidate_count / event_count,
         "oracle_visible_to_controller": oracle_visible,

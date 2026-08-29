@@ -35,6 +35,7 @@ class Tau3SolverControllerAgent(LLMAgent):
         max_turns: int = 200,
         max_tool_budget: int = 200,
         controller_trace_path: Optional[str] = None,
+        enable_certified_filter: bool = False,
     ):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self.candidate_count = max(1, int(candidate_count))
@@ -42,6 +43,7 @@ class Tau3SolverControllerAgent(LLMAgent):
         self.max_tool_budget = max(1, int(max_tool_budget))
         self.ranker_checkpoint = ranker_checkpoint
         self.controller_trace_path = Path(controller_trace_path) if controller_trace_path else None
+        self.enable_certified_filter = enable_certified_filter
         self.ranker: Optional[GenericHarnessRanker] = None
         if ranker_checkpoint:
             self.ranker = GenericHarnessRanker.from_json(Path(ranker_checkpoint).read_text(encoding="utf-8"))
@@ -69,21 +71,26 @@ class Tau3SolverControllerAgent(LLMAgent):
 
     def _select_candidate(self, candidates: List[AssistantMessage], history: List[APICompatibleMessage]) -> AssistantMessage:
         greedy = candidates[0]
+        pruned = self._certified_pruned_candidates(candidates)
+        active_indices = [idx for idx in range(len(candidates)) if idx not in pruned]
+        if not active_indices:
+            active_indices = list(range(len(candidates)))
         if greedy.content and not greedy.tool_calls:
-            self._write_selection_trace(candidates, selected_index=0, scored_candidates=[], scoring_mode="greedy_content_passthrough")
+            self._write_selection_trace(candidates, selected_index=0, scored_candidates=[], scoring_mode="greedy_content_passthrough", pruned=pruned)
             return greedy
         scored_candidates = [
             (idx, *self._score_candidate(candidate, history))
             for idx, candidate in enumerate(candidates)
-            if candidate.tool_calls and not candidate.content
+            if idx in active_indices and candidate.tool_calls and not candidate.content
         ]
         if scored_candidates:
             selected_index = max(scored_candidates, key=lambda item: (item[1], item[2]))[0]
             mode = "canonical_ranker" if self.ranker is not None else "heuristic"
-            self._write_selection_trace(candidates, selected_index=selected_index, scored_candidates=scored_candidates, scoring_mode=mode)
+            self._write_selection_trace(candidates, selected_index=selected_index, scored_candidates=scored_candidates, scoring_mode=mode, pruned=pruned)
             return candidates[selected_index]
-        self._write_selection_trace(candidates, selected_index=0, scored_candidates=[], scoring_mode="fallback_greedy")
-        return greedy
+        fallback_index = active_indices[0] if active_indices else 0
+        self._write_selection_trace(candidates, selected_index=fallback_index, scored_candidates=[], scoring_mode="fallback_greedy", pruned=pruned)
+        return candidates[fallback_index]
 
     def _sample_candidates(self, state: LLMAgentState) -> List[AssistantMessage]:
         candidates: List[AssistantMessage] = []
@@ -162,6 +169,34 @@ class Tau3SolverControllerAgent(LLMAgent):
                     return True
         return False
 
+    def _certified_pruned_candidates(self, candidates: List[AssistantMessage]) -> dict[int, str]:
+        if not self.enable_certified_filter:
+            return {}
+        known_tool_names = set()
+        for tool in self.tools:
+            name = str(getattr(tool, "name", "")).lower()
+            if name:
+                known_tool_names.add(name)
+                known_tool_names.add(name.lstrip("_"))
+        pruned: dict[int, str] = {}
+        for idx, candidate in enumerate(candidates):
+            tool_calls = list(getattr(candidate, "tool_calls", None) or [])
+            content = getattr(candidate, "content", None)
+            if not tool_calls and not content:
+                pruned[idx] = "empty_assistant_message"
+                continue
+            for call in tool_calls:
+                call_name = str(getattr(call, "name", "")).lower()
+                if call_name not in known_tool_names and call_name.lstrip("_") not in known_tool_names:
+                    pruned[idx] = "unknown_tool"
+                    break
+                if not isinstance(getattr(call, "arguments", None), dict):
+                    pruned[idx] = "non_dict_arguments"
+                    break
+        if len(pruned) == len(candidates):
+            return {}
+        return pruned
+
     def _write_selection_trace(
         self,
         candidates: List[AssistantMessage],
@@ -169,6 +204,7 @@ class Tau3SolverControllerAgent(LLMAgent):
         selected_index: int,
         scored_candidates: List[tuple[int, float, str]],
         scoring_mode: str,
+        pruned: dict[int, str],
     ) -> None:
         if self.controller_trace_path is None:
             return
@@ -180,6 +216,9 @@ class Tau3SolverControllerAgent(LLMAgent):
             "scoring_mode": scoring_mode,
             "candidate_count": len(candidates),
             "selected_index": selected_index,
+            "certified_filter_enabled": self.enable_certified_filter,
+            "certified_pruned_count": len(pruned),
+            "certified_prune_reasons": sorted(set(pruned.values())),
             "ranker_checkpoint_loaded": self.ranker is not None,
             "oracle_visible_to_controller": False,
             "oracle_used_for_candidate_generation": False,
@@ -189,6 +228,8 @@ class Tau3SolverControllerAgent(LLMAgent):
                 {
                     "candidate_index": idx,
                     "score": scored_by_index.get(idx, None),
+                    "certified_pruned": idx in pruned,
+                    "certified_prune_reason": pruned.get(idx, None),
                     "action_type": self._candidate_action_type(candidate),
                     "tool_call_count": len(getattr(candidate, "tool_calls", None) or []),
                     "has_content": bool(getattr(candidate, "content", None)),
@@ -237,6 +278,7 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
     max_turns = int(llm_args.pop("cgr_max_turns", 200))
     max_tool_budget = int(llm_args.pop("cgr_max_tool_budget", max_turns))
     controller_trace_path = llm_args.pop("cgr_controller_trace_path", None)
+    enable_certified_filter = bool(llm_args.pop("cgr_enable_certified_filter", False))
     return Tau3SolverControllerAgent(
         tools=tools,
         domain_policy=domain_policy,
@@ -247,4 +289,5 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
         max_turns=max_turns,
         max_tool_budget=max_tool_budget,
         controller_trace_path=controller_trace_path,
+        enable_certified_filter=enable_certified_filter,
     )

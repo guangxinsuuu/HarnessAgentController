@@ -357,6 +357,7 @@ def main() -> None:
             p.add_argument("--dry-run", action="store_true", default=False)
             p.add_argument("--force", action="store_true", default=False)
             p.add_argument("--solver-ranker-checkpoint", type=Path, default=None)
+            p.add_argument("--enable-certified-filter", action="store_true", default=False)
         if name == "build-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
@@ -1178,6 +1179,7 @@ def main() -> None:
                     dry_run=args.dry_run,
                     force=args.force,
                     solver_ranker_checkpoint=args.solver_ranker_checkpoint,
+                    enable_certified_filter=args.enable_certified_filter,
                 )
             )
             row = manifest["row"]
@@ -1189,6 +1191,7 @@ def main() -> None:
                 "domain": args.domain,
                 "method": args.method,
                 "solver_ranker_checkpoint": None if args.solver_ranker_checkpoint is None else str(args.solver_ranker_checkpoint),
+                "enable_certified_filter": args.enable_certified_filter,
                 "num_tasks": args.num_tasks,
                 "num_trials": args.num_trials,
                 "pass^1": row.get("pass^1"),
@@ -1223,6 +1226,8 @@ def main() -> None:
                 "event_count": manifest["event_count"],
                 "canonical_ranker_events": manifest["canonical_ranker_events"],
                 "heuristic_events": manifest["heuristic_events"],
+                "certified_filter_enabled_events": manifest["certified_filter_enabled_events"],
+                "certified_pruned_candidates": manifest["certified_pruned_candidates"],
                 "oracle_visible_to_controller": manifest["oracle_visible_to_controller"],
                 "tool_names_used_as_features": manifest["tool_names_used_as_features"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),

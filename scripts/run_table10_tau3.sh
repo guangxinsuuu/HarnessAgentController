@@ -21,7 +21,7 @@ SOURCE_MAX_STATES="${SOURCE_MAX_STATES:-200}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|audit-solver-canonical|build]
+scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|audit-solver-canonical|audit-solver-canonical-certified|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -55,9 +55,13 @@ run_native_domain() {
   local suffix="$3"
   local method="${4:-native}"
   local checkpoint="${5:-}"
+  local certified="${6:-0}"
   local extra_args=()
   if [[ -n "${checkpoint}" ]]; then
     extra_args+=(--solver-ranker-checkpoint "${checkpoint}")
+  fi
+  if [[ "${certified}" == "1" ]]; then
+    extra_args+=(--enable-certified-filter)
   fi
   "${PYTHON_BIN}" -m cgr_exp.cli run-tau3-native \
     --output-dir "${BASE_DIR}/${suffix}_${domain}" \
@@ -116,6 +120,17 @@ audit_solver_canonical_traces() {
     --overwrite
 }
 
+audit_solver_canonical_certified_traces() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-tau3-controller-trace \
+    --output-dir "${BASE_DIR}/solver_canonical_certified_retail_trace_audit" \
+    --trace-path "${BASE_DIR}/solver_canonical_certified_retail/tau3_controller_trace.jsonl" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-tau3-controller-trace \
+    --output-dir "${BASE_DIR}/solver_canonical_certified_airline_trace_audit" \
+    --trace-path "${BASE_DIR}/solver_canonical_certified_airline/tau3_controller_trace.jsonl" \
+    --overwrite
+}
+
 case "${1:-}" in
   preflight)
     run_preflight
@@ -157,8 +172,24 @@ case "${1:-}" in
     run_native_domain airline "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
     audit_solver_canonical_traces
     ;;
+  solver-canonical-certified-smoke)
+    run_preflight
+    run_source_controller
+    NUM_TASKS=2 run_native_domain retail 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
+    NUM_TASKS=2 run_native_domain airline 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
+    ;;
+  solver-canonical-certified-full)
+    run_preflight
+    run_source_controller
+    run_native_domain retail "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
+    run_native_domain airline "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
+    audit_solver_canonical_certified_traces
+    ;;
   audit-solver-canonical)
     audit_solver_canonical_traces
+    ;;
+  audit-solver-canonical-certified)
+    audit_solver_canonical_certified_traces
     ;;
   build)
     build_table

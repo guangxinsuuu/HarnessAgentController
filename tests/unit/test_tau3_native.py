@@ -713,7 +713,7 @@ class Tau3NativeTest(unittest.TestCase):
             text = (root / "preflight" / "table10_tau3_run_preflight.md").read_text(encoding="utf-8")
             self.assertIn("API key present: `False`", text)
             self.assertIn("Present API key envs: `none`", text)
-            self.assertIn("Warning: recommended next run needs `OPENAI_API_KEY`", text)
+            self.assertIn("Warning: recommended next run needs one of `OPENAI_API_KEY, CGR_LLM_API_KEY`", text)
             self.assertIn("Resume policy:", text)
             self.assertIn("`--force` is the opt-in switch", text)
 

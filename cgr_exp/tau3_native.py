@@ -1224,9 +1224,10 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         "",
     ]
     if manifest.get("recommended_next_requires_api_key") and not manifest.get("recommended_next_api_key_ready"):
+        env_names = ", ".join(str(item) for item in manifest.get("accepted_api_key_envs", [manifest["api_key_env"]]))
         lines.extend(
             [
-                f"Warning: recommended next run needs `{manifest['api_key_env']}`, but it is not present in this shell.",
+                f"Warning: recommended next run needs one of `{env_names}`, but none is present in this shell.",
                 "",
             ]
         )

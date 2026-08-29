@@ -1091,6 +1091,14 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("Table10 Tau3 Progress", text)
             self.assertIn("2/4", text)
             self.assertIn("derived_from_native", text)
+            self.assertIn("LLM calls", text)
+            self.assertIn("Tool calls", text)
+            self.assertIn("Tokens", text)
+            self.assertIn("Wall-clock", text)
+            self.assertIn("21", text)
+            self.assertIn("2.00", text)
+            self.assertIn("1.00", text)
+            self.assertIn("1.50", text)
 
     def test_summarizes_pending_tau3_artifact_without_results_as_rerunnable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

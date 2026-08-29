@@ -1611,8 +1611,8 @@ def _table10_progress_markdown(manifest: Mapping[str, object]) -> str:
         f"Base dir: `{manifest['base_dir']}`",
         f"Complete rows: `{manifest['complete_rows']}/{manifest['total_rows']}`",
         "",
-        "| Domain | Method | Runtime | API | Status | Tasks | Simulations | API sims | pass^1 | pass^4 | Note |",
-        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| Domain | Method | Runtime | API | Status | Tasks | Simulations | API sims | pass^1 | pass^4 | LLM calls | Tool calls | Tokens | Wall-clock | Note |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for row in manifest["rows"]:
         cells = [
@@ -1626,6 +1626,10 @@ def _table10_progress_markdown(manifest: Mapping[str, object]) -> str:
             str(row.get("expected_api_simulation_count", "")),
             _fmt_maybe_float(row.get("pass^1"), 4),
             _fmt_maybe_float(row.get("pass^4"), 4),
+            _fmt_maybe_float(row.get("llm_calls"), 2),
+            _fmt_maybe_float(row.get("tool_calls"), 2),
+            _fmt_maybe_float(row.get("tokens"), 0),
+            _fmt_maybe_float(row.get("wall_clock_seconds"), 2),
             str(row.get("note", "")),
         ]
         lines.append("| " + " | ".join(cells) + " |")

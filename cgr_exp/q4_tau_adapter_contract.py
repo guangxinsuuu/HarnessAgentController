@@ -7,7 +7,12 @@ from typing import Dict, Iterable, List, Mapping
 
 from cgr_exp.datasets.external_tool_benchmark import ExternalToolBenchmarkAdapter
 from cgr_exp.q4_tau_source_evidence import Q4_TAU_METHOD_REQUIREMENTS, q4_tau_source_evidence_summary
-from cgr_exp.table_q4_tau import TAU_METHOD_PROTOCOL_REQUIRED, TAU_NATIVE_PROTOCOL_REQUIRED, TAU_Q4_METHODS
+from cgr_exp.table_q4_tau import (
+    TAU_METHOD_PROTOCOL_REQUIRED,
+    TAU_NATIVE_PROTOCOL_REQUIRED,
+    TAU_OFFICIAL_ENTRYPOINTS_REQUIRED,
+    TAU_Q4_METHODS,
+)
 
 
 Q4_REQUIRED_ARTIFACTS = [
@@ -27,6 +32,7 @@ def build_q4_tau_adapter_contract(out_dir: Path, *, expected_test_count: int = 1
         "adapter_status": adapter.to_manifest(),
         "source_evidence": q4_tau_source_evidence_summary(),
         "native_protocol_required": sorted(TAU_NATIVE_PROTOCOL_REQUIRED),
+        "official_entrypoints_required": sorted(TAU_OFFICIAL_ENTRYPOINTS_REQUIRED),
         "method_protocol_required": {method: sorted(required) for method, required in TAU_METHOD_PROTOCOL_REQUIRED.items()},
         "required_artifacts": Q4_REQUIRED_ARTIFACTS,
         "rows": rows,
@@ -52,6 +58,7 @@ def _method_row(method: str, transfer_setting: str, expected_test_count: int) ->
         "method_primitives_required": "; ".join(sorted(TAU_METHOD_PROTOCOL_REQUIRED[method])),
         "method_requirements": "; ".join(Q4_TAU_METHOD_REQUIREMENTS[method]),
         "required_artifacts": "; ".join(Q4_REQUIRED_ARTIFACTS),
+        "official_entrypoints_required": "; ".join(sorted(TAU_OFFICIAL_ENTRYPOINTS_REQUIRED)),
         "implementation_status": "blocked: native tau/tau2 adapter is an explicit stub",
         "promotion_gate": "q4_tau_readiness result_ready=True",
     }
@@ -71,6 +78,9 @@ def _render_markdown(manifest: Mapping[str, object]) -> str:
         "",
     ]
     for item in manifest["native_protocol_required"]:
+        lines.append(f"- `{item}`")
+    lines.extend(["", "## Official Entrypoints Required", ""])
+    for item in manifest["official_entrypoints_required"]:
         lines.append(f"- `{item}`")
     lines.extend(
         [

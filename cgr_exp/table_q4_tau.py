@@ -34,6 +34,13 @@ TAU_NATIVE_PROTOCOL_REQUIRED = {
     "token_accounting",
 }
 
+TAU_OFFICIAL_ENTRYPOINTS_REQUIRED = {
+    "runner",
+    "environment",
+    "user_simulator",
+    "evaluator",
+}
+
 TAU_METHOD_PROTOCOL_REQUIRED = {
     "Native agent rerun": {"single_native_agent_rollout"},
     "Best-of-N": {"multiple_independent_native_rollouts", "benchmark_compatible_selection"},
@@ -223,6 +230,8 @@ def _tau_artifact_blockers(method: str, source_dir: Path, expected_test_count: i
         if manifest.get("source_url") not in {TAU_SOURCE_URL, TAU2_SOURCE_URL}:
             blockers.append("q4_tau_manifest.json source_url is not a tau source")
         blockers.extend(_source_evidence_blockers(manifest))
+        blockers.extend(_native_adapter_blockers(manifest.get("native_adapter")))
+        blockers.extend(_official_entrypoint_blockers(manifest.get("official_entrypoints")))
         protocol = manifest.get("native_protocol")
         blockers.extend(_native_protocol_blockers(protocol))
         method_protocols = manifest.get("method_protocols")
@@ -237,6 +246,29 @@ def _tau_artifact_blockers(method: str, source_dir: Path, expected_test_count: i
     row_blockers = _aggregate_row_blockers(method, source_dir)
     blockers.extend(row_blockers)
     return blockers
+
+
+def _native_adapter_blockers(adapter: object) -> List[str]:
+    if not isinstance(adapter, Mapping):
+        return ["q4_tau_manifest.json missing native_adapter"]
+    blockers = []
+    if adapter.get("uses_external_stub") is not False:
+        blockers.append("q4_tau_manifest.json native_adapter must not use ExternalToolBenchmarkAdapter stub")
+    implementation_status = str(adapter.get("implementation_status", "")).strip().lower()
+    if implementation_status not in {"native", "official", "implemented"}:
+        blockers.append("q4_tau_manifest.json native_adapter must declare native implementation status")
+    if not str(adapter.get("adapter_class", "")).strip():
+        blockers.append("q4_tau_manifest.json native_adapter missing adapter_class")
+    if not str(adapter.get("implementation_file", "")).strip():
+        blockers.append("q4_tau_manifest.json native_adapter missing implementation_file")
+    return blockers
+
+
+def _official_entrypoint_blockers(entrypoints: object) -> List[str]:
+    if not isinstance(entrypoints, Mapping):
+        return ["q4_tau_manifest.json missing official_entrypoints"]
+    missing = sorted(key for key in TAU_OFFICIAL_ENTRYPOINTS_REQUIRED if not str(entrypoints.get(key, "")).strip())
+    return [f"q4_tau_manifest.json official_entrypoints missing: {', '.join(missing)}"] if missing else []
 
 
 def _source_evidence_blockers(manifest: Mapping[str, object]) -> List[str]:

@@ -96,6 +96,13 @@ marked ready:
   `tau3-bench`; sets `native_protocol_preserved = true`; records the official
   source URL and pinned `source_revision`; embeds the matching `source_evidence`
   block from `cgr_exp/q4_tau_source_evidence.py`; and lists the covered methods.
+- `q4_tau_manifest.json` must include a `native_adapter` object proving that
+  the row came from an implemented native tau/tau2 adapter, not the local
+  `ExternalToolBenchmarkAdapter` stub. The audit requires
+  `uses_external_stub = false`, a native/official/implemented status, and the
+  adapter class plus implementation file.
+- `q4_tau_manifest.json` must include `official_entrypoints` for the official
+  runner, environment, user simulator, and evaluator used by the native run.
 - `q4_tau_manifest.json` must also include a `native_protocol` object proving
   that the run preserved the official stateful tool environment, user
   simulator, task verifier, pass-k aggregation, tool-call accounting, and token

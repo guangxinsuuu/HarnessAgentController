@@ -89,6 +89,40 @@ class TableQ4TauTest(unittest.TestCase):
             self.assertEqual(rows["Native agent rerun"]["result_ready"], "False")
             self.assertIn("missing native_protocol", rows["Native agent rerun"]["result_blockers"])
             self.assertIn("missing method_protocols", rows["Native agent rerun"]["result_blockers"])
+            self.assertIn("missing native_adapter", rows["Native agent rerun"]["result_blockers"])
+            self.assertIn("missing official_entrypoints", rows["Native agent rerun"]["result_blockers"])
+
+    def test_q4_tau_audit_rejects_external_stub_adapter_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_tau_artifacts(native, "Native agent rerun", ["t0"])
+            manifest = json.loads((native / "q4_tau_manifest.json").read_text(encoding="utf-8"))
+            manifest["native_adapter"]["uses_external_stub"] = True
+            manifest["native_adapter"]["implementation_status"] = "stub"
+            (native / "q4_tau_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            out = root / "out"
+            audit_q4_tau_readiness(out, expected_test_count=1, native_dir=native)
+            rows = {row["Method"]: row for row in _read_csv(out / "q4_tau_readiness.csv")}
+            self.assertEqual(rows["Native agent rerun"]["result_ready"], "False")
+            self.assertIn("must not use ExternalToolBenchmarkAdapter stub", rows["Native agent rerun"]["result_blockers"])
+            self.assertIn("must declare native implementation status", rows["Native agent rerun"]["result_blockers"])
+
+    def test_q4_tau_audit_rejects_missing_official_entrypoints(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_tau_artifacts(native, "Native agent rerun", ["t0"])
+            manifest = json.loads((native / "q4_tau_manifest.json").read_text(encoding="utf-8"))
+            manifest["official_entrypoints"].pop("evaluator")
+            (native / "q4_tau_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            out = root / "out"
+            audit_q4_tau_readiness(out, expected_test_count=1, native_dir=native)
+            rows = {row["Method"]: row for row in _read_csv(out / "q4_tau_readiness.csv")}
+            self.assertEqual(rows["Native agent rerun"]["result_ready"], "False")
+            self.assertIn("official_entrypoints missing: evaluator", rows["Native agent rerun"]["result_blockers"])
 
     def test_q4_tau_audit_rejects_artifact_without_pinned_source_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -163,6 +197,18 @@ def _write_tau_artifacts(path: Path, method: str, task_ids: list[str], rollout_c
                 "source_revision": q4_tau_source_evidence("tau-bench")["source_revision"],
                 "source_evidence": q4_tau_source_evidence("tau-bench"),
                 "methods": [method],
+                "native_adapter": {
+                    "adapter_class": "TauBenchNativeAdapter",
+                    "implementation_file": "cgr_exp/datasets/tau_bench_native.py",
+                    "implementation_status": "native",
+                    "uses_external_stub": False,
+                },
+                "official_entrypoints": {
+                    "runner": "tau_bench/run.py::run",
+                    "environment": "tau_bench/envs",
+                    "user_simulator": "tau_bench/user_simulator",
+                    "evaluator": "tau_bench/evaluation.py::evaluate",
+                },
                 "native_protocol": {
                     "preserved_components": [
                         "stateful_tool_environment",

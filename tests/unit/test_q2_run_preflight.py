@@ -66,6 +66,58 @@ class Q2RunPreflightTest(unittest.TestCase):
             self.assertEqual(rows["native_tot"]["completed_units"], 1)
             self.assertEqual(rows["native_tot"]["remaining_units"], 1)
 
+    def test_preflight_keeps_audit_blocked_completed_learned_run_remaining(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            learned = root / "learned"
+            learned.mkdir()
+            _write_csv(
+                learned / "scheduling_llm_pilot_per_instance.csv",
+                [
+                    {"rendering_id": "r0", "Policy": "Random"},
+                    {"rendering_id": "r0", "Policy": "Hand heuristic"},
+                    {"rendering_id": "r0", "Policy": "Target-PRM"},
+                    {"rendering_id": "r0", "Policy": "PRM-guided MCTS (ReST-MCTS-style)"},
+                    {"rendering_id": "r0", "Policy": "Solver-trained MLP"},
+                    {"rendering_id": "r0", "Policy": "Solver-trained MLP + certified pruning"},
+                    {"rendering_id": "r0", "Policy": "Oracle"},
+                ],
+            )
+            readiness = root / "readiness.csv"
+            _write_csv(
+                readiness,
+                [
+                    {
+                        "Method": "Solver-trained priority",
+                        "result_ready": "True",
+                        "compute_ready": "False",
+                        "result_blockers": "",
+                        "compute_blockers": "shared-cache fallback accounting",
+                    },
+                    {
+                        "Method": "PRM-guided MCTS (ReST-MCTS-style)",
+                        "result_ready": "False",
+                        "compute_ready": "False",
+                        "result_blockers": "missing MCTS runtime counters",
+                        "compute_blockers": "shared-cache fallback accounting",
+                    },
+                ],
+            )
+            manifest = build_q2_run_preflight(
+                root / "preflight",
+                test_count=1,
+                learned_dir=learned,
+                native_dir=root / "native",
+                tot_dir=root / "tot",
+                q2_readiness=readiness,
+                env={},
+            )
+            learned_row = {row["run_group"]: row for row in manifest["rows"]}["learned_search"]
+            self.assertEqual(learned_row["completed_units"], 1)
+            self.assertGreaterEqual(learned_row["remaining_units"], 1)
+            self.assertTrue(learned_row["audit_blocked"])
+            self.assertIn("missing MCTS runtime counters", learned_row["audit_blockers"])
+
 
 def _write_csv(path: Path, rows) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:

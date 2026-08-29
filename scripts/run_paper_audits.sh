@@ -202,6 +202,7 @@ build_q2_remaining_runs() {
 build_q2_run_preflight() {
   "${PYTHON_BIN}" -m cgr_exp.cli build-q2-run-preflight \
     --output-dir "${Q2_RUN_PREFLIGHT_DIR}" \
+    --q2-readiness "${Q2_TABLE_AUDIT_DIR}/table5_q2_readiness.csv" \
     --test-count "${TEST_COUNT}" \
     --native-dir "${Q2_NATIVE_DIR}" \
     --learned-dir "${Q2_LEARNED_DIR}" \

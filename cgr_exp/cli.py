@@ -246,6 +246,7 @@ def main() -> None:
             p.add_argument("--q2-readiness", type=Path, default=Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv"))
             p.add_argument("--certification-readiness", type=Path, default=Path("runs/certification_tables_readiness/certification_tables_readiness.csv"))
         if name == "build-q2-run-preflight":
+            p.add_argument("--q2-readiness", type=Path, default=Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv"))
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
             p.add_argument("--validation-count", type=int, default=50)
@@ -1226,6 +1227,7 @@ def main() -> None:
                 target_prm_train_count=args.target_prm_train_count,
                 tot_breadth=args.tot_breadth,
                 tot_value_samples=args.tot_value_samples,
+                q2_readiness=args.q2_readiness,
             )
             command_manifest = {
                 "command": args.command,
@@ -1236,6 +1238,7 @@ def main() -> None:
                 "total_remaining_units": manifest["total_remaining_units"],
                 "total_worst_case_requests": manifest["total_worst_case_requests"],
                 "api_key_present": manifest["api_key_present"],
+                "q2_readiness": manifest["q2_readiness"],
                 "produced_artifacts": manifest["produced_artifacts"],
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")

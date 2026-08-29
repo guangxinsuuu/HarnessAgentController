@@ -15,6 +15,17 @@ NATIVE_METHODS = {
     "best_of_n": ("Best-of-N", "best_verified_objective"),
 }
 
+METHOD_GROUPS = {
+    "Direct / CoT": "native_frozen",
+    "Self-Consistency": "native_frozen",
+    "Best-of-N": "native_frozen",
+    "Tree of Thoughts": "native_tot",
+    "Target-PRM priority": "learned_search",
+    "PRM-guided MCTS (ReST-MCTS-style)": "learned_search",
+    "Solver-trained priority": "learned_search",
+    "Solver-trained priority + certified pruning": "learned_search",
+}
+
 
 def build_q2_run_preflight(
     out_dir: Path,
@@ -42,11 +53,13 @@ def build_q2_run_preflight(
     target_prm_train_count: int = 100,
     tot_breadth: int = 5,
     tot_value_samples: int = 3,
+    q2_readiness: Path | None = None,
     env=None,
 ) -> Dict[str, object]:
     source = os.environ if env is None else env
     out_dir.mkdir(parents=True, exist_ok=True)
     model_name = model or source.get("CGR_LLM_MODEL", "gpt-4o-mini")
+    readiness_rows = _read_csv(q2_readiness) if q2_readiness is not None else []
     rows = [
         _learned_row(
             learned_dir,
@@ -63,6 +76,7 @@ def build_q2_run_preflight(
             batch_size=batch_size,
             parallel_episodes=search_parallel_episodes,
             target_prm_train_count=target_prm_train_count,
+            audit_status=_group_audit_status(readiness_rows, "learned_search"),
             env=source,
         ),
         _native_row(
@@ -70,6 +84,7 @@ def build_q2_run_preflight(
             test_count=test_count,
             sample_count=sample_count,
             parallel_episodes=native_parallel_episodes,
+            audit_status=_group_audit_status(readiness_rows, "native_frozen"),
         ),
         _tot_row(
             tot_dir,
@@ -78,6 +93,7 @@ def build_q2_run_preflight(
             breadth=tot_breadth,
             value_samples=tot_value_samples,
             parallel_episodes=tot_parallel_episodes,
+            audit_status=_group_audit_status(readiness_rows, "native_tot"),
         ),
     ]
     csv_path = out_dir / "q2_run_preflight.csv"
@@ -90,6 +106,7 @@ def build_q2_run_preflight(
         "model": model_name,
         "api_key_env": "CGR_LLM_API_KEY",
         "api_key_present": bool(source.get("CGR_LLM_API_KEY")),
+        "q2_readiness": "" if q2_readiness is None else str(q2_readiness),
         "test_count": test_count,
         "training_config": {
             "train_count": train_count,
@@ -99,7 +116,7 @@ def build_q2_run_preflight(
         },
         "rows": rows,
         "total_remaining_units": sum(int(row["remaining_units"]) for row in rows),
-        "total_worst_case_requests": sum(int(row["worst_case_request_count_upper_bound"]) for row in rows),
+        "total_worst_case_requests": sum(_request_upper_bound(row["worst_case_request_count_upper_bound"]) for row in rows),
         "resume_safe": all(bool(row["resume_safe"]) for row in rows),
         "produced_artifacts": [csv_path.name, json_path.name, md_path.name],
     }
@@ -124,6 +141,7 @@ def _learned_row(
     batch_size: int,
     parallel_episodes: int,
     target_prm_train_count: int,
+    audit_status: Mapping[str, object],
     env,
 ) -> Dict[str, object]:
     preflight = preflight_scheduling_llm_pilot(
@@ -146,7 +164,7 @@ def _learned_row(
         target_prm_train_count=target_prm_train_count,
         env=env,
     )
-    return {
+    row = {
         "run_group": "learned_search",
         "output_dir": str(learned_dir),
         "completed_units": preflight["completed_episode_count"],
@@ -159,6 +177,7 @@ def _learned_row(
         "resume_safe": preflight["resume_safe"],
         "notes": "run-scheduling-llm-pilot preflight with Target-PRM, ReST-MCTS-style, solver prior, and certification rows",
     }
+    return _apply_audit_status(row, audit_status, rerun_units=test_count)
 
 
 def _native_row(
@@ -167,13 +186,14 @@ def _native_row(
     test_count: int,
     sample_count: int,
     parallel_episodes: int,
+    audit_status: Mapping[str, object],
 ) -> Dict[str, object]:
     rows = _read_csv(native_dir / "scheduling_native_q2_per_instance.csv")
     samples = _read_jsonl(native_dir / "scheduling_native_q2_samples.jsonl")
     completed = _completed_native_tasks(rows, samples, sample_count)
     requested = [(method_key, task_index) for method_key in NATIVE_METHODS for task_index in range(test_count)]
     remaining = [item for item in requested if item not in completed]
-    return {
+    row = {
         "run_group": "native_frozen",
         "output_dir": str(native_dir),
         "completed_units": len(completed),
@@ -186,6 +206,7 @@ def _native_row(
         "resume_safe": True,
         "notes": "Direct uses one sample; Self-Consistency and Best-of-N use sample_count complete-schedule samples",
     }
+    return _apply_audit_status(row, audit_status, rerun_units=len(NATIVE_METHODS) * test_count)
 
 
 def _tot_row(
@@ -196,12 +217,13 @@ def _tot_row(
     breadth: int,
     value_samples: int,
     parallel_episodes: int,
+    audit_status: Mapping[str, object],
 ) -> Dict[str, object]:
     rows = _read_csv(tot_dir / "scheduling_tot_q2_per_instance.csv")
     trace = _read_jsonl(tot_dir / "scheduling_tot_q2_trace.jsonl")
     completed = _completed_tot_renderings(rows, trace)
     remaining = max(0, int(test_count) - len(completed))
-    return {
+    row = {
         "run_group": "native_tot",
         "output_dir": str(tot_dir),
         "completed_units": len(completed),
@@ -214,6 +236,59 @@ def _tot_row(
         "resume_safe": True,
         "notes": f"strict ToT BFS; breadth={breadth}; value_samples={value_samples}; each expanded layer uses proposal plus value/ranking calls",
     }
+    return _apply_audit_status(row, audit_status, rerun_units=test_count)
+
+
+def _group_audit_status(rows: Sequence[Mapping[str, object]], group: str) -> Dict[str, object]:
+    group_rows = [row for row in rows if METHOD_GROUPS.get(str(row.get("Method", ""))) == group]
+    if not group_rows:
+        return {
+            "audit_observed": False,
+            "audit_result_ready": False,
+            "audit_compute_ready": False,
+            "audit_blockers": "",
+        }
+    blockers = []
+    for row in group_rows:
+        method = str(row.get("Method", ""))
+        result_ready = _as_bool(row.get("result_ready"))
+        compute_ready = _as_bool(row.get("compute_ready"))
+        result_blockers = str(row.get("result_blockers", "")).strip()
+        compute_blockers = str(row.get("compute_blockers", "")).strip()
+        if not result_ready:
+            blockers.append(f"{method}: {result_blockers or 'result not ready'}")
+        if not compute_ready:
+            blockers.append(f"{method}: {compute_blockers or 'compute not ready'}")
+    return {
+        "audit_observed": True,
+        "audit_result_ready": all(_as_bool(row.get("result_ready")) for row in group_rows),
+        "audit_compute_ready": all(_as_bool(row.get("compute_ready")) for row in group_rows),
+        "audit_blockers": " | ".join(blockers),
+    }
+
+
+def _apply_audit_status(row: Dict[str, object], audit_status: Mapping[str, object], *, rerun_units: int) -> Dict[str, object]:
+    updated = dict(row)
+    audit_observed = bool(audit_status.get("audit_observed"))
+    audit_result_ready = bool(audit_status.get("audit_result_ready"))
+    audit_compute_ready = bool(audit_status.get("audit_compute_ready"))
+    audit_blocked = audit_observed and not (audit_result_ready and audit_compute_ready)
+    if audit_blocked and int(updated["remaining_units"]) == 0:
+        updated["remaining_units"] = max(1, int(rerun_units))
+        updated["worst_case_request_count_upper_bound"] = "rerun required by audit"
+    updated["audit_observed"] = audit_observed
+    updated["audit_result_ready"] = audit_result_ready
+    updated["audit_compute_ready"] = audit_compute_ready
+    updated["audit_blocked"] = audit_blocked
+    updated["audit_blockers"] = str(audit_status.get("audit_blockers", ""))
+    return updated
+
+
+def _request_upper_bound(value: object) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _completed_native_tasks(
@@ -266,20 +341,21 @@ def _render_markdown(manifest: Mapping[str, object]) -> str:
         f"Total remaining units: `{manifest['total_remaining_units']}`",
         f"Total worst-case requests: `{manifest['total_worst_case_requests']}`",
         "",
-        "| Run group | Completed | Remaining | Worst-case requests | Parallel episodes | Notes |",
-        "| --- | ---: | ---: | ---: | ---: | --- |",
+        "| Run group | Completed | Remaining | Worst-case requests | Parallel episodes | Audit blockers | Notes |",
+        "| --- | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     for row in manifest["rows"]:
         lines.append(
             "| "
             + " | ".join(
                 [
-                    str(row["run_group"]),
-                    str(row["completed_units"]),
-                    str(row["remaining_units"]),
-                    str(row["worst_case_request_count_upper_bound"]),
-                    str(row["parallel_episodes"]),
-                    str(row["notes"]),
+                    _markdown_cell(row["run_group"]),
+                    _markdown_cell(row["completed_units"]),
+                    _markdown_cell(row["remaining_units"]),
+                    _markdown_cell(row["worst_case_request_count_upper_bound"]),
+                    _markdown_cell(row["parallel_episodes"]),
+                    _markdown_cell(row.get("audit_blockers", "")),
+                    _markdown_cell(row["notes"]),
                 ]
             )
             + " |"
@@ -321,3 +397,13 @@ def _to_int(value: object, *, default: int) -> int:
         return int(float(value))
     except (TypeError, ValueError):
         return default
+
+
+def _as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _markdown_cell(value: object) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")

@@ -250,6 +250,7 @@ class CliQ2AliasesTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             manifest = json.loads((out / "command_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["test_count"], 2)
+            self.assertIn("q2_readiness", manifest)
             self.assertTrue((out / "q2_run_preflight.csv").exists())
 
     def test_q2_local_primitive_audit_cli_writes_artifacts(self) -> None:

@@ -9,9 +9,9 @@ auditable protocol.
 
 - Use tau2/tau3 official text half-duplex runtime, user simulator, task
   verifier, and pass-k aggregation.
-- Use `OPENAI_API_KEY` for tau2/litellm. If only `CGR_LLM_API_KEY` is set,
-  `scripts/run_table10_tau3.sh` maps it to `OPENAI_API_KEY` before API-backed
-  runs.
+- Use either `OPENAI_API_KEY` or `CGR_LLM_API_KEY` for API-backed rows. The
+  runner maps `CGR_LLM_API_KEY` into `OPENAI_API_KEY` before calling
+  tau2/litellm.
 - Build the source controller before canonical tau3 runs. This is local and
   does not use the API.
 - Promote rows only when `table10_tau3_readiness.csv` marks them ready.
@@ -76,10 +76,12 @@ Required source artifacts:
 
 ## Smoke Runs
 
-Set the API key before smoke or full API-backed runs:
+Set either API key before smoke or full API-backed runs:
 
 ```bash
-export OPENAI_API_KEY="$CGR_LLM_API_KEY"
+export CGR_LLM_API_KEY="..."
+# or:
+export OPENAI_API_KEY="..."
 ```
 
 Canonical controller smoke:
@@ -150,6 +152,28 @@ strictly serial controller run.
 `CANDIDATE_RETRIES` controls per-candidate transient API retry attempts; trace
 audits report `candidate_sample_failures` after retries.
 
+## Progress
+
+Check progress without making API calls:
+
+```bash
+BASE_DIR=runs/table10_tau3 \
+NUM_TASKS=100 \
+BEST_OF_N=4 \
+scripts/run_table10_tau3.sh progress
+```
+
+Read:
+
+```bash
+cat runs/table10_tau3/progress/table10_tau3_progress.md
+```
+
+This scans existing `q4_tau_row.json` and partial
+`official_tau2_results/results.json` artifacts. It reports per-row task
+coverage, simulation coverage, `pass^1`, `pass^4`, calls, tokens, and
+wall-clock estimates when available.
+
 ## Multi-Seed
 
 Run seeds into separate base directories or keep the same base directory with
@@ -174,6 +198,11 @@ The preflight is seed-aware and should point to
 API-backed tau3 runs use the official tau2 `--auto-resume` path. If a run
 stops after partial simulations, rerun the same command with the same
 `BASE_DIR`, `SEED`, `NUM_TASKS`, and `NUM_TRIALS`.
+
+Generated commands use `--auto-resume --overwrite`. Here `--overwrite` only
+allows writing command manifests and aggregate files into an existing output
+directory. It does not force a completed tau2 result to rerun. Use `--force`
+only when intentionally discarding/recomputing an existing row.
 
 Do not change the source-controller checkpoint, model, or task count when
 resuming a row intended for the same table.

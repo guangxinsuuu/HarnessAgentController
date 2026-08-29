@@ -331,12 +331,30 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertFalse(groups["build_and_audit"]["api_required"])
             self.assertTrue(manifest["parallel_domains"])
             self.assertFalse(manifest["parallel_method_groups"])
+            self.assertEqual(manifest["recommended_next_run_group"], "native_full")
+            self.assertIn("scripts/run_table10_tau3.sh native-full", manifest["recommended_next_command"])
             self.assertIn("scripts/run_table10_tau3.sh full", groups["full"]["command"])
             self.assertIn("PARALLEL_METHOD_GROUPS=0", groups["full"]["command"])
             self.assertIn("scripts/run_table10_tau3.sh native-full", groups["native_full"]["command"])
             self.assertIn("PARALLEL_DOMAINS=1", groups["native_full"]["command"])
             self.assertTrue((root / "preflight" / "table10_tau3_run_preflight.csv").exists())
             self.assertTrue((root / "preflight" / "table10_tau3_run_preflight.md").exists())
+
+    def test_table10_preflight_recommends_next_missing_group(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            for row_dir, domain, method in (
+                (base / "native_retail", "retail", "Native tool-calling rerun"),
+                (base / "native_airline", "airline", "Native tool-calling rerun"),
+                (base / "best_of_4_retail", "retail", "Best-of-N"),
+                (base / "best_of_4_airline", "airline", "Best-of-N"),
+            ):
+                row_dir.mkdir(parents=True)
+                _write_row(row_dir, domain, method=method, task_count=3, status="complete")
+            manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
+            self.assertEqual(manifest["recommended_next_run_group"], "legacy_solver_full")
+            self.assertIn("scripts/run_table10_tau3.sh solver-full", manifest["recommended_next_command"])
 
 
 def _sim(task_id: str, trial: int, reward: float) -> dict:

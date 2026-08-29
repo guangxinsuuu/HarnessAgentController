@@ -549,6 +549,7 @@ def build_table10_tau3_run_preflight(
                 "command": command,
             }
         )
+    next_run = _table10_next_run_group(rows)
     csv_path = out_dir / "table10_tau3_run_preflight.csv"
     json_path = out_dir / "table10_tau3_run_preflight.json"
     md_path = out_dir / "table10_tau3_run_preflight.md"
@@ -568,6 +569,8 @@ def build_table10_tau3_run_preflight(
         "api_key_env": "OPENAI_API_KEY",
         "readiness_dir": str(out_dir / "readiness"),
         "all_rows_result_ready": readiness["all_rows_result_ready"],
+        "recommended_next_run_group": "" if next_run is None else next_run["run_group"],
+        "recommended_next_command": "" if next_run is None else next_run["command"],
         "rows": rows,
         "produced_artifacts": [csv_path.name, json_path.name, md_path.name, "readiness"],
     }
@@ -896,6 +899,18 @@ def _methods_for_dirs(audit_rows: Sequence[Mapping[str, object]], dirs: Sequence
     return [row for row in audit_rows if str(row.get("row_dir", "")) in wanted]
 
 
+def _table10_next_run_group(rows: Sequence[Mapping[str, object]]) -> Optional[Mapping[str, object]]:
+    by_group = {str(row.get("run_group", "")): row for row in rows}
+    for group in ("native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"):
+        row = by_group.get(group)
+        if row and not bool(row.get("ready")):
+            return row
+    build = by_group.get("build_and_audit")
+    if build and not bool(build.get("ready")):
+        return build
+    return None
+
+
 def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
     lines = [
         "# Table10 Tau3 Run Preflight",
@@ -906,10 +921,22 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         f"Parallel domains: `{manifest['parallel_domains']}`",
         f"Parallel method groups: `{manifest['parallel_method_groups']}`",
         f"All rows ready: `{manifest['all_rows_result_ready']}`",
+        f"Recommended next run group: `{manifest['recommended_next_run_group'] or 'none'}`",
         "",
         "Set `OPENAI_API_KEY` before API-backed run groups. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; effective API concurrency can reach roughly two times `MAX_CONCURRENCY`. `best-of-n` and `build_and_audit` reuse local artifacts.",
         "",
     ]
+    if manifest.get("recommended_next_command"):
+        lines.extend(
+            [
+                "Recommended next command:",
+                "",
+                "```bash",
+                str(manifest["recommended_next_command"]),
+                "```",
+                "",
+            ]
+        )
     for row in manifest["rows"]:
         lines.extend(
             [

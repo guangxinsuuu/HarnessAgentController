@@ -114,6 +114,10 @@ marked ready:
     transfer, and native tool-state preservation.
 - `q4_tau_per_instance.csv`: one held-out task row per evaluated instance, with
   `task_id` or `instance_id` coverage matching `--expected-test-count`.
+  If the aggregate row reports `pass^4`, each task must also provide pass-k
+  evidence either through at least four rollout/sample rows or through an
+  explicit per-task `rollout_count`, `sample_count`, `trajectory_count`, or
+  `attempt_count` field of at least 4.
 - `q4_tau_row.json` or `q4_tau_table.csv`: aggregate `pass^1`, `pass^4`,
   `violations`, `tool_calls`, `tokens`, `wall_clock_seconds`, and `status`.
 

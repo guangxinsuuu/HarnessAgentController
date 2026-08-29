@@ -120,8 +120,20 @@ class TableQ4TauTest(unittest.TestCase):
             self.assertEqual(rows["Solver-derived controller"]["result_ready"], "False")
             self.assertIn("must declare zero-shot transfer", rows["Solver-derived controller"]["result_blockers"])
 
+    def test_q4_tau_audit_rejects_pass4_without_four_rollouts_per_task(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_tau_artifacts(native, "Native agent rerun", ["t0", "t1"], rollout_count=3)
+            out = root / "out"
+            audit_q4_tau_readiness(out, expected_test_count=2, native_dir=native)
+            rows = {row["Method"]: row for row in _read_csv(out / "q4_tau_readiness.csv")}
+            self.assertEqual(rows["Native agent rerun"]["result_ready"], "False")
+            self.assertIn("pass^4 requires at least 4 rollouts per task", rows["Native agent rerun"]["result_blockers"])
 
-def _write_tau_artifacts(path: Path, method: str, task_ids: list[str]) -> None:
+
+def _write_tau_artifacts(path: Path, method: str, task_ids: list[str], rollout_count: int = 4) -> None:
     (path / "q4_tau_row.json").write_text(
         json.dumps(
             {
@@ -138,7 +150,10 @@ def _write_tau_artifacts(path: Path, method: str, task_ids: list[str]) -> None:
         ),
         encoding="utf-8",
     )
-    _write_csv(path / "q4_tau_per_instance.csv", [{"Method": method, "task_id": task_id} for task_id in task_ids])
+    _write_csv(
+        path / "q4_tau_per_instance.csv",
+        [{"Method": method, "task_id": task_id, "rollout_count": rollout_count} for task_id in task_ids],
+    )
     (path / "q4_tau_manifest.json").write_text(
         json.dumps(
             {

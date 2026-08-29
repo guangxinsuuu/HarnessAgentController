@@ -233,6 +233,7 @@ def _tau_artifact_blockers(method: str, source_dir: Path, expected_test_count: i
     task_ids = _task_ids(source_dir / "q4_tau_per_instance.csv", method)
     if len(task_ids) < expected_test_count:
         blockers.append(f"q4_tau_per_instance.csv partial task coverage: {len(task_ids)}/{expected_test_count}")
+    blockers.extend(_pass_k_evidence_blockers(method, source_dir / "q4_tau_per_instance.csv"))
     row_blockers = _aggregate_row_blockers(method, source_dir)
     blockers.extend(row_blockers)
     return blockers
@@ -311,6 +312,62 @@ def _aggregate_row_blockers(method: str, source_dir: Path) -> List[str]:
     if _as_float(data.get("pass^4", data.get("pass4"))) < _as_float(data.get("pass^1", data.get("pass1"))):
         blockers.append("aggregate row pass^4 must be at least pass^1")
     return blockers
+
+
+def _pass_k_evidence_blockers(method: str, per_instance_path: Path) -> List[str]:
+    rows = _read_csv(per_instance_path)
+    method_rows = [row for row in rows if str(row.get("Method", method)) == method]
+    if not method_rows:
+        return ["q4_tau_per_instance.csv missing method rows for pass-k evidence"]
+    rollout_counts = _rollout_counts_by_task(method_rows)
+    if not rollout_counts:
+        return ["q4_tau_per_instance.csv missing task ids for pass-k evidence"]
+    insufficient = sorted(task_id for task_id, count in rollout_counts.items() if count < 4)
+    if insufficient:
+        shown = ", ".join(f"{task_id}:{rollout_counts[task_id]}" for task_id in insufficient[:5])
+        return [f"q4_tau_per_instance.csv pass^4 requires at least 4 rollouts per task: {shown}"]
+    return []
+
+
+def _rollout_counts_by_task(rows: List[Dict[str, str]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    explicit_rollouts: Dict[str, set[str]] = {}
+    for idx, row in enumerate(rows):
+        task_id = str(row.get("task_id", row.get("instance_id", "")))
+        if not task_id:
+            continue
+        declared_count = _first_present_int(row, ["rollout_count", "sample_count", "trajectory_count", "attempt_count"])
+        if declared_count is not None:
+            counts[task_id] = max(counts.get(task_id, 0), declared_count)
+            continue
+        rollout_id = _first_present_str(row, ["rollout_id", "sample_index", "trajectory_index", "attempt_index"])
+        if rollout_id:
+            explicit_rollouts.setdefault(task_id, set()).add(rollout_id)
+        else:
+            explicit_rollouts.setdefault(task_id, set()).add(str(idx))
+    for task_id, rollouts in explicit_rollouts.items():
+        counts[task_id] = max(counts.get(task_id, 0), len(rollouts))
+    return counts
+
+
+def _first_present_int(row: Mapping[str, object], keys: List[str]) -> Optional[int]:
+    for key in keys:
+        value = row.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            return int(float(str(value)))
+        except ValueError:
+            continue
+    return None
+
+
+def _first_present_str(row: Mapping[str, object], keys: List[str]) -> str:
+    for key in keys:
+        value = str(row.get(key, "")).strip()
+        if value:
+            return value
+    return ""
 
 
 def _aggregate_row(source_dir: Path, method: str) -> Optional[Mapping[str, object]]:

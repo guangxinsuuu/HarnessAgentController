@@ -321,13 +321,18 @@ class Tau3NativeTest(unittest.TestCase):
                 tau_python_bin="/tmp/python",
             )
             groups = {row["run_group"]: row for row in manifest["rows"]}
+            self.assertIn("full", groups)
             self.assertIn("native_full", groups)
             self.assertIn("solver_canonical_full", groups)
             self.assertIn("solver_canonical_certified_full", groups)
+            self.assertTrue(groups["full"]["api_required"])
             self.assertIn("build_and_audit", groups)
             self.assertTrue(groups["native_full"]["api_required"])
             self.assertFalse(groups["build_and_audit"]["api_required"])
             self.assertTrue(manifest["parallel_domains"])
+            self.assertFalse(manifest["parallel_method_groups"])
+            self.assertIn("scripts/run_table10_tau3.sh full", groups["full"]["command"])
+            self.assertIn("PARALLEL_METHOD_GROUPS=0", groups["full"]["command"])
             self.assertIn("scripts/run_table10_tau3.sh native-full", groups["native_full"]["command"])
             self.assertIn("PARALLEL_DOMAINS=1", groups["native_full"]["command"])
             self.assertTrue((root / "preflight" / "table10_tau3_run_preflight.csv").exists())

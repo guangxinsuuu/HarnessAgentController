@@ -518,6 +518,7 @@ def build_table10_tau3_run_preflight(
     user_llm: str = "openai/gpt-4o-mini",
     tau_python_bin: str = sys.executable,
     parallel_domains: bool = True,
+    parallel_method_groups: bool = False,
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     row_dirs = _table10_default_row_dirs(base_dir, best_of_n)
@@ -533,6 +534,7 @@ def build_table10_tau3_run_preflight(
         user_llm=user_llm,
         tau_python_bin=tau_python_bin,
         parallel_domains=parallel_domains,
+        parallel_method_groups=parallel_method_groups,
     ):
         group_methods = _methods_for_dirs(readiness["audit_rows"], required_dirs)
         group_ready = bool(group_methods) and all(bool(row["result_ready"]) for row in group_methods)
@@ -542,8 +544,8 @@ def build_table10_tau3_run_preflight(
                 "ready": group_ready,
                 "methods": "; ".join(str(row["Method"]) for row in group_methods) if group_methods else "not started",
                 "remaining_rows": sum(1 for row in group_methods if not bool(row["result_ready"])) if group_methods else len(required_dirs),
-                "api_required": group in {"native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
-                "resume_safe": group in {"native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
+                "api_required": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
+                "resume_safe": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
                 "command": command,
             }
         )
@@ -562,6 +564,7 @@ def build_table10_tau3_run_preflight(
         "user_llm": user_llm,
         "tau_python_bin": tau_python_bin,
         "parallel_domains": parallel_domains,
+        "parallel_method_groups": parallel_method_groups,
         "api_key_env": "OPENAI_API_KEY",
         "readiness_dir": str(out_dir / "readiness"),
         "all_rows_result_ready": readiness["all_rows_result_ready"],
@@ -862,6 +865,7 @@ def _table10_run_groups(
     user_llm: str,
     tau_python_bin: str,
     parallel_domains: bool,
+    parallel_method_groups: bool,
 ) -> List[tuple[str, str, List[Path]]]:
     prefix = (
         f"TAU_PYTHON_BIN={tau_python_bin} PYTHON_BIN=python3 "
@@ -869,9 +873,12 @@ def _table10_run_groups(
         f"NUM_TASKS={expected_test_count} NUM_TRIALS={num_trials} "
         f"MAX_CONCURRENCY={max_concurrency} BEST_OF_N={best_of_n} "
         f"PARALLEL_DOMAINS={1 if parallel_domains else 0} "
+        f"PARALLEL_METHOD_GROUPS={1 if parallel_method_groups else 0} "
         f"BASE_DIR={base_dir}"
     )
+    default_dirs = _table10_default_row_dirs(base_dir, best_of_n)
     return [
+        ("full", f"{prefix} scripts/run_table10_tau3.sh full", default_dirs),
         ("native_full", f"{prefix} scripts/run_table10_tau3.sh native-full", [base_dir / "native_retail", base_dir / "native_airline", base_dir / f"best_of_{best_of_n}_retail", base_dir / f"best_of_{best_of_n}_airline"]),
         ("legacy_solver_full", f"{prefix} scripts/run_table10_tau3.sh solver-full", [base_dir / "solver_retail", base_dir / "solver_airline"]),
         ("solver_canonical_full", f"{prefix} scripts/run_table10_tau3.sh solver-canonical-full", [base_dir / "solver_canonical_retail", base_dir / "solver_canonical_airline"]),
@@ -880,7 +887,7 @@ def _table10_run_groups(
             f"{prefix} scripts/run_table10_tau3.sh solver-canonical-certified-full",
             [base_dir / "solver_canonical_certified_retail", base_dir / "solver_canonical_certified_airline"],
         ),
-        ("build_and_audit", f"BASE_DIR={base_dir} NUM_TASKS={expected_test_count} BEST_OF_N={best_of_n} scripts/run_table10_tau3.sh build", _table10_default_row_dirs(base_dir, best_of_n)),
+        ("build_and_audit", f"BASE_DIR={base_dir} NUM_TASKS={expected_test_count} BEST_OF_N={best_of_n} scripts/run_table10_tau3.sh build", default_dirs),
     ]
 
 
@@ -897,6 +904,7 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         f"Expected test count: `{manifest['expected_test_count']}`",
         f"Best-of-N: `{manifest['best_of_n']}`",
         f"Parallel domains: `{manifest['parallel_domains']}`",
+        f"Parallel method groups: `{manifest['parallel_method_groups']}`",
         f"All rows ready: `{manifest['all_rows_result_ready']}`",
         "",
         "Set `OPENAI_API_KEY` before API-backed run groups. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; effective API concurrency can reach roughly two times `MAX_CONCURRENCY`. `best-of-n` and `build_and_audit` reuse local artifacts.",

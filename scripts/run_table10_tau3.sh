@@ -11,6 +11,7 @@ MAX_CONCURRENCY="${MAX_CONCURRENCY:-6}"
 WORKERS="${WORKERS:-0}"
 TIMEOUT="${TIMEOUT:-300}"
 PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-1}"
+PARALLEL_METHOD_GROUPS="${PARALLEL_METHOD_GROUPS:-0}"
 SEED="${SEED:-0}"
 BASE_DIR="${BASE_DIR:-runs/table10_tau3}"
 SOURCE_CONTROLLER_DIR="${SOURCE_CONTROLLER_DIR:-${BASE_DIR}/source_controller_seed${SEED}}"
@@ -23,7 +24,7 @@ BEST_OF_N="${BEST_OF_N:-4}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|preflight-runs|source-controller|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
+scripts/run_table10_tau3.sh [preflight|preflight-runs|source-controller|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -34,6 +35,7 @@ Environment overrides:
   NUM_TRIALS=4
   MAX_CONCURRENCY=6
   PARALLEL_DOMAINS=1
+  PARALLEL_METHOD_GROUPS=0
   WORKERS=0
   TIMEOUT=300
   BASE_DIR=runs/table10_tau3
@@ -133,6 +135,38 @@ run_domain_pair() {
   fi
   run_native_domain retail "${count}" "${suffix}" "${method}" "${checkpoint}" "${certified}"
   run_native_domain airline "${count}" "${suffix}" "${method}" "${checkpoint}" "${certified}"
+}
+
+run_table10_full() {
+  run_preflight
+  run_source_controller
+  if [[ "${PARALLEL_METHOD_GROUPS}" == "1" ]]; then
+    run_domain_pair "${NUM_TASKS}" native &
+    local native_pid=$!
+    run_domain_pair "${NUM_TASKS}" solver solver &
+    local solver_pid=$!
+    run_domain_pair "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}" &
+    local canonical_pid=$!
+    run_domain_pair "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1 &
+    local certified_pid=$!
+    local status=0
+    wait "${native_pid}" || status=$?
+    wait "${solver_pid}" || status=$?
+    wait "${canonical_pid}" || status=$?
+    wait "${certified_pid}" || status=$?
+    if [[ "${status}" != "0" ]]; then
+      return "${status}"
+    fi
+  else
+    run_domain_pair "${NUM_TASKS}" native
+    run_domain_pair "${NUM_TASKS}" solver solver
+    run_domain_pair "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
+    run_domain_pair "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
+  fi
+  build_best_of_n
+  audit_solver_canonical_traces
+  audit_solver_canonical_certified_traces
+  build_table
 }
 
 build_best_of_n() {
@@ -258,6 +292,9 @@ case "${1:-}" in
     run_source_controller
     run_domain_pair "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
     audit_solver_canonical_certified_traces
+    ;;
+  full)
+    run_table10_full
     ;;
   audit-solver-canonical)
     audit_solver_canonical_traces

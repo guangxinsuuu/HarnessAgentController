@@ -84,6 +84,7 @@ NUM_TRIALS="${NUM_TRIALS:-4}"
 MAX_CONCURRENCY="${MAX_CONCURRENCY:-6}"
 TIMEOUT="${TIMEOUT:-300}"
 PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-1}"
+PARALLEL_METHOD_GROUPS="${PARALLEL_METHOD_GROUPS:-0}"
 
 CERTIFICATION_AUDIT_DIR="${CERTIFICATION_AUDIT_DIR:-runs/certification_tables_readiness}"
 CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR="${CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR:-runs/certification_authority_source_audit}"
@@ -187,6 +188,7 @@ print_summary() {
   print "tau3_table_audit_dir: ${TAU3_TABLE_AUDIT_DIR}"
   print "tau3_run_preflight_dir: ${TAU3_RUN_PREFLIGHT_DIR}"
   print "tau3_parallel_domains: ${PARALLEL_DOMAINS}"
+  print "tau3_parallel_method_groups: ${PARALLEL_METHOD_GROUPS}"
   print "secret_audit_dir: ${SECRET_AUDIT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: not required"
@@ -214,6 +216,10 @@ build_tau3_run_preflight() {
   if [[ "${PARALLEL_DOMAINS}" == "1" ]]; then
     parallel_args=(--parallel-domains)
   fi
+  local method_group_args=(--sequential-method-groups)
+  if [[ "${PARALLEL_METHOD_GROUPS}" == "1" ]]; then
+    method_group_args=(--parallel-method-groups)
+  fi
   "${PYTHON_BIN}" -m cgr_exp.cli build-table10-tau3-run-preflight \
     --output-dir "${TAU3_RUN_PREFLIGHT_DIR}" \
     --base-dir "${TAU3_TABLE_BASE_DIR}" \
@@ -225,6 +231,7 @@ build_tau3_run_preflight() {
     --num-trials "${NUM_TRIALS}" \
     --max-concurrency "${MAX_CONCURRENCY}" \
     "${parallel_args[@]}" \
+    "${method_group_args[@]}" \
     --overwrite
 }
 

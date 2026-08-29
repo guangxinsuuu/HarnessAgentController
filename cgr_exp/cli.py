@@ -381,7 +381,7 @@ def main() -> None:
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
         if name == "build-table10-tau3-run-preflight":
-            p.add_argument("--base-dir", type=Path, default=Path("runs/table10_tau3_canonical"))
+            p.add_argument("--base-dir", type=Path, default=Path("runs/table10_tau3"))
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--best-of-n", type=int, default=4)
             p.add_argument("--num-trials", type=int, default=4)
@@ -438,7 +438,7 @@ def main() -> None:
         if name == "build-current-experiment-status":
             p.add_argument("--q2-readiness", type=Path, default=Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv"))
             p.add_argument("--q4-readiness", type=Path, default=Path("runs/q4_tau_table_current_audit/q4_tau_readiness.csv"))
-            p.add_argument("--tau3-readiness", type=Path, default=Path("runs/table10_tau3_canonical/table10_readiness/table10_tau3_readiness.csv"))
+            p.add_argument("--tau3-readiness", type=Path, default=Path("runs/table10_tau3/table10_readiness/table10_tau3_readiness.csv"))
             p.add_argument("--certification-readiness", type=Path, default=Path("runs/certification_tables_readiness/certification_tables_readiness.csv"))
             p.add_argument("--q2-implementation-matrix", type=Path, default=Path("runs/q2_implementation_matrix/q2_implementation_matrix.csv"))
             p.add_argument("--q2-local-primitives", type=Path, default=Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv"))

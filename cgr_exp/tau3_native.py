@@ -787,7 +787,7 @@ def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_t
 def build_table10_tau3_run_preflight(
     out_dir: Path,
     *,
-    base_dir: Path = Path("runs/table10_tau3_canonical"),
+    base_dir: Path = Path("runs/table10_tau3"),
     expected_test_count: int = 100,
     best_of_n: int = 4,
     num_trials: int = 4,

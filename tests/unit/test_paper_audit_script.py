@@ -42,6 +42,8 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("CANDIDATE_WORKERS", text)
         self.assertIn("CANDIDATE_RETRIES", text)
         self.assertIn("CANDIDATE_RETRY_BACKOFF", text)
+        self.assertIn('TAU3_TABLE_BASE_DIR="${TAU3_TABLE_BASE_DIR:-runs/table10_tau3}"', text)
+        self.assertNotIn("runs/table10_tau3_canonical", text)
         self.assertIn("certification_authority_source_audit_dir", text)
         self.assertIn("--certification-authority-source", text)
         self.assertIn("prefer_existing_dir", text)

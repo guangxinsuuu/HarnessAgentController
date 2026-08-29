@@ -10,7 +10,7 @@ from cgr_exp.q4_tau_source_evidence import Q4_TAU_SOURCE_EVIDENCE
 
 DEFAULT_Q2_READINESS = Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv")
 DEFAULT_Q4_READINESS = Path("runs/q4_tau_table_current_audit/q4_tau_readiness.csv")
-DEFAULT_TAU3_READINESS = Path("runs/table10_tau3_canonical/table10_readiness/table10_tau3_readiness.csv")
+DEFAULT_TAU3_READINESS = Path("runs/table10_tau3/table10_readiness/table10_tau3_readiness.csv")
 DEFAULT_CERT_READINESS = Path("runs/certification_tables_readiness/certification_tables_readiness.csv")
 DEFAULT_Q2_MATRIX = Path("runs/q2_implementation_matrix/q2_implementation_matrix.csv")
 DEFAULT_Q2_LOCAL_PRIMITIVES = Path("runs/q2_local_primitive_audit/q2_local_primitive_audit.csv")

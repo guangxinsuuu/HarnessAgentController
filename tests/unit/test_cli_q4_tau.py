@@ -20,6 +20,29 @@ class CliQ4TauTest(unittest.TestCase):
         self.assertIn("audit-q4-tau-source-evidence", COMMANDS)
         self.assertIn("verify-q4-tau-source-refs", COMMANDS)
 
+    def test_table10_tau3_run_preflight_defaults_to_runner_base_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "preflight"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "build-table10-tau3-run-preflight",
+                    "--output-dir",
+                    str(out),
+                    "--expected-test-count",
+                    "1",
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out / "table10_tau3_run_preflight.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["base_dir"], "runs/table10_tau3")
+
     def test_q4_tau_commands_expose_artifact_inputs(self) -> None:
         expected_flags = (
             "--expected-test-count",

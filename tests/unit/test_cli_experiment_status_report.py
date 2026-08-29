@@ -15,6 +15,30 @@ class CliExperimentStatusReportTest(unittest.TestCase):
     def test_build_current_experiment_status_command_is_registered(self) -> None:
         self.assertIn("build-current-experiment-status", COMMANDS)
 
+    def test_build_current_experiment_status_cli_defaults_to_table10_tau3(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "status"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "build-current-experiment-status",
+                    "--output-dir",
+                    str(out),
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out / "current_experiment_status.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                manifest["input_artifacts"]["tau3_readiness"],
+                "runs/table10_tau3/table10_readiness/table10_tau3_readiness.csv",
+            )
+
     def test_build_current_experiment_status_cli_writes_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

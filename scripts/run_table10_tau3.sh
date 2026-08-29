@@ -23,6 +23,7 @@ SOURCE_TRAIN_COUNT="${SOURCE_TRAIN_COUNT:-80}"
 SOURCE_VALIDATION_COUNT="${SOURCE_VALIDATION_COUNT:-30}"
 SOURCE_EPOCHS="${SOURCE_EPOCHS:-20}"
 SOURCE_MAX_STATES="${SOURCE_MAX_STATES:-200}"
+FORCE_SOURCE_CONTROLLER="${FORCE_SOURCE_CONTROLLER:-0}"
 BEST_OF_N="${BEST_OF_N:-4}"
 
 usage() {
@@ -51,6 +52,7 @@ Environment overrides:
   SOURCE_VALIDATION_COUNT=30
   SOURCE_EPOCHS=20
   SOURCE_MAX_STATES=200
+  FORCE_SOURCE_CONTROLLER=0
   BEST_OF_N=4
 
 For OpenAI via tau2/litellm, set OPENAI_API_KEY. If you only have
@@ -145,6 +147,14 @@ run_source_controller() {
     --overwrite
 }
 
+ensure_source_controller() {
+  if [[ -f "${SOLVER_RANKER_CHECKPOINT}" && "${FORCE_SOURCE_CONTROLLER}" != "1" ]]; then
+    print "using existing source controller: ${SOLVER_RANKER_CHECKPOINT}"
+    return
+  fi
+  run_source_controller
+}
+
 run_source_controller_smoke() {
   SOURCE_TRAIN_COUNT="${SOURCE_SMOKE_TRAIN_COUNT:-12}"
   SOURCE_VALIDATION_COUNT="${SOURCE_SMOKE_VALIDATION_COUNT:-6}"
@@ -176,7 +186,7 @@ run_domain_pair() {
 
 run_table10_full() {
   run_preflight
-  run_source_controller
+  ensure_source_controller
   if [[ "${PARALLEL_METHOD_GROUPS}" == "1" ]]; then
     run_domain_pair "${NUM_TASKS}" native &
     local native_pid=$!
@@ -313,23 +323,23 @@ case "${1:-}" in
     ;;
   solver-canonical-smoke)
     run_preflight
-    run_source_controller
+    ensure_source_controller
     run_domain_pair 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
     ;;
   solver-canonical-full)
     run_preflight
-    run_source_controller
+    ensure_source_controller
     run_domain_pair "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
     audit_solver_canonical_traces
     ;;
   solver-canonical-certified-smoke)
     run_preflight
-    run_source_controller
+    ensure_source_controller
     run_domain_pair 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
     ;;
   solver-canonical-certified-full)
     run_preflight
-    run_source_controller
+    ensure_source_controller
     run_domain_pair "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
     audit_solver_canonical_certified_traces
     ;;

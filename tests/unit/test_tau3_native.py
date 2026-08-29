@@ -33,8 +33,29 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("CANDIDATE_WORKERS", text)
         self.assertIn("source-controller-smoke", text)
         self.assertIn("run_source_controller_smoke", text)
+        self.assertIn("ensure_source_controller", text)
+        self.assertIn("FORCE_SOURCE_CONTROLLER", text)
         result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_table10_tau3_canonical_smoke_reuses_existing_source_checkpoint(self) -> None:
+        script = Path("scripts/run_table10_tau3.sh")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint = root / "tau3" / "source_controller_seed0" / "generic_harness_ranker.json"
+            checkpoint.parent.mkdir(parents=True)
+            checkpoint.write_text("{}", encoding="utf-8")
+            env = {
+                **os.environ,
+                "PYTHON_BIN": "/usr/bin/true",
+                "TAU_PYTHON_BIN": "/usr/bin/true",
+                "BASE_DIR": str(root / "tau3"),
+                "NUM_TASKS": "1",
+                "OPENAI_API_KEY": "test-key",
+            }
+            result = subprocess.run(["zsh", str(script), "solver-canonical-smoke"], check=False, text=True, capture_output=True, env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("using existing source controller", result.stdout)
 
     def test_table10_tau3_source_controller_smoke_is_local(self) -> None:
         script = Path("scripts/run_table10_tau3.sh")
@@ -93,6 +114,7 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("CANDIDATE_WORKERS=4", text)
         self.assertIn("CANDIDATE_RETRIES=2", text)
         self.assertIn("candidate_sample_failures", text)
+        self.assertIn("FORCE_SOURCE_CONTROLLER=1", text)
         self.assertIn("tool-identity stress passed", text)
         self.assertIn("contract-coverage stress passed", text)
         self.assertIn("result_ready=True", text)

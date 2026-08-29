@@ -177,6 +177,9 @@ stops after partial simulations, rerun the same command with the same
 
 Do not change the source-controller checkpoint, model, or task count when
 resuming a row intended for the same table.
+API-backed canonical runs reuse an existing `SOLVER_RANKER_CHECKPOINT` by
+default. Set `FORCE_SOURCE_CONTROLLER=1` only when intentionally rebuilding the
+source controller as a new experiment version.
 
 ## Promotion Gate
 

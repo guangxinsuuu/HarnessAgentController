@@ -147,6 +147,25 @@ class Q2MethodContractsTest(unittest.TestCase):
         text = Path("docs/q2_source_alignment_matrix.md").read_text(encoding="utf-8")
         self.assertIn("cgr_exp/q2_source_evidence.py", text)
 
+    def test_official_implementation_plan_lists_sources_and_local_code(self) -> None:
+        text = Path("docs/q2_table4_official_implementation_plan.md").read_text(encoding="utf-8")
+        for needle in (
+            "https://github.com/google/or-tools",
+            "https://github.com/princeton-nlp/tree-of-thought-llm",
+            "https://github.com/openai/prm800k",
+            "https://github.com/THUDM/ReST-MCTS",
+            "arXiv:2201.11903v6",
+            "arXiv:2203.11171v4",
+            "arXiv:2408.03314v1",
+            "cgr_exp/scheduling_structured_q2.py",
+            "cgr_exp/scheduling_native_q2.py",
+            "cgr_exp/scheduling_tot_q2.py",
+            "cgr_exp/scheduling_transfer.py",
+            "Search-component adaptation only",
+            "controller-isolation `GPT-frontier-rank` artifacts are not enough",
+        ):
+            self.assertIn(needle, text)
+
     def test_source_evidence_audit_writes_ready_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)

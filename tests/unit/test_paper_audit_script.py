@@ -104,6 +104,7 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv", text)
         self.assertIn("q4_tau_table_current_audit/q4_tau_readiness.csv", text)
         self.assertIn("q4_tau_adapter_contract/q4_tau_adapter_contract.md", text)
+        self.assertIn("docs/q2_table4_official_implementation_plan.md", text)
         self.assertIn("q2_run_preflight/q2_run_preflight.md", text)
         self.assertIn("secret_safety_audit/secret_safety_audit.csv", text)
         self.assertIn("certification_tables_readiness/certification_tables_readiness.csv", text)

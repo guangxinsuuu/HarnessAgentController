@@ -8,6 +8,9 @@ token accounting should remain marked as pending or qualified.
 For the row-level algorithm requirements and source-aligned claim boundaries,
 see `docs/q2_table4_required_algorithms.md`.
 
+For the row-by-row official-source implementation plan, see
+`docs/q2_table4_official_implementation_plan.md`.
+
 For the current minimal rerun queue after reading the readiness blockers, see
 `docs/q2_remaining_runs.md`.
 

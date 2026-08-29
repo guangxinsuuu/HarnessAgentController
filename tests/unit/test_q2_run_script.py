@@ -91,6 +91,7 @@ class Q2RunScriptTest(unittest.TestCase):
     def test_q2_runbook_uses_current_protocol_directories(self) -> None:
         text = Path("docs/q2_runbook.md").read_text(encoding="utf-8")
         self.assertIn("PYTHON_BIN=.venv/bin/python", text)
+        self.assertIn("docs/q2_table4_official_implementation_plan.md", text)
         self.assertIn("docs/q2_remaining_runs.md", text)
         self.assertIn("ortools.sat.python.cp_model", text)
         self.assertIn("q2_structured_100_seed0_runtime_v2", text)

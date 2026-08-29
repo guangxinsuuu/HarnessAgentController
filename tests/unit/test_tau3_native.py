@@ -103,7 +103,13 @@ class Tau3NativeTest(unittest.TestCase):
             manifest = build_table10_tau3_results(root / "table", [retail, airline], expected_test_count=100)
             self.assertEqual(len(manifest["rows"]), 2)
             self.assertTrue((root / "table" / "table10_tau3_results.csv").exists())
-            self.assertIn("partial: 2/100", (root / "table" / "table10_tau3_results.csv").read_text(encoding="utf-8"))
+            csv_text = (root / "table" / "table10_tau3_results.csv").read_text(encoding="utf-8")
+            tex_text = (root / "table" / "table10_tau3_results.tex").read_text(encoding="utf-8")
+            self.assertIn("LLM calls", csv_text)
+            self.assertIn("Wall-clock", csv_text)
+            self.assertIn("partial: 2/100", csv_text)
+            self.assertIn("LLM calls", tex_text)
+            self.assertIn("Wall-clock", tex_text)
 
     def test_dry_run_labels_canonical_and_certified_controller_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

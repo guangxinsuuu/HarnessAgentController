@@ -1149,6 +1149,7 @@ def _table10_row(row: Mapping[str, object], expected_test_count: int) -> Dict[st
         "pass^4": _fmt_float(_as_float(row.get("pass^4")), 4),
         "Violations": _fmt_float(_as_float(row.get("violations")), 4),
         "Tool calls": _fmt_float(_as_float(row.get("tool_calls")), 2),
+        "LLM calls": _fmt_float(_as_float(row.get("llm_calls")), 2),
         "Tokens": _fmt_float(_as_float(row.get("tokens")), 0),
         "Wall-clock": _fmt_float(_as_float(row.get("wall_clock_seconds")), 2),
         "Status": status,
@@ -1163,10 +1164,10 @@ def _table10_latex(rows: Sequence[Mapping[str, object]]) -> str:
         "\\centering",
         "\\caption{Matched maintained-protocol tau3 evaluation using official tau2-bench text half-duplex runner.}",
         "\\label{tab:q4_tau3}",
-        "\\small",
-        "\\begin{tabular}{llrrrrr}",
+        "\\scriptsize",
+        "\\begin{tabular}{llrrrrrrr}",
         "\\toprule",
-        "Domain & Method & pass$^1$ $\\uparrow$ & pass$^4$ $\\uparrow$ & Violations $\\downarrow$ & Tool calls $\\downarrow$ & Tokens $\\downarrow$ \\\\",
+        "Domain & Method & pass$^1$ $\\uparrow$ & pass$^4$ $\\uparrow$ & Violations $\\downarrow$ & Tool calls $\\downarrow$ & LLM calls $\\downarrow$ & Tokens $\\downarrow$ & Wall-clock $\\downarrow$ \\\\",
         "\\midrule",
     ]
     for row in rows:
@@ -1179,7 +1180,9 @@ def _table10_latex(rows: Sequence[Mapping[str, object]]) -> str:
                     str(row.get("pass^4", "--")),
                     str(row.get("Violations", "--")),
                     str(row.get("Tool calls", "--")),
+                    str(row.get("LLM calls", "--")),
                     str(row.get("Tokens", "--")),
+                    str(row.get("Wall-clock", "--")),
                 ]
             )
             + " \\\\"

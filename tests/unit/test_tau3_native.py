@@ -30,8 +30,23 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn('export OPENAI_API_KEY="${CGR_LLM_API_KEY}"', text)
         self.assertIn("missing OPENAI_API_KEY or CGR_LLM_API_KEY", text)
         self.assertIn("run_domain_pair() {\n  require_tau3_api_key", text)
+        self.assertIn("source-controller-smoke", text)
+        self.assertIn("run_source_controller_smoke", text)
         result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_table10_tau3_source_controller_smoke_is_local(self) -> None:
+        script = Path("scripts/run_table10_tau3.sh")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                **os.environ,
+                "PYTHON_BIN": "/usr/bin/true",
+                "BASE_DIR": str(Path(tmp) / "tau3"),
+            }
+            env.pop("OPENAI_API_KEY", None)
+            env.pop("CGR_LLM_API_KEY", None)
+            result = subprocess.run(["zsh", str(script), "source-controller-smoke"], check=False, text=True, capture_output=True, env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_table10_tau3_api_guard_fails_before_api_run_without_key(self) -> None:
         script = Path("scripts/run_table10_tau3.sh")
@@ -66,6 +81,7 @@ class Tau3NativeTest(unittest.TestCase):
         text = Path("docs/tau3_runbook.md").read_text(encoding="utf-8")
         self.assertIn("scripts/run_table10_tau3.sh preflight-runs", text)
         self.assertIn("scripts/run_table10_tau3.sh source-controller", text)
+        self.assertIn("scripts/run_table10_tau3.sh source-controller-smoke", text)
         self.assertIn("scripts/run_table10_tau3.sh solver-canonical-smoke", text)
         self.assertIn("scripts/run_table10_tau3.sh solver-canonical-certified-smoke", text)
         self.assertIn("scripts/run_table10_tau3.sh full", text)

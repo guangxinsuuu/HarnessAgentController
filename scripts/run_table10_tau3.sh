@@ -24,7 +24,7 @@ BEST_OF_N="${BEST_OF_N:-4}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|preflight-runs|source-controller|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
+scripts/run_table10_tau3.sh [preflight|preflight-runs|source-controller|source-controller-smoke|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -41,6 +41,10 @@ Environment overrides:
   BASE_DIR=runs/table10_tau3
   SOURCE_CONTROLLER_DIR=runs/table10_tau3/source_controller_seed0
   SOLVER_RANKER_CHECKPOINT=runs/table10_tau3/source_controller_seed0/generic_harness_ranker.json
+  SOURCE_TRAIN_COUNT=80
+  SOURCE_VALIDATION_COUNT=30
+  SOURCE_EPOCHS=20
+  SOURCE_MAX_STATES=200
   BEST_OF_N=4
 
 For OpenAI via tau2/litellm, set OPENAI_API_KEY. If you only have
@@ -126,6 +130,14 @@ run_source_controller() {
     --epochs "${SOURCE_EPOCHS}" \
     --max-states-per-task "${SOURCE_MAX_STATES}" \
     --overwrite
+}
+
+run_source_controller_smoke() {
+  SOURCE_TRAIN_COUNT="${SOURCE_SMOKE_TRAIN_COUNT:-12}"
+  SOURCE_VALIDATION_COUNT="${SOURCE_SMOKE_VALIDATION_COUNT:-6}"
+  SOURCE_EPOCHS="${SOURCE_SMOKE_EPOCHS:-4}"
+  SOURCE_MAX_STATES="${SOURCE_SMOKE_MAX_STATES:-80}"
+  run_source_controller
 }
 
 run_domain_pair() {
@@ -261,6 +273,9 @@ case "${1:-}" in
     ;;
   source-controller)
     run_source_controller
+    ;;
+  source-controller-smoke)
+    run_source_controller_smoke
     ;;
   native-smoke)
     run_preflight

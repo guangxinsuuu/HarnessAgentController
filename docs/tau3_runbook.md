@@ -45,6 +45,17 @@ BASE_DIR=runs/table10_tau3 SEED=0 scripts/run_table10_tau3.sh source-controller
 
 ## Source Controller
 
+Fast local smoke, no API:
+
+```bash
+PYTHON_BIN=/opt/anaconda3/bin/python \
+BASE_DIR=runs/table10_tau3_local_smoke \
+SEED=0 \
+scripts/run_table10_tau3.sh source-controller-smoke
+```
+
+Full source-controller build, no API:
+
 ```bash
 PYTHON_BIN=/opt/anaconda3/bin/python \
 BASE_DIR=runs/table10_tau3 \

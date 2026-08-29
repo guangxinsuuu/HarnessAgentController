@@ -154,6 +154,19 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("canonical solver-controller retail and airline", text)
         self.assertIn("certified canonical solver-controller retail and airline", text)
 
+    def test_tau3_solver_canonical_suite_runs_only_ours_rows(self) -> None:
+        text = Path("scripts/run_table10_tau3.sh").read_text(encoding="utf-8")
+        start = text.index("run_canonical_suite()")
+        end = text.index("build_best_of_n()", start)
+        suite = text[start:end]
+        self.assertIn("solver_canonical_smoke", suite)
+        self.assertIn("solver_canonical_certified_smoke", suite)
+        self.assertIn("solver_canonical solver", suite)
+        self.assertIn("solver_canonical_certified solver", suite)
+        self.assertNotIn("build_best_of_n", suite)
+        self.assertNotIn("native", suite)
+        self.assertNotIn("solver_retail", suite)
+
 
 if __name__ == "__main__":
     unittest.main()

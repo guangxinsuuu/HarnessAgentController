@@ -78,6 +78,14 @@ run_preflight() {
 }
 
 build_run_preflight() {
+  local domain_mode="--sequential-domains"
+  local method_group_mode="--sequential-method-groups"
+  if [[ "${PARALLEL_DOMAINS}" == "1" ]]; then
+    domain_mode="--parallel-domains"
+  fi
+  if [[ "${PARALLEL_METHOD_GROUPS}" == "1" ]]; then
+    method_group_mode="--parallel-method-groups"
+  fi
   "${PYTHON_BIN}" -m cgr_exp.cli build-table10-tau3-run-preflight \
     --output-dir "${BASE_DIR}/run_preflight" \
     --base-dir "${BASE_DIR}" \
@@ -93,6 +101,8 @@ build_run_preflight() {
     --user-llm "${USER_LLM}" \
     --python-bin "${PYTHON_BIN}" \
     --tau-python-bin "${TAU_PYTHON_BIN}" \
+    "${domain_mode}" \
+    "${method_group_mode}" \
     --overwrite
 }
 

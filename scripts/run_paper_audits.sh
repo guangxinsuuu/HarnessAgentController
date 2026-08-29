@@ -2,7 +2,13 @@
 set -euo pipefail
 
 MODE="${1:-all}"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "/opt/anaconda3/bin/python" ]]; then
+    PYTHON_BIN="/opt/anaconda3/bin/python"
+  else
+    PYTHON_BIN="python3"
+  fi
+fi
 TEST_COUNT="${TEST_COUNT:-100}"
 
 prefer_existing_dir() {

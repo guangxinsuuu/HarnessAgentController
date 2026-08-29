@@ -54,6 +54,8 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("run_source_controller() {", text)
         self.assertIn("summarize_progress", text)
         self.assertIn("build_run_preflight", text)
+        self.assertIn('PYTHON_BIN="/opt/anaconda3/bin/python"', text)
+        self.assertIn('TAU_PYTHON_BIN="${TAU_PYTHON_BIN:-${PYTHON_BIN}}"', text)
         result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 

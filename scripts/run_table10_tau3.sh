@@ -1,8 +1,14 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-PYTHON_BIN="${PYTHON_BIN:-python3}"
-TAU_PYTHON_BIN="${TAU_PYTHON_BIN:-python3}"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "/opt/anaconda3/bin/python" ]]; then
+    PYTHON_BIN="/opt/anaconda3/bin/python"
+  else
+    PYTHON_BIN="python3"
+  fi
+fi
+TAU_PYTHON_BIN="${TAU_PYTHON_BIN:-${PYTHON_BIN}}"
 AGENT_LLM="${AGENT_LLM:-openai/gpt-4o-mini}"
 USER_LLM="${USER_LLM:-openai/gpt-4o-mini}"
 NUM_TASKS="${NUM_TASKS:-100}"
@@ -31,7 +37,7 @@ usage() {
 scripts/run_table10_tau3.sh [preflight|preflight-runs|progress|source-controller|source-controller-smoke|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|solver-canonical-suite|full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
 
 Environment overrides:
-  PYTHON_BIN=python3
+  PYTHON_BIN=/opt/anaconda3/bin/python  # auto-selected when available
   TAU_PYTHON_BIN=/opt/anaconda3/bin/python
   AGENT_LLM=openai/gpt-4o-mini
   USER_LLM=openai/gpt-4o-mini

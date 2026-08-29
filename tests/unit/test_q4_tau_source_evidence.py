@@ -7,6 +7,7 @@ from pathlib import Path
 
 from cgr_exp.q4_tau_source_evidence import audit_q4_tau_source_evidence, q4_tau_source_evidence_summary
 from cgr_exp.q4_tau_source_ref_verifier import verify_q4_tau_source_refs
+from cgr_exp.q4_tau_adapter_contract import build_q4_tau_adapter_contract
 
 
 class Q4TauSourceEvidenceTest(unittest.TestCase):
@@ -90,6 +91,22 @@ class Q4TauSourceEvidenceTest(unittest.TestCase):
             self.assertFalse(manifest["all_online_refs_ready"])
             by_benchmark = {row["Benchmark"]: row for row in manifest["rows"]}
             self.assertIn("missing raw content anchor", by_benchmark["tau-bench"]["online_errors"])
+
+    def test_adapter_contract_writes_native_protocol_requirements(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            manifest = build_q4_tau_adapter_contract(out, expected_test_count=7)
+            self.assertEqual(manifest["expected_test_count"], 7)
+            self.assertEqual(manifest["adapter_status"]["status"], "stub")
+            self.assertIn("official_task_verifier", manifest["native_protocol_required"])
+            self.assertIn("q4_tau_manifest.json", manifest["required_artifacts"])
+            by_method = {row["Method"]: row for row in manifest["rows"]}
+            self.assertIn("zero_shot_target_tool_transfer", by_method["Solver-derived controller"]["method_primitives_required"])
+            self.assertIn("benchmark-compatible selection", by_method["Best-of-N"]["method_requirements"])
+            text = (out / "q4_tau_adapter_contract.md").read_text(encoding="utf-8")
+            self.assertIn("synthetic", text)
+            self.assertIn("must not populate Q4 rows", text)
+            self.assertTrue((out / "q4_tau_adapter_contract.csv").exists())
 
 
 if __name__ == "__main__":

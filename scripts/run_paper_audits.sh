@@ -43,6 +43,7 @@ Q2_REMAINING_RUNS_DIR="${Q2_REMAINING_RUNS_DIR:-runs/q2_remaining_runs}"
 Q4_TABLE_AUDIT_DIR="${Q4_TABLE_AUDIT_DIR:-runs/q4_tau_table_current_audit}"
 Q4_SOURCE_AUDIT_DIR="${Q4_SOURCE_AUDIT_DIR:-runs/q4_tau_source_evidence_audit}"
 Q4_SOURCE_REF_DIR="${Q4_SOURCE_REF_DIR:-runs/q4_tau_source_ref_verification}"
+Q4_ADAPTER_CONTRACT_DIR="${Q4_ADAPTER_CONTRACT_DIR:-runs/q4_tau_adapter_contract}"
 Q4_NATIVE_DIR="${Q4_NATIVE_DIR:-runs/q4_tau_native}"
 Q4_BEST_OF_N_DIR="${Q4_BEST_OF_N_DIR:-runs/q4_tau_best_of_n}"
 Q4_VALUE_GUIDED_DIR="${Q4_VALUE_GUIDED_DIR:-runs/q4_tau_value_guided}"
@@ -95,6 +96,10 @@ audit_q4() {
     --overwrite
   "${PYTHON_BIN}" -m cgr_exp.cli verify-q4-tau-source-refs \
     --output-dir "${Q4_SOURCE_REF_DIR}" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli build-q4-tau-adapter-contract \
+    --output-dir "${Q4_ADAPTER_CONTRACT_DIR}" \
+    --expected-test-count "${TEST_COUNT}" \
     --overwrite
   "${PYTHON_BIN}" -m cgr_exp.cli audit-table-q4-tau \
     --output-dir "${Q4_TABLE_AUDIT_DIR}" \

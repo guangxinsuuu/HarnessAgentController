@@ -26,6 +26,8 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("STATUS_REPORT_DIR", text)
         self.assertIn("Q2_REMAINING_RUNS_DIR", text)
         self.assertIn("build-q2-remaining-runs", text)
+        self.assertIn("Q4_ADAPTER_CONTRACT_DIR", text)
+        self.assertIn("build-q4-tau-adapter-contract", text)
         self.assertIn("prefer_existing_dir", text)
         self.assertIn("scheduling_table5_prm_rest_cert_100_seed0", text)
         self.assertIn("scheduling_missing_gpt_frontier_rank_100_seed0", text)
@@ -51,6 +53,7 @@ class PaperAuditScriptTest(unittest.TestCase):
                 "Q4_TABLE_AUDIT_DIR": str(root / "q4_table_audit"),
                 "Q4_SOURCE_AUDIT_DIR": str(root / "q4_source_audit"),
                 "Q4_SOURCE_REF_DIR": str(root / "q4_source_refs"),
+                "Q4_ADAPTER_CONTRACT_DIR": str(root / "q4_contract"),
                 "Q4_NATIVE_DIR": str(root / "missing_q4_native"),
                 "Q4_BEST_OF_N_DIR": str(root / "missing_q4_best"),
                 "Q4_VALUE_GUIDED_DIR": str(root / "missing_q4_value"),
@@ -79,6 +82,7 @@ class PaperAuditScriptTest(unittest.TestCase):
             self.assertTrue((root / "q4_table_audit" / "q4_tau_readiness.csv").exists())
             self.assertTrue((root / "q4_source_audit" / "q4_tau_source_evidence_audit.csv").exists())
             self.assertTrue((root / "q4_source_refs" / "q4_tau_source_ref_verification.csv").exists())
+            self.assertTrue((root / "q4_contract" / "q4_tau_adapter_contract.csv").exists())
             self.assertTrue((root / "cert_audit" / "certification_tables_readiness.csv").exists())
             self.assertTrue((root / "status" / "current_experiment_status.md").exists())
 

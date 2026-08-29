@@ -20,6 +20,10 @@ the original tau-bench protocol or the current tau2/tau3 successor protocol.
 The machine-readable checklist lives in
 `cgr_exp/q4_tau_source_evidence.py`, and the source-ref verifier checks full
 GitHub SHAs, pinned raw-source URLs, and symbol/anchor references.
+The native-adapter acceptance contract can be generated with
+`build-q4-tau-adapter-contract`; it records the required official protocol
+components, row-specific method primitives, and artifact schema that any future
+tau/tau2 runner must satisfy.
 
 ## Required Rows
 
@@ -53,6 +57,11 @@ python3 -m cgr_exp.cli audit-q4-tau-source-evidence \
 
 python3 -m cgr_exp.cli verify-q4-tau-source-refs \
   --output-dir runs/q4_tau_source_ref_verification \
+  --overwrite
+
+python3 -m cgr_exp.cli build-q4-tau-adapter-contract \
+  --output-dir runs/q4_tau_adapter_contract \
+  --expected-test-count 100 \
   --overwrite
 
 python3 -m cgr_exp.cli build-table-q4-tau \

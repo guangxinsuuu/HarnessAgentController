@@ -122,6 +122,8 @@ def _render_markdown(
             "",
             f"Machine audit: `{q4_readiness}`.",
             "",
+            "Native adapter contract: `runs/q4_tau_adapter_contract/q4_tau_adapter_contract.md`.",
+            "",
             _q4_summary(q4_rows),
             "",
             "| Row | Source artifact | Current promotion status | Notes |",

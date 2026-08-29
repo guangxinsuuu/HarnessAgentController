@@ -35,6 +35,7 @@ from cgr_exp.q2_source_evidence import audit_q2_source_evidence
 from cgr_exp.q2_source_ref_verifier import verify_q2_source_refs
 from cgr_exp.q4_tau_source_evidence import audit_q4_tau_source_evidence
 from cgr_exp.q4_tau_source_ref_verifier import verify_q4_tau_source_refs
+from cgr_exp.q4_tau_adapter_contract import build_q4_tau_adapter_contract
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
 from cgr_exp.table6_authority import run_table6_authority_experiment
@@ -74,6 +75,7 @@ COMMANDS = [
     "verify-q2-source-refs",
     "audit-q4-tau-source-evidence",
     "verify-q4-tau-source-refs",
+    "build-q4-tau-adapter-contract",
     "build-table-q4-tau",
     "audit-table-q4-tau",
     "run-table6-authority",
@@ -282,6 +284,8 @@ def main() -> None:
             p.add_argument("--value-guided-dir", type=Path, default=None)
             p.add_argument("--target-prm-dir", type=Path, default=None)
             p.add_argument("--solver-controller-dir", type=Path, default=None)
+        if name == "build-q4-tau-adapter-contract":
+            p.add_argument("--expected-test-count", type=int, default=100)
         if name == "run-table6-authority":
             p.add_argument("--train-count", type=int, default=200)
             p.add_argument("--validation-count", type=int, default=50)
@@ -1079,6 +1083,19 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'q4_tau_source_ref_verification.csv'}")
+            return
+        if args.command == "build-q4-tau-adapter-contract":
+            manifest = build_q4_tau_adapter_contract(args.output_dir, expected_test_count=args.expected_test_count)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "expected_test_count": args.expected_test_count,
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q4_tau_adapter_contract.csv'}")
             return
         if args.command == "build-q2-implementation-matrix":
             manifest = build_q2_implementation_matrix(args.output_dir)

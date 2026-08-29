@@ -21,6 +21,7 @@ class CliQ2AliasesTest(unittest.TestCase):
         self.assertIn("verify-q2-source-refs", COMMANDS)
         self.assertIn("build-q2-implementation-matrix", COMMANDS)
         self.assertIn("build-q2-remaining-runs", COMMANDS)
+        self.assertIn("build-q4-tau-adapter-contract", COMMANDS)
 
     def test_table4_and_legacy_table5_aliases_expose_same_q2_arguments(self) -> None:
         expected_flags = (
@@ -199,6 +200,30 @@ class CliQ2AliasesTest(unittest.TestCase):
             self.assertIn("Learned-search Q2 rows", text)
             self.assertIn("do not patch old metrics by hand", text)
             self.assertTrue((out / "q2_remaining_runs.csv").exists())
+
+    def test_q4_tau_adapter_contract_cli_writes_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "q4_contract"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "build-q4-tau-adapter-contract",
+                    "--output-dir",
+                    str(out),
+                    "--expected-test-count",
+                    "3",
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out / "command_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["expected_test_count"], 3)
+            self.assertTrue((out / "q4_tau_adapter_contract.csv").exists())
 
 
 def _write_csv(path: Path, rows) -> None:

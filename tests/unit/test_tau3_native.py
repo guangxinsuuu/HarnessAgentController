@@ -282,6 +282,8 @@ class Tau3NativeTest(unittest.TestCase):
                             "tau3_heldout_test_seen_before_freeze": False,
                             "source_generator_uses_tau3_trajectories": False,
                             "source_generator_anonymized_tool_names": True,
+                            "tool_identity_generalization_ready": True,
+                            "tool_identity_generalization_top1_delta": 0.0,
                         },
                     }
                 ),
@@ -572,6 +574,10 @@ def _write_source_manifest(path: Path, *, tau3_train_trajectories_used: bool) ->
                     "tau3_heldout_test_seen_before_freeze": False,
                     "source_generator_distribution_fixed_before_target_test_evaluation": True,
                     "anonymized_tool_names": True,
+                },
+                "tool_identity_generalization": {
+                    "ready": True,
+                    "top1_absolute_delta": 0.0,
                 },
                 "train_count": 3,
                 "validation_count": 2,

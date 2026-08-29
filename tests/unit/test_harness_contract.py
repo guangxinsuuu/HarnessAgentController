@@ -39,6 +39,7 @@ class HarnessContractTest(unittest.TestCase):
             out = Path(tmp)
             manifest = run_workflow_source_validation(out, train_count=10, validation_count=5, seed=5, epochs=3)
             self.assertTrue((out / "canonical_harness_source_validation.csv").exists())
+            self.assertTrue((out / "canonical_harness_tool_identity_stress.csv").exists())
             self.assertTrue((out / "generic_harness_ranker.json").exists())
             saved = json.loads((out / "canonical_harness_source_validation.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["benchmark"], manifest["benchmark"])
@@ -48,6 +49,8 @@ class HarnessContractTest(unittest.TestCase):
             self.assertTrue(saved["controller_checkpoint_frozen"])
             self.assertTrue(saved["source_generator"]["source_generator_distribution_fixed_before_target_test_evaluation"])
             self.assertFalse(saved["source_generator"]["tau3_heldout_test_seen_before_freeze"])
+            self.assertTrue(saved["tool_identity_generalization"]["ready"])
+            self.assertEqual(saved["tool_identity_generalization"]["top1_absolute_delta"], 0.0)
             self.assertGreater(saved["train_pair_count"], 0)
 
     def test_tau3_adapter_outputs_canonical_features_without_oracle_or_tool_identity(self) -> None:

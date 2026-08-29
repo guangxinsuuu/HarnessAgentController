@@ -127,12 +127,15 @@ def run_workflow_source_validation(
     out_dir.mkdir(parents=True, exist_ok=True)
     train_tasks = generate_workflow_source_tasks(train_count, seed=seed, anonymize_tools=True)
     validation_tasks = generate_workflow_source_tasks(validation_count, seed=seed + 10000, anonymize_tools=True)
+    named_tool_validation_tasks = generate_workflow_source_tasks(validation_count, seed=seed + 10000, anonymize_tools=False)
     ranker, train_pairs = train_generic_harness_ranker(train_tasks, epochs=epochs, seed=seed)
     validation_records = []
     for task in validation_tasks:
         validation_records.extend(collect_workflow_oracle_records(task, max_states=max_states_per_task))
     validation_pairs = make_workflow_ranking_pairs(validation_records)
     eval_metrics = evaluate_workflow_ranker(validation_tasks, ranker, max_states_per_task=max_states_per_task)
+    named_tool_eval_metrics = evaluate_workflow_ranker(named_tool_validation_tasks, ranker, max_states_per_task=max_states_per_task)
+    tool_identity_top1_delta = abs(float(eval_metrics["top1_accuracy"]) - float(named_tool_eval_metrics["top1_accuracy"]))
     manifest = {
         "benchmark": "canonical_harness_source_workflow_validation",
         "seed": seed,
@@ -145,6 +148,13 @@ def run_workflow_source_validation(
         "validation_ranking_error": ranker.ranking_error(validation_pairs),
         "validation_top1_accuracy": eval_metrics["top1_accuracy"],
         "validation_random_expected_top1": eval_metrics["random_expected_top1"],
+        "tool_identity_generalization": {
+            "anonymous_tool_validation_top1_accuracy": eval_metrics["top1_accuracy"],
+            "semantic_tool_name_validation_top1_accuracy": named_tool_eval_metrics["top1_accuracy"],
+            "top1_absolute_delta": tool_identity_top1_delta,
+            "ready": tool_identity_top1_delta <= 1e-12,
+            "stress_protocol": "same validation task seed with anonymous vs semantic tool names; canonical features exclude tool identity",
+        },
         "contract": canonical_contract_manifest(),
         "source_generator": source_generator_manifest(seed, train_count),
         "controller_checkpoint_frozen": True,
@@ -168,6 +178,23 @@ def run_workflow_source_validation(
                 "top1_accuracy": manifest["validation_top1_accuracy"],
                 "random_expected_top1": manifest["validation_random_expected_top1"],
             }
+        ],
+    )
+    _write_csv(
+        out_dir / "canonical_harness_tool_identity_stress.csv",
+        [
+            {
+                "condition": "anonymous_tool_names",
+                "top1_accuracy": eval_metrics["top1_accuracy"],
+                "random_expected_top1": eval_metrics["random_expected_top1"],
+                "decision_count": eval_metrics["decision_count"],
+            },
+            {
+                "condition": "semantic_tool_names",
+                "top1_accuracy": named_tool_eval_metrics["top1_accuracy"],
+                "random_expected_top1": named_tool_eval_metrics["random_expected_top1"],
+                "decision_count": named_tool_eval_metrics["decision_count"],
+            },
         ],
     )
     return manifest

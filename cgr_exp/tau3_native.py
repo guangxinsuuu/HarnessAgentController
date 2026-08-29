@@ -417,6 +417,9 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
     source_generator = data.get("source_generator")
     if not isinstance(source_generator, Mapping):
         source_generator = {}
+    tool_identity = data.get("tool_identity_generalization")
+    if not isinstance(tool_identity, Mapping):
+        tool_identity = {}
     protocol.update(
         {
             "benchmark": data.get("benchmark", ""),
@@ -432,6 +435,8 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
             "tau3_heldout_test_seen_before_freeze": _as_bool(source_generator.get("tau3_heldout_test_seen_before_freeze")),
             "source_generator_uses_tau3_trajectories": _as_bool(source_generator.get("tau3_trajectories_used")),
             "source_generator_anonymized_tool_names": _as_bool(source_generator.get("anonymized_tool_names")),
+            "tool_identity_generalization_ready": _as_bool(tool_identity.get("ready")),
+            "tool_identity_generalization_top1_delta": tool_identity.get("top1_absolute_delta", ""),
             "train_count": data.get("train_count", ""),
             "validation_count": data.get("validation_count", ""),
             "seed": data.get("seed", ""),
@@ -552,6 +557,8 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
                 blockers.append("source generator freeze evidence missing")
             if not source_protocol.get("source_generator_anonymized_tool_names"):
                 blockers.append("source generator tool-name anonymization evidence missing")
+            if not source_protocol.get("tool_identity_generalization_ready"):
+                blockers.append("tool-identity generalization stress missing or failed")
             trace_summary = audit_tau3_controller_trace(out_dir / f"{row_dir.name}_trace_audit", row_dir / "tau3_controller_trace.jsonl")
             if trace_summary["event_count"] <= 0:
                 blockers.append("controller trace missing")

@@ -13,6 +13,8 @@ style baselines that must not be described as full official replications.
 - Tree of Thoughts: `https://github.com/princeton-nlp/tree-of-thought-llm`
   - Source revision pinned for Q2 evidence:
     `8050e67d0e3a0fddc424d7fa5801538722a4c4cc`.
+  - Official source is vendored as a pinned submodule at
+    `third_party/tree-of-thought-llm`.
   - Official README describes `run.py` as implementing ToT+BFS and exposes
     `method_generate`, `method_evaluate`, and `method_select`.
   - Official `src/tot/methods/bfs.py` performs generation, evaluation, and
@@ -49,6 +51,8 @@ style baselines that must not be described as full official replications.
 - ReST-MCTS*: `https://github.com/THUDM/ReST-MCTS`
   - Source revision pinned for Q2 evidence:
     `2d5f488c3d6e24f99d50a9860e818383b1bb5883`.
+  - Official source is vendored as a pinned submodule at
+    `third_party/ReST-MCTS`.
   - README describes process-reward-guided tree search plus self-training.
   - At the algorithmic level, the required retained primitive is MCTS
     selection, expansion, simulation, and backpropagation.

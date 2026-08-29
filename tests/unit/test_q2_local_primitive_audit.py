@@ -28,11 +28,16 @@ class Q2LocalPrimitiveAuditTest(unittest.TestCase):
             self.assertIn("PRMGuidedMCTSStylePolicy", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["required_anchors"])
             self.assertIn("NewOptionalIntervalVar", by_method["CP-SAT"]["required_anchors"])
             self.assertIn("cgr_exp/scheduling_tot_q2.py:", by_method["Tree of Thoughts"]["anchor_locations"])
+            self.assertIn("third_party/tree-of-thought-llm/src/tot/methods/bfs.py:", by_method["Tree of Thoughts"]["anchor_locations"])
             self.assertIn("cgr_exp/scheduling_transfer.py:", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["anchor_locations"])
+            self.assertIn("third_party/ReST-MCTS/MCTS/mcts.py:", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["anchor_locations"])
             self.assertIn("cgr_exp/scheduling_structured_q2.py:", by_method["CP-SAT"]["anchor_locations"])
+            self.assertIn("8050e67d0e3a0fddc424d7fa5801538722a4c4cc", by_method["Tree of Thoughts"]["source_checkouts"])
+            self.assertIn("2d5f488c3d6e24f99d50a9860e818383b1bb5883", by_method["PRM-guided MCTS (ReST-MCTS-style)"]["source_checkouts"])
             for row in saved["rows"]:
                 self.assertEqual(row["missing_paths"], "", row["Method"])
                 self.assertEqual(row["missing_anchors"], "", row["Method"])
+                self.assertEqual(row["missing_source_checkouts"], "", row["Method"])
                 self.assertTrue(row["anchor_locations"], row["Method"])
                 locations = json.loads(row["anchor_locations_json"])
                 for anchor in row["required_anchors"].split("; "):

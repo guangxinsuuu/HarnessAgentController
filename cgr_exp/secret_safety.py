@@ -39,6 +39,8 @@ def _scan_rows(root: Path) -> List[Dict[str, object]]:
     rows = []
     for path in _tracked_files(root):
         full_path = root / path
+        if not full_path.is_file():
+            continue
         try:
             text = full_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:

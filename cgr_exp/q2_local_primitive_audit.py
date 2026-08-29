@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping
 
@@ -60,11 +61,15 @@ Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
         },
     },
     "Tree of Thoughts": {
-        "paths": ["cgr_exp/scheduling_tot_q2.py"],
+        "paths": ["third_party/tree-of-thought-llm/src/tot/methods/bfs.py", "cgr_exp/scheduling_tot_q2.py"],
+        "source_checkouts": {"third_party/tree-of-thought-llm": "8050e67d0e3a0fddc424d7fa5801538722a4c4cc"},
         "anchors": [
+            "def solve",
             "method_generate",
             "method_evaluate",
             "method_select",
+            "get_values",
+            "get_votes",
             "breadth-first frontier search",
             "tot_value_sample_count",
         ],
@@ -95,8 +100,16 @@ Q2_LOCAL_PRIMITIVE_CHECKS: Dict[str, Dict[str, object]] = {
         },
     },
     "PRM-guided MCTS (ReST-MCTS-style)": {
-        "paths": ["cgr_exp/scheduling_transfer.py"],
+        "paths": ["third_party/ReST-MCTS/MCTS/mcts.py", "third_party/ReST-MCTS/MCTS/base.py", "cgr_exp/scheduling_transfer.py"],
+        "source_checkouts": {"third_party/ReST-MCTS": "2d5f488c3d6e24f99d50a9860e818383b1bb5883"},
         "anchors": [
+            "def MCTS_search",
+            "def executeRound",
+            "def selectNode",
+            "def expand",
+            "def back_propagate",
+            "def getBestChild",
+            "class treeNode",
             "PRMGuidedMCTSStylePolicy",
             "mcts_components_observed",
             "selection",
@@ -165,6 +178,7 @@ def _audit_method(method: str, spec: Mapping[str, object]) -> Dict[str, object]:
     paths = [Path(str(path)) for path in spec.get("paths", [])]
     anchors = [str(anchor) for anchor in spec.get("anchors", [])]
     primitive_anchors = _primitive_anchor_spec(spec.get("primitive_anchors", {}))
+    checkout_audit = _source_checkout_audit(spec.get("source_checkouts", {}))
     missing_paths = [str(path) for path in paths if not path.exists()]
     lines_by_path = {
         str(path): path.read_text(encoding="utf-8").splitlines()
@@ -207,11 +221,14 @@ def _audit_method(method: str, spec: Mapping[str, object]) -> Dict[str, object]:
         "primitive_alignment_json": json.dumps(primitive_alignment, sort_keys=True),
         "missing_primitive_mappings": "; ".join(missing_primitive_mappings),
         "missing_primitive_anchors": "; ".join(missing_primitive_anchors),
+        "source_checkouts": json.dumps(checkout_audit, sort_keys=True),
+        "missing_source_checkouts": "; ".join(item["path"] for item in checkout_audit if not item["ready"]),
         "anchor_locations_json": json.dumps(locations_by_anchor, sort_keys=True),
         "local_primitives_ready": not missing_paths
         and not missing_anchors
         and not missing_primitive_mappings
-        and not missing_primitive_anchors,
+        and not missing_primitive_anchors
+        and all(item["ready"] for item in checkout_audit),
     }
 
 
@@ -223,6 +240,43 @@ def _primitive_anchor_spec(value: object) -> Dict[str, List[str]]:
         for primitive, anchors in value.items()
         if isinstance(anchors, list)
     }
+
+
+def _source_checkout_audit(value: object) -> List[Dict[str, object]]:
+    if not isinstance(value, Mapping):
+        return []
+    rows = []
+    for path_text, expected_revision in value.items():
+        path = Path(str(path_text))
+        expected = str(expected_revision)
+        observed = ""
+        error = ""
+        if not path.exists():
+            error = "missing checkout"
+        else:
+            try:
+                result = subprocess.run(
+                    ["git", "-C", str(path), "rev-parse", "HEAD"],
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                )
+                if result.returncode == 0:
+                    observed = result.stdout.strip()
+                else:
+                    error = result.stderr.strip() or f"git rev-parse exited {result.returncode}"
+            except OSError as exc:
+                error = exc.__class__.__name__
+        rows.append(
+            {
+                "path": str(path),
+                "expected_revision": expected,
+                "observed_revision": observed,
+                "ready": bool(observed and observed == expected and not error),
+                "error": error,
+            }
+        )
+    return rows
 
 
 def _primitive_alignment(

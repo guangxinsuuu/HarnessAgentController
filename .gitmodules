@@ -1,0 +1,6 @@
+[submodule "third_party/tree-of-thought-llm"]
+	path = third_party/tree-of-thought-llm
+	url = https://github.com/princeton-nlp/tree-of-thought-llm
+[submodule "third_party/ReST-MCTS"]
+	path = third_party/ReST-MCTS
+	url = https://github.com/THUDM/ReST-MCTS

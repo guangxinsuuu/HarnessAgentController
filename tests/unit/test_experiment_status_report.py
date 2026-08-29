@@ -72,6 +72,7 @@ class ExperimentStatusReportTest(unittest.TestCase):
             self.assertIn("runs/q2_native_llm_baselines_100_seed0", text)
             self.assertIn("Blocked: pending; artifact missing", text)
             self.assertIn("Blocked: missing token accounting", text)
+            self.assertIn("runs/q2_remaining_runs/q2_remaining_runs.md", text)
             self.assertIn("All Q4 tau/tau2 rows remain pending", text)
             self.assertIn("runs/q4_tau_native", text)
             self.assertIn("native tau artifact missing", text)

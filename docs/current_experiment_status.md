@@ -27,6 +27,7 @@ Machine audit: `runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readines
 | Solver-trained priority + certified pruning | runs/scheduling_table5_prm_rest_cert_100_seed0/scheduling_llm_pilot_table.csv (Solver-trained MLP + certified pruning) | Implemented. same solver-trained priority controller; verified pruning authority separated from learned ranking; on-demand proposal accounting for avoided calls | Blocked: invalid artifacts: scheduling_llm_pilot_metrics.json missing Q2 method alignment for Solver-trained priority + certified pruning, scheduling_llm_pilot_metrics.json missing certified pruning protocol | Blocked: shared-cache fallback accounting |
 
 Implementation/source matrix: `runs/q2_implementation_matrix/q2_implementation_matrix.csv`.
+Remaining Q2 run queue: `runs/q2_remaining_runs/q2_remaining_runs.md`.
 
 ## Q4 tau/tau2 Tool-Agent Evaluation
 

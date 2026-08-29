@@ -30,6 +30,7 @@ from cgr_exp.scheduling_transfer import (
     run_scheduling_zero_shot_transfer,
 )
 from cgr_exp.q2_implementation_matrix import build_q2_implementation_matrix
+from cgr_exp.q2_remaining_runs import build_q2_remaining_runs
 from cgr_exp.q2_source_evidence import audit_q2_source_evidence
 from cgr_exp.q2_source_ref_verifier import verify_q2_source_refs
 from cgr_exp.q4_tau_source_evidence import audit_q4_tau_source_evidence
@@ -68,6 +69,7 @@ COMMANDS = [
     "audit-table4-q2",
     "audit-table5-q2",
     "build-q2-implementation-matrix",
+    "build-q2-remaining-runs",
     "audit-q2-source-evidence",
     "verify-q2-source-refs",
     "audit-q4-tau-source-evidence",
@@ -228,7 +230,9 @@ def main() -> None:
             p.add_argument("--parallel-episodes", type=int, default=1)
             p.add_argument("--resume", action="store_true", default=False)
             p.add_argument("--perturbation", default="mixed")
-            p.add_argument("--mock", action="store_true", default=False)
+        if name == "build-q2-remaining-runs":
+            p.add_argument("--q2-readiness", type=Path, default=Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv"))
+            p.add_argument("--certification-readiness", type=Path, default=Path("runs/certification_tables_readiness/certification_tables_readiness.csv"))
         if name == "run-scheduling-outcome-prm":
             p.add_argument("--source-run-dir", type=Path, required=True)
             p.add_argument("--train-count", type=int, default=200)
@@ -1088,6 +1092,26 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'q2_implementation_matrix.csv'}")
+            return
+        if args.command == "build-q2-remaining-runs":
+            manifest = build_q2_remaining_runs(
+                args.output_dir,
+                q2_readiness=args.q2_readiness,
+                certification_readiness=args.certification_readiness,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "q2_readiness": str(args.q2_readiness),
+                "certification_readiness": str(args.certification_readiness),
+                "remaining_group_count": manifest["remaining_group_count"],
+                "remaining_method_count": manifest["remaining_method_count"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q2_remaining_runs.csv'}")
             return
         if args.command == "run-table6-authority":
             corruption_seeds = tuple(int(part) for part in args.corruption_seeds.split(",") if part.strip())

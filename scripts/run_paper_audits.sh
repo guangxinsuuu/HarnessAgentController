@@ -38,6 +38,7 @@ Q2_TABLE_AUDIT_DIR="${Q2_TABLE_AUDIT_DIR:-runs/q2_table_current_seed0_protocol_v
 Q2_SOURCE_AUDIT_DIR="${Q2_SOURCE_AUDIT_DIR:-runs/q2_source_evidence_audit}"
 Q2_SOURCE_REF_DIR="${Q2_SOURCE_REF_DIR:-runs/q2_source_ref_verification}"
 Q2_IMPLEMENTATION_MATRIX_DIR="${Q2_IMPLEMENTATION_MATRIX_DIR:-runs/q2_implementation_matrix}"
+Q2_REMAINING_RUNS_DIR="${Q2_REMAINING_RUNS_DIR:-runs/q2_remaining_runs}"
 
 Q4_TABLE_AUDIT_DIR="${Q4_TABLE_AUDIT_DIR:-runs/q4_tau_table_current_audit}"
 Q4_SOURCE_AUDIT_DIR="${Q4_SOURCE_AUDIT_DIR:-runs/q4_tau_source_evidence_audit}"
@@ -122,6 +123,7 @@ print_summary() {
   print "q4_audit_dir: ${Q4_TABLE_AUDIT_DIR}"
   print "certification_audit_dir: ${CERTIFICATION_AUDIT_DIR}"
   print "status_report_dir: ${STATUS_REPORT_DIR}"
+  print "q2_remaining_runs_dir: ${Q2_REMAINING_RUNS_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: not required"
   else
@@ -140,12 +142,21 @@ build_status_report() {
     --overwrite
 }
 
+build_q2_remaining_runs() {
+  "${PYTHON_BIN}" -m cgr_exp.cli build-q2-remaining-runs \
+    --output-dir "${Q2_REMAINING_RUNS_DIR}" \
+    --q2-readiness "${Q2_TABLE_AUDIT_DIR}/table5_q2_readiness.csv" \
+    --certification-readiness "${CERTIFICATION_AUDIT_DIR}/certification_tables_readiness.csv" \
+    --overwrite
+}
+
 case "${MODE}" in
   all)
     print_summary
     audit_q2
     audit_q4
     audit_certification
+    build_q2_remaining_runs
     build_status_report
     ;;
   q2)
@@ -162,6 +173,7 @@ case "${MODE}" in
     ;;
   status)
     print_summary
+    build_q2_remaining_runs
     build_status_report
     ;;
   -h|--help|help) usage ;;

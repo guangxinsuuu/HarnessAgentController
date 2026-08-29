@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import csv
 from pathlib import Path
 
 from cgr_exp.cli import COMMANDS
@@ -19,6 +20,7 @@ class CliQ2AliasesTest(unittest.TestCase):
         self.assertIn("audit-q2-source-evidence", COMMANDS)
         self.assertIn("verify-q2-source-refs", COMMANDS)
         self.assertIn("build-q2-implementation-matrix", COMMANDS)
+        self.assertIn("build-q2-remaining-runs", COMMANDS)
 
     def test_table4_and_legacy_table5_aliases_expose_same_q2_arguments(self) -> None:
         expected_flags = (
@@ -143,6 +145,67 @@ class CliQ2AliasesTest(unittest.TestCase):
             self.assertFalse(manifest["online_checked"])
             self.assertTrue(manifest["all_static_refs_ready"])
             self.assertTrue((out / "q2_source_ref_verification.csv").exists())
+
+    def test_q2_remaining_runs_cli_writes_command_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            q2 = root / "q2.csv"
+            cert = root / "cert.csv"
+            _write_csv(
+                q2,
+                [
+                    {
+                        "Method": "CP-SAT",
+                        "source_artifact": "runs/structured/table.csv",
+                        "result_ready": "True",
+                        "compute_ready": "True",
+                        "result_blockers": "",
+                        "compute_blockers": "",
+                    },
+                    {
+                        "Method": "Target-PRM priority",
+                        "source_artifact": "runs/old/scheduling_llm_pilot_table.csv",
+                        "result_ready": "False",
+                        "compute_ready": "False",
+                        "result_blockers": "missing learned search protocol",
+                        "compute_blockers": "shared-cache fallback accounting",
+                    },
+                ],
+            )
+            _write_csv(cert, [{"Table": "Table 6 clean certification", "source_artifact": "runs/cert", "result_ready": "True"}])
+            out = root / "remaining"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "build-q2-remaining-runs",
+                    "--output-dir",
+                    str(out),
+                    "--q2-readiness",
+                    str(q2),
+                    "--certification-readiness",
+                    str(cert),
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out / "command_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["remaining_group_count"], 1)
+            text = (out / "q2_remaining_runs.md").read_text(encoding="utf-8")
+            self.assertIn("Learned-search Q2 rows", text)
+            self.assertIn("do not patch old metrics by hand", text)
+            self.assertTrue((out / "q2_remaining_runs.csv").exists())
+
+
+def _write_csv(path: Path, rows) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 if __name__ == "__main__":

@@ -52,7 +52,7 @@ class Tau3RunConfig:
 def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
     if config.method not in TABLE10_METHODS:
         raise ValueError(f"unsupported tau3 method: {config.method}")
-    if config.method != "native":
+    if config.method == "best_of_n":
         raise RuntimeError(
             f"{TABLE10_METHODS[config.method]} is not implemented as a native tau2-bench agent yet; "
             "run native first, then attach a benchmark-compatible selector/controller."
@@ -92,7 +92,10 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         return aggregate_tau3_official_results(config.output_dir, method=TABLE10_METHODS[config.method], domain=config.domain, expected_trials=config.num_trials)
 
     start = time.monotonic()
-    result = subprocess.run(command, cwd=TAU2_SUBMODULE, env=_tau2_env(), text=True, capture_output=True, check=False)
+    if config.method == "solver":
+        result = _run_tau2_solver_controller(config, Path(save_to))
+    else:
+        result = subprocess.run(command, cwd=TAU2_SUBMODULE, env=_tau2_env(), text=True, capture_output=True, check=False)
     elapsed = time.monotonic() - start
     (config.output_dir / "tau3_native_stdout.log").write_text(result.stdout, encoding="utf-8")
     (config.output_dir / "tau3_native_stderr.log").write_text(result.stderr, encoding="utf-8")
@@ -104,7 +107,53 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
     return aggregate_tau3_official_results(config.output_dir, method=TABLE10_METHODS[config.method], domain=config.domain, expected_trials=config.num_trials)
 
 
+def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subprocess.CompletedProcess[str]:
+    try:
+        from tau2.data_model.simulation import TextRunConfig
+        from tau2.registry import registry
+        from tau2.runner import run_domain
+
+        from cgr_exp.tau3_solver_agent import create_tau3_solver_controller_agent
+
+        if registry.get_agent_factory("cgr_solver_controller") is None:
+            registry.register_agent_factory(create_tau3_solver_controller_agent, "cgr_solver_controller")
+        llm_args = json.loads(config.agent_llm_args)
+        llm_args.setdefault("cgr_candidate_count", 4)
+        run_config = TextRunConfig(
+            domain=config.domain,
+            agent="cgr_solver_controller",
+            user="user_simulator",
+            task_set_name=None,
+            task_split_name=config.task_split_name,
+            task_ids=list(config.task_ids) or None,
+            num_tasks=config.num_tasks,
+            llm_agent=config.agent_llm,
+            llm_args_agent=llm_args,
+            llm_user=config.user_llm,
+            llm_args_user=json.loads(config.user_llm_args),
+            num_trials=config.num_trials,
+            max_steps=config.max_steps,
+            max_errors=config.max_errors,
+            timeout=config.timeout,
+            save_to=str(save_path),
+            max_concurrency=config.max_concurrency,
+            workers=config.workers,
+            seed=config.seed,
+            log_level="ERROR",
+            enforce_communication_protocol=True,
+            verbose_logs=config.verbose_logs,
+            auto_resume=config.auto_resume,
+        )
+        results = run_domain(run_config)
+        if not save_path.exists():
+            results.save(save_path, format="json")
+        return subprocess.CompletedProcess(args=["tau2-python-api", "cgr_solver_controller"], returncode=0, stdout="completed cgr_solver_controller run\n", stderr="")
+    except BaseException as exc:
+        return subprocess.CompletedProcess(args=["tau2-python-api", "cgr_solver_controller"], returncode=1, stdout="", stderr=f"{type(exc).__name__}: {exc}\n")
+
+
 def build_tau2_run_command(config: Tau3RunConfig, *, save_to: str) -> List[str]:
+    agent = "llm_agent" if config.method != "solver" else "cgr_solver_controller"
     cmd = [
         config.python_bin,
         "-m",
@@ -113,7 +162,7 @@ def build_tau2_run_command(config: Tau3RunConfig, *, save_to: str) -> List[str]:
         "--domain",
         config.domain,
         "--agent",
-        "llm_agent",
+        agent,
         "--user",
         "user_simulator",
         "--agent-llm",

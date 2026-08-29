@@ -15,7 +15,7 @@ BASE_DIR="${BASE_DIR:-runs/table10_tau3}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|native-smoke|native-full|build]
+scripts/run_table10_tau3.sh [preflight|native-smoke|native-full|solver-smoke|solver-full|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -45,10 +45,11 @@ run_native_domain() {
   local domain="$1"
   local count="$2"
   local suffix="$3"
+  local method="${4:-native}"
   "${PYTHON_BIN}" -m cgr_exp.cli run-tau3-native \
     --output-dir "${BASE_DIR}/${suffix}_${domain}" \
     --domain "${domain}" \
-    --method native \
+    --method "${method}" \
     --task-split-name base \
     --num-tasks "${count}" \
     --num-trials "${NUM_TRIALS}" \
@@ -71,7 +72,11 @@ build_table() {
   "${PYTHON_BIN}" -m cgr_exp.cli build-table10-tau3 \
     --output-dir "${BASE_DIR}/table10_current" \
     --expected-test-count "${NUM_TASKS}" \
-    --row-dirs "${BASE_DIR}/native_retail" "${BASE_DIR}/native_airline" \
+    --row-dirs \
+      "${BASE_DIR}/native_retail" \
+      "${BASE_DIR}/native_airline" \
+      "${BASE_DIR}/solver_retail" \
+      "${BASE_DIR}/solver_airline" \
     --overwrite
 }
 
@@ -89,6 +94,16 @@ case "${1:-}" in
     run_native_domain retail "${NUM_TASKS}" native
     run_native_domain airline "${NUM_TASKS}" native
     build_table
+    ;;
+  solver-smoke)
+    run_preflight
+    NUM_TASKS=2 run_native_domain retail 2 solver_smoke solver
+    NUM_TASKS=2 run_native_domain airline 2 solver_smoke solver
+    ;;
+  solver-full)
+    run_preflight
+    run_native_domain retail "${NUM_TASKS}" solver solver
+    run_native_domain airline "${NUM_TASKS}" solver solver
     ;;
   build)
     build_table

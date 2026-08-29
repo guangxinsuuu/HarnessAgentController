@@ -753,6 +753,7 @@ def build_table10_tau3_run_preflight(
         group_methods = _methods_for_dirs(readiness["audit_rows"], required_dirs)
         group_ready = bool(group_methods) and all(bool(row["result_ready"]) for row in group_methods)
         effective_concurrency = _table10_effective_concurrency(group, max_concurrency, candidate_workers, parallel_domains, parallel_method_groups)
+        work_estimate = _table10_group_work_estimate(group, expected_test_count, num_trials, candidate_workers)
         rows.append(
             {
                 "run_group": group,
@@ -762,6 +763,7 @@ def build_table10_tau3_run_preflight(
                 "api_required": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
                 "resume_safe": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
                 "effective_max_concurrency": effective_concurrency,
+                **work_estimate,
                 "command": command,
             }
         )
@@ -1260,6 +1262,11 @@ def _table10_source_controller_preflight_row(base_dir: Path, *, seed: int = 0) -
         "api_required": False,
         "resume_safe": True,
         "effective_max_concurrency": 0,
+        "estimated_api_rows": 0,
+        "estimated_tau2_simulations": 0,
+        "estimated_native_rows": 0,
+        "estimated_solver_controller_rows": 0,
+        "candidate_worker_multiplier": 0,
         "command": f"BASE_DIR={base_dir} SEED={seed} scripts/run_table10_tau3.sh source-controller",
         "blockers": "; ".join(blockers),
         "source_controller_checkpoint": str(checkpoint),
@@ -1280,6 +1287,27 @@ def _table10_effective_concurrency(group: str, max_concurrency: int, candidate_w
     if group == "full":
         return base * solver_candidate_factor
     return base * solver_candidate_factor
+
+
+def _table10_group_work_estimate(group: str, expected_test_count: int, num_trials: int, candidate_workers: int) -> Dict[str, object]:
+    domain_count = 2
+    native_rows = domain_count if group in {"full", "native_full"} else 0
+    solver_rows_by_group = {
+        "legacy_solver_full": domain_count,
+        "solver_canonical_full": domain_count,
+        "solver_canonical_certified_full": domain_count,
+        "full": domain_count * 3,
+    }
+    solver_rows = solver_rows_by_group.get(group, 0)
+    api_rows = native_rows + solver_rows
+    simulations = api_rows * expected_test_count * num_trials
+    return {
+        "estimated_api_rows": api_rows,
+        "estimated_tau2_simulations": simulations,
+        "estimated_native_rows": native_rows,
+        "estimated_solver_controller_rows": solver_rows,
+        "candidate_worker_multiplier": max(1, int(candidate_workers)) if solver_rows else 0,
+    }
 
 
 def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
@@ -1334,6 +1362,9 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
                 f"API required: `{row['api_required']}`",
                 f"Resume safe: `{row['resume_safe']}`",
                 f"Effective max concurrency: `{row['effective_max_concurrency']}`",
+                f"Estimated API rows: `{row.get('estimated_api_rows', 0)}`",
+                f"Estimated tau2 simulations: `{row.get('estimated_tau2_simulations', 0)}`",
+                f"Solver candidate worker multiplier: `{row.get('candidate_worker_multiplier', 0)}`",
                 f"Methods: {row['methods']}",
                 "",
                 "```bash",

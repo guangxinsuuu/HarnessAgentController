@@ -51,12 +51,13 @@ style baselines that must not be described as full official replications.
   - At the algorithmic level, the required retained primitive is MCTS
     selection, expansion, simulation, and backpropagation.
   - `MCTS/mcts.py` implements MCTS rounds through `MCTS_search`,
-    `executeRound`, `selectNode`, `expand`, `simulation`, and
-    `back_propagate`.
+    `executeRound`, `selectNode`, `expand`, `greedyPolicy`/`randomPolicy`
+    rollout, `back_propagate`, and `getBestChild`.
   - Machine-readable evidence records raw-source function refs for
     `MCTS/mcts.py::def MCTS_search`, `::def executeRound`,
-    `::def selectNode`, `::def expand`, `::def simulation`,
-    `::def back_propagate`, and `MCTS/base.py::class treeNode`.
+    `::def selectNode`, `::def expand`, `::def greedyPolicy`,
+    `::def randomPolicy`, `::def back_propagate`, `::def getBestChild`,
+    and `MCTS/base.py::class treeNode`.
 
 ## Machine-Checked Source Primitive Contract
 

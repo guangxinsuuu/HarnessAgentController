@@ -5,18 +5,18 @@ It must agree with the machine-readable contracts in
 `cgr_exp/q2_method_contracts.py`, `cgr_exp/q2_source_evidence.py`, and
 `cgr_exp/q2_implementation_matrix.py`.
 
-The external-source references were checked with:
+The external-source references are statically checked with:
 
 ```bash
 python3 -m cgr_exp.cli verify-q2-source-refs \
-  --output-dir /private/tmp/q2_source_ref_online \
-  --online \
-  --timeout 20 \
+  --output-dir runs/q2_source_ref_verification \
   --overwrite
 ```
 
-Current online verifier result: all pinned GitHub commits, pinned raw GitHub
-anchors, and versioned arXiv references were reachable.
+Current static verifier result: pinned GitHub SHAs, pinned raw GitHub refs, and
+versioned arXiv references are present and internally consistent. Add
+`--online --timeout 20` on a machine with network access to verify remote
+reachability and raw-anchor line locations.
 
 ## Required Rows
 

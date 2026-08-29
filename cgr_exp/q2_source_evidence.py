@@ -179,13 +179,15 @@ Q2_SOURCE_EVIDENCE: Dict[str, Dict[str, object]] = {
             "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def executeRound",
             "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def selectNode",
             "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def expand",
-            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def simulation",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def greedyPolicy",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def randomPolicy",
             "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def back_propagate",
+            "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/mcts.py::def getBestChild",
             "raw: https://raw.githubusercontent.com/THUDM/ReST-MCTS/2d5f488c3d6e24f99d50a9860e818383b1bb5883/MCTS/base.py::class treeNode",
         ],
         "official_source_anchors": [
             "README: MCTS mode uses propose_method, value_method, iteration_limit, and branch",
-            "MCTS implementation: MCTS_search, executeRound, selectNode, expand, simulation, and back_propagate",
+            "MCTS implementation: MCTS_search, executeRound, selectNode, expand, greedyPolicy/randomPolicy rollout, back_propagate, and getBestChild",
         ],
         "official_primitives": [
             "MCTS selection",

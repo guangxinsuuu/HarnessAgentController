@@ -129,6 +129,7 @@ print_summary() {
   print "certification_audit_dir: ${CERTIFICATION_AUDIT_DIR}"
   print "status_report_dir: ${STATUS_REPORT_DIR}"
   print "q2_remaining_runs_dir: ${Q2_REMAINING_RUNS_DIR}"
+  print "q4_adapter_contract_dir: ${Q4_ADAPTER_CONTRACT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: not required"
   else

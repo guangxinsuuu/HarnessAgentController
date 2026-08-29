@@ -44,6 +44,7 @@ from cgr_exp.q4_tau_adapter_contract import build_q4_tau_adapter_contract
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
 from cgr_exp.table6_authority import run_table6_authority_experiment
+from cgr_exp.tau3_native import Tau3RunConfig, build_table10_tau3_results, run_tau3_native, tau3_preflight
 
 COMMANDS = [
     "run-game24-offline",
@@ -86,6 +87,9 @@ COMMANDS = [
     "build-q4-tau-adapter-contract",
     "build-table-q4-tau",
     "audit-table-q4-tau",
+    "preflight-tau3-native",
+    "run-tau3-native",
+    "build-table10-tau3",
     "run-table6-authority",
     "audit-certification-authority-source",
     "audit-certification-tables",
@@ -320,6 +324,31 @@ def main() -> None:
             p.add_argument("--value-guided-dir", type=Path, default=None)
             p.add_argument("--target-prm-dir", type=Path, default=None)
             p.add_argument("--solver-controller-dir", type=Path, default=None)
+        if name in ("preflight-tau3-native", "run-tau3-native"):
+            p.add_argument("--domain", choices=["retail", "airline"], default="retail")
+            p.add_argument("--method", choices=["native", "best_of_n", "solver"], default="native")
+            p.add_argument("--task-split-name", default="base")
+            p.add_argument("--num-tasks", type=int, default=None)
+            p.add_argument("--task-ids", nargs="+", default=[])
+            p.add_argument("--num-trials", type=int, default=4)
+            p.add_argument("--agent-llm", default="openai/gpt-4o-mini")
+            p.add_argument("--user-llm", default="openai/gpt-4o-mini")
+            p.add_argument("--agent-llm-args", default='{"temperature": 0}')
+            p.add_argument("--user-llm-args", default='{"temperature": 0}')
+            p.add_argument("--max-steps", type=int, default=200)
+            p.add_argument("--max-errors", type=int, default=10)
+            p.add_argument("--timeout", type=float, default=None)
+            p.add_argument("--max-concurrency", type=int, default=3)
+            p.add_argument("--workers", type=int, default=0)
+            p.add_argument("--tau-python-bin", default="python3")
+            p.add_argument("--auto-resume", action="store_true", default=True)
+            p.add_argument("--no-auto-resume", dest="auto_resume", action="store_false")
+            p.add_argument("--verbose-logs", action="store_true", default=False)
+            p.add_argument("--dry-run", action="store_true", default=False)
+            p.add_argument("--force", action="store_true", default=False)
+        if name == "build-table10-tau3":
+            p.add_argument("--expected-test-count", type=int, default=100)
+            p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
         if name == "build-q4-tau-adapter-contract":
             p.add_argument("--expected-test-count", type=int, default=100)
         if name == "run-table6-authority":
@@ -1086,6 +1115,78 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'q4_tau_readiness.csv'}")
+            return
+        if args.command == "preflight-tau3-native":
+            manifest = tau3_preflight(args.tau_python_bin)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete" if manifest["ready"] else "blocked",
+                "ready": manifest["ready"],
+                "blockers": manifest["blockers"],
+            }
+            (args.output_dir / "tau3_preflight.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'tau3_preflight.json'}")
+            return
+        if args.command == "run-tau3-native":
+            manifest = run_tau3_native(
+                Tau3RunConfig(
+                    output_dir=args.output_dir,
+                    domain=args.domain,
+                    method=args.method,
+                    task_split_name=args.task_split_name,
+                    num_tasks=args.num_tasks,
+                    task_ids=tuple(args.task_ids),
+                    num_trials=args.num_trials,
+                    agent_llm=args.agent_llm,
+                    user_llm=args.user_llm,
+                    agent_llm_args=args.agent_llm_args,
+                    user_llm_args=args.user_llm_args,
+                    max_steps=args.max_steps,
+                    max_errors=args.max_errors,
+                    timeout=args.timeout,
+                    max_concurrency=args.max_concurrency,
+                    workers=args.workers,
+                    seed=args.seed,
+                    python_bin=args.tau_python_bin,
+                    auto_resume=args.auto_resume,
+                    verbose_logs=args.verbose_logs,
+                    dry_run=args.dry_run,
+                    force=args.force,
+                )
+            )
+            row = manifest["row"]
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": row.get("status", "complete"),
+                "domain": args.domain,
+                "method": args.method,
+                "num_tasks": args.num_tasks,
+                "num_trials": args.num_trials,
+                "pass^1": row.get("pass^1"),
+                "pass^4": row.get("pass^4"),
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q4_tau_table.csv'}")
+            return
+        if args.command == "build-table10-tau3":
+            manifest = build_table10_tau3_results(args.output_dir, args.row_dirs, expected_test_count=args.expected_test_count)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "expected_test_count": args.expected_test_count,
+                "row_dirs": [str(path) for path in args.row_dirs],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'table10_tau3_results.csv'}")
             return
         if args.command == "audit-q2-source-evidence":
             manifest = audit_q2_source_evidence(args.output_dir)

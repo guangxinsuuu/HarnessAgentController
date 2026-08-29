@@ -1,0 +1,100 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+TAU_PYTHON_BIN="${TAU_PYTHON_BIN:-python3}"
+AGENT_LLM="${AGENT_LLM:-openai/gpt-4o-mini}"
+USER_LLM="${USER_LLM:-openai/gpt-4o-mini}"
+NUM_TASKS="${NUM_TASKS:-100}"
+NUM_TRIALS="${NUM_TRIALS:-4}"
+MAX_CONCURRENCY="${MAX_CONCURRENCY:-6}"
+WORKERS="${WORKERS:-0}"
+TIMEOUT="${TIMEOUT:-300}"
+SEED="${SEED:-0}"
+BASE_DIR="${BASE_DIR:-runs/table10_tau3}"
+
+usage() {
+  cat <<'EOF'
+scripts/run_table10_tau3.sh [preflight|native-smoke|native-full|build]
+
+Environment overrides:
+  PYTHON_BIN=python3
+  TAU_PYTHON_BIN=/opt/anaconda3/bin/python
+  AGENT_LLM=openai/gpt-4o-mini
+  USER_LLM=openai/gpt-4o-mini
+  NUM_TASKS=100
+  NUM_TRIALS=4
+  MAX_CONCURRENCY=6
+  WORKERS=0
+  TIMEOUT=300
+  BASE_DIR=runs/table10_tau3
+
+For OpenAI via tau2/litellm, set OPENAI_API_KEY. If you only have
+CGR_LLM_API_KEY, export OPENAI_API_KEY="$CGR_LLM_API_KEY" first.
+EOF
+}
+
+run_preflight() {
+  "${PYTHON_BIN}" -m cgr_exp.cli preflight-tau3-native \
+    --output-dir "${BASE_DIR}/preflight" \
+    --tau-python-bin "${TAU_PYTHON_BIN}" \
+    --overwrite
+}
+
+run_native_domain() {
+  local domain="$1"
+  local count="$2"
+  local suffix="$3"
+  "${PYTHON_BIN}" -m cgr_exp.cli run-tau3-native \
+    --output-dir "${BASE_DIR}/${suffix}_${domain}" \
+    --domain "${domain}" \
+    --method native \
+    --task-split-name base \
+    --num-tasks "${count}" \
+    --num-trials "${NUM_TRIALS}" \
+    --agent-llm "${AGENT_LLM}" \
+    --user-llm "${USER_LLM}" \
+    --agent-llm-args '{"temperature": 0}' \
+    --user-llm-args '{"temperature": 0}' \
+    --max-steps 200 \
+    --max-errors 10 \
+    --timeout "${TIMEOUT}" \
+    --max-concurrency "${MAX_CONCURRENCY}" \
+    --workers "${WORKERS}" \
+    --seed "${SEED}" \
+    --tau-python-bin "${TAU_PYTHON_BIN}" \
+    --auto-resume \
+    --overwrite
+}
+
+build_table() {
+  "${PYTHON_BIN}" -m cgr_exp.cli build-table10-tau3 \
+    --output-dir "${BASE_DIR}/table10_current" \
+    --expected-test-count "${NUM_TASKS}" \
+    --row-dirs "${BASE_DIR}/native_retail" "${BASE_DIR}/native_airline" \
+    --overwrite
+}
+
+case "${1:-}" in
+  preflight)
+    run_preflight
+    ;;
+  native-smoke)
+    run_preflight
+    NUM_TASKS=2 run_native_domain retail 2 native_smoke
+    NUM_TASKS=2 run_native_domain airline 2 native_smoke
+    ;;
+  native-full)
+    run_preflight
+    run_native_domain retail "${NUM_TASKS}" native
+    run_native_domain airline "${NUM_TASKS}" native
+    build_table
+    ;;
+  build)
+    build_table
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

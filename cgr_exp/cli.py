@@ -383,8 +383,11 @@ def main() -> None:
             p.add_argument("--num-trials", type=int, default=4)
             p.add_argument("--max-concurrency", type=int, default=6)
             p.add_argument("--candidate-workers", type=int, default=1)
+            p.add_argument("--candidate-retries", type=int, default=2)
+            p.add_argument("--candidate-retry-backoff", type=float, default=0.5)
             p.add_argument("--agent-llm", default="openai/gpt-4o-mini")
             p.add_argument("--user-llm", default="openai/gpt-4o-mini")
+            p.add_argument("--python-bin", default="python3")
             p.add_argument("--tau-python-bin", default="python3")
             p.add_argument("--parallel-domains", action="store_true", default=True)
             p.add_argument("--sequential-domains", dest="parallel_domains", action="store_false")
@@ -1268,8 +1271,11 @@ def main() -> None:
                 seed=args.seed,
                 max_concurrency=args.max_concurrency,
                 candidate_workers=args.candidate_workers,
+                candidate_retries=args.candidate_retries,
+                candidate_retry_backoff=args.candidate_retry_backoff,
                 agent_llm=args.agent_llm,
                 user_llm=args.user_llm,
+                python_bin=args.python_bin,
                 tau_python_bin=args.tau_python_bin,
                 parallel_domains=args.parallel_domains,
                 parallel_method_groups=args.parallel_method_groups,
@@ -1283,6 +1289,9 @@ def main() -> None:
                 "best_of_n": args.best_of_n,
                 "seed": args.seed,
                 "candidate_workers": args.candidate_workers,
+                "candidate_retries": args.candidate_retries,
+                "candidate_retry_backoff": args.candidate_retry_backoff,
+                "python_bin": args.python_bin,
                 "status": "complete",
                 "all_rows_result_ready": manifest["all_rows_result_ready"],
                 "produced_artifacts": manifest["produced_artifacts"],

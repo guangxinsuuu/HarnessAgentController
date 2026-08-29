@@ -580,6 +580,9 @@ class Tau3NativeTest(unittest.TestCase):
                 seed=2,
                 max_concurrency=2,
                 candidate_workers=3,
+                candidate_retries=5,
+                candidate_retry_backoff=0.25,
+                python_bin="/tmp/runner-python",
                 tau_python_bin="/tmp/python",
             )
             groups = {row["run_group"]: row for row in manifest["rows"]}
@@ -601,6 +604,9 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(groups["full"]["effective_max_concurrency"], 12)
             self.assertEqual(manifest["max_api_backed_effective_concurrency"], 12)
             self.assertEqual(manifest["candidate_workers"], 3)
+            self.assertEqual(manifest["candidate_retries"], 5)
+            self.assertEqual(manifest["candidate_retry_backoff"], 0.25)
+            self.assertEqual(manifest["python_bin"], "/tmp/runner-python")
             self.assertEqual(manifest["seed"], 2)
             self.assertEqual(manifest["recommended_next_run_group"], "source_controller")
             self.assertIn("source_controller_seed2", groups["source_controller"]["source_controller_checkpoint"])
@@ -608,7 +614,10 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("scripts/run_table10_tau3.sh source-controller", manifest["recommended_next_command"])
             self.assertIn("scripts/run_table10_tau3.sh full", groups["full"]["command"])
             self.assertIn("SEED=2", groups["full"]["command"])
+            self.assertIn("PYTHON_BIN=/tmp/runner-python", groups["full"]["command"])
             self.assertIn("CANDIDATE_WORKERS=3", groups["full"]["command"])
+            self.assertIn("CANDIDATE_RETRIES=5", groups["full"]["command"])
+            self.assertIn("CANDIDATE_RETRY_BACKOFF=0.25", groups["full"]["command"])
             self.assertIn("PARALLEL_METHOD_GROUPS=0", groups["full"]["command"])
             self.assertIn("scripts/run_table10_tau3.sh native-full", groups["native_full"]["command"])
             self.assertIn("PARALLEL_DOMAINS=1", groups["native_full"]["command"])

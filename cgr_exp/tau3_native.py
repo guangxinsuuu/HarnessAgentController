@@ -616,8 +616,11 @@ def build_table10_tau3_run_preflight(
     seed: int = 0,
     max_concurrency: int = 6,
     candidate_workers: int = 1,
+    candidate_retries: int = 2,
+    candidate_retry_backoff: float = 0.5,
     agent_llm: str = "openai/gpt-4o-mini",
     user_llm: str = "openai/gpt-4o-mini",
+    python_bin: str = "python3",
     tau_python_bin: str = sys.executable,
     parallel_domains: bool = True,
     parallel_method_groups: bool = False,
@@ -634,8 +637,11 @@ def build_table10_tau3_run_preflight(
         seed=seed,
         max_concurrency=max_concurrency,
         candidate_workers=candidate_workers,
+        candidate_retries=candidate_retries,
+        candidate_retry_backoff=candidate_retry_backoff,
         agent_llm=agent_llm,
         user_llm=user_llm,
+        python_bin=python_bin,
         tau_python_bin=tau_python_bin,
         parallel_domains=parallel_domains,
         parallel_method_groups=parallel_method_groups,
@@ -670,8 +676,11 @@ def build_table10_tau3_run_preflight(
         "seed": seed,
         "max_concurrency": max_concurrency,
         "candidate_workers": candidate_workers,
+        "candidate_retries": candidate_retries,
+        "candidate_retry_backoff": candidate_retry_backoff,
         "agent_llm": agent_llm,
         "user_llm": user_llm,
+        "python_bin": python_bin,
         "tau_python_bin": tau_python_bin,
         "parallel_domains": parallel_domains,
         "parallel_method_groups": parallel_method_groups,
@@ -1041,17 +1050,22 @@ def _table10_run_groups(
     seed: int,
     max_concurrency: int,
     candidate_workers: int,
+    candidate_retries: int,
+    candidate_retry_backoff: float,
     agent_llm: str,
     user_llm: str,
+    python_bin: str,
     tau_python_bin: str,
     parallel_domains: bool,
     parallel_method_groups: bool,
 ) -> List[tuple[str, str, List[Path]]]:
     prefix = (
-        f"TAU_PYTHON_BIN={tau_python_bin} PYTHON_BIN=python3 "
+        f"TAU_PYTHON_BIN={tau_python_bin} PYTHON_BIN={python_bin} "
         f"AGENT_LLM={agent_llm} USER_LLM={user_llm} "
         f"NUM_TASKS={expected_test_count} NUM_TRIALS={num_trials} "
-        f"SEED={seed} MAX_CONCURRENCY={max_concurrency} CANDIDATE_WORKERS={candidate_workers} BEST_OF_N={best_of_n} "
+        f"SEED={seed} MAX_CONCURRENCY={max_concurrency} CANDIDATE_WORKERS={candidate_workers} "
+        f"CANDIDATE_RETRIES={candidate_retries} CANDIDATE_RETRY_BACKOFF={candidate_retry_backoff} "
+        f"BEST_OF_N={best_of_n} "
         f"PARALLEL_DOMAINS={1 if parallel_domains else 0} "
         f"PARALLEL_METHOD_GROUPS={1 if parallel_method_groups else 0} "
         f"BASE_DIR={base_dir}"
@@ -1154,6 +1168,8 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         f"Expected test count: `{manifest['expected_test_count']}`",
         f"Best-of-N: `{manifest['best_of_n']}`",
         f"Candidate workers: `{manifest['candidate_workers']}`",
+        f"Candidate retries: `{manifest['candidate_retries']}`",
+        f"Candidate retry backoff: `{manifest['candidate_retry_backoff']}`",
         f"Parallel domains: `{manifest['parallel_domains']}`",
         f"Parallel method groups: `{manifest['parallel_method_groups']}`",
         f"Max API-backed effective concurrency: `{manifest['max_api_backed_effective_concurrency']}`",

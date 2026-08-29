@@ -83,6 +83,8 @@ USER_LLM="${USER_LLM:-openai/gpt-4o-mini}"
 NUM_TRIALS="${NUM_TRIALS:-4}"
 MAX_CONCURRENCY="${MAX_CONCURRENCY:-6}"
 CANDIDATE_WORKERS="${CANDIDATE_WORKERS:-4}"
+CANDIDATE_RETRIES="${CANDIDATE_RETRIES:-2}"
+CANDIDATE_RETRY_BACKOFF="${CANDIDATE_RETRY_BACKOFF:-0.5}"
 TIMEOUT="${TIMEOUT:-300}"
 PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-1}"
 PARALLEL_METHOD_GROUPS="${PARALLEL_METHOD_GROUPS:-0}"
@@ -191,6 +193,8 @@ print_summary() {
   print "tau3_parallel_domains: ${PARALLEL_DOMAINS}"
   print "tau3_parallel_method_groups: ${PARALLEL_METHOD_GROUPS}"
   print "tau3_candidate_workers: ${CANDIDATE_WORKERS}"
+  print "tau3_candidate_retries: ${CANDIDATE_RETRIES}"
+  print "tau3_candidate_retry_backoff: ${CANDIDATE_RETRY_BACKOFF}"
   print "secret_audit_dir: ${SECRET_AUDIT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: not required"
@@ -233,6 +237,9 @@ build_tau3_run_preflight() {
     --num-trials "${NUM_TRIALS}" \
     --max-concurrency "${MAX_CONCURRENCY}" \
     --candidate-workers "${CANDIDATE_WORKERS}" \
+    --candidate-retries "${CANDIDATE_RETRIES}" \
+    --candidate-retry-backoff "${CANDIDATE_RETRY_BACKOFF}" \
+    --python-bin "${PYTHON_BIN}" \
     "${parallel_args[@]}" \
     "${method_group_args[@]}" \
     --overwrite

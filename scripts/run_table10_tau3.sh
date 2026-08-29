@@ -85,8 +85,11 @@ build_run_preflight() {
     --seed "${SEED}" \
     --max-concurrency "${MAX_CONCURRENCY}" \
     --candidate-workers "${CANDIDATE_WORKERS}" \
+    --candidate-retries "${CANDIDATE_RETRIES}" \
+    --candidate-retry-backoff "${CANDIDATE_RETRY_BACKOFF}" \
     --agent-llm "${AGENT_LLM}" \
     --user-llm "${USER_LLM}" \
+    --python-bin "${PYTHON_BIN}" \
     --tau-python-bin "${TAU_PYTHON_BIN}" \
     --overwrite
 }

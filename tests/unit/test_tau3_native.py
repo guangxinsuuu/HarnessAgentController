@@ -285,7 +285,9 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("build_and_audit", groups)
             self.assertTrue(groups["native_full"]["api_required"])
             self.assertFalse(groups["build_and_audit"]["api_required"])
+            self.assertTrue(manifest["parallel_domains"])
             self.assertIn("scripts/run_table10_tau3.sh native-full", groups["native_full"]["command"])
+            self.assertIn("PARALLEL_DOMAINS=1", groups["native_full"]["command"])
             self.assertTrue((root / "preflight" / "table10_tau3_run_preflight.csv").exists())
             self.assertTrue((root / "preflight" / "table10_tau3_run_preflight.md").exists())
 

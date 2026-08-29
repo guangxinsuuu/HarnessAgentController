@@ -83,6 +83,7 @@ USER_LLM="${USER_LLM:-openai/gpt-4o-mini}"
 NUM_TRIALS="${NUM_TRIALS:-4}"
 MAX_CONCURRENCY="${MAX_CONCURRENCY:-6}"
 TIMEOUT="${TIMEOUT:-300}"
+PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-1}"
 
 CERTIFICATION_AUDIT_DIR="${CERTIFICATION_AUDIT_DIR:-runs/certification_tables_readiness}"
 CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR="${CERTIFICATION_AUTHORITY_SOURCE_AUDIT_DIR:-runs/certification_authority_source_audit}"
@@ -185,6 +186,7 @@ print_summary() {
   print "tau3_table_base_dir: ${TAU3_TABLE_BASE_DIR}"
   print "tau3_table_audit_dir: ${TAU3_TABLE_AUDIT_DIR}"
   print "tau3_run_preflight_dir: ${TAU3_RUN_PREFLIGHT_DIR}"
+  print "tau3_parallel_domains: ${PARALLEL_DOMAINS}"
   print "secret_audit_dir: ${SECRET_AUDIT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: not required"
@@ -208,6 +210,10 @@ build_status_report() {
 }
 
 build_tau3_run_preflight() {
+  local parallel_args=(--sequential-domains)
+  if [[ "${PARALLEL_DOMAINS}" == "1" ]]; then
+    parallel_args=(--parallel-domains)
+  fi
   "${PYTHON_BIN}" -m cgr_exp.cli build-table10-tau3-run-preflight \
     --output-dir "${TAU3_RUN_PREFLIGHT_DIR}" \
     --base-dir "${TAU3_TABLE_BASE_DIR}" \
@@ -218,6 +224,7 @@ build_tau3_run_preflight() {
     --user-llm "${USER_LLM}" \
     --num-trials "${NUM_TRIALS}" \
     --max-concurrency "${MAX_CONCURRENCY}" \
+    "${parallel_args[@]}" \
     --overwrite
 }
 

@@ -382,6 +382,8 @@ def main() -> None:
             p.add_argument("--agent-llm", default="openai/gpt-4o-mini")
             p.add_argument("--user-llm", default="openai/gpt-4o-mini")
             p.add_argument("--tau-python-bin", default="python3")
+            p.add_argument("--parallel-domains", action="store_true", default=True)
+            p.add_argument("--sequential-domains", dest="parallel_domains", action="store_false")
         if name == "audit-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
@@ -1255,6 +1257,7 @@ def main() -> None:
                 agent_llm=args.agent_llm,
                 user_llm=args.user_llm,
                 tau_python_bin=args.tau_python_bin,
+                parallel_domains=args.parallel_domains,
             )
             command_manifest = {
                 "command": args.command,

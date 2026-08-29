@@ -503,6 +503,7 @@ def build_table10_tau3_run_preflight(
     agent_llm: str = "openai/gpt-4o-mini",
     user_llm: str = "openai/gpt-4o-mini",
     tau_python_bin: str = sys.executable,
+    parallel_domains: bool = True,
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     row_dirs = _table10_default_row_dirs(base_dir, best_of_n)
@@ -517,6 +518,7 @@ def build_table10_tau3_run_preflight(
         agent_llm=agent_llm,
         user_llm=user_llm,
         tau_python_bin=tau_python_bin,
+        parallel_domains=parallel_domains,
     ):
         group_methods = _methods_for_dirs(readiness["audit_rows"], required_dirs)
         group_ready = bool(group_methods) and all(bool(row["result_ready"]) for row in group_methods)
@@ -545,6 +547,7 @@ def build_table10_tau3_run_preflight(
         "agent_llm": agent_llm,
         "user_llm": user_llm,
         "tau_python_bin": tau_python_bin,
+        "parallel_domains": parallel_domains,
         "api_key_env": "OPENAI_API_KEY",
         "readiness_dir": str(out_dir / "readiness"),
         "all_rows_result_ready": readiness["all_rows_result_ready"],
@@ -844,12 +847,14 @@ def _table10_run_groups(
     agent_llm: str,
     user_llm: str,
     tau_python_bin: str,
+    parallel_domains: bool,
 ) -> List[tuple[str, str, List[Path]]]:
     prefix = (
         f"TAU_PYTHON_BIN={tau_python_bin} PYTHON_BIN=python3 "
         f"AGENT_LLM={agent_llm} USER_LLM={user_llm} "
         f"NUM_TASKS={expected_test_count} NUM_TRIALS={num_trials} "
         f"MAX_CONCURRENCY={max_concurrency} BEST_OF_N={best_of_n} "
+        f"PARALLEL_DOMAINS={1 if parallel_domains else 0} "
         f"BASE_DIR={base_dir}"
     )
     return [
@@ -877,9 +882,10 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         f"Base dir: `{manifest['base_dir']}`",
         f"Expected test count: `{manifest['expected_test_count']}`",
         f"Best-of-N: `{manifest['best_of_n']}`",
+        f"Parallel domains: `{manifest['parallel_domains']}`",
         f"All rows ready: `{manifest['all_rows_result_ready']}`",
         "",
-        "Set `OPENAI_API_KEY` before API-backed run groups. `best-of-n` and `build_and_audit` reuse local artifacts.",
+        "Set `OPENAI_API_KEY` before API-backed run groups. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; effective API concurrency can reach roughly two times `MAX_CONCURRENCY`. `best-of-n` and `build_and_audit` reuse local artifacts.",
         "",
     ]
     for row in manifest["rows"]:

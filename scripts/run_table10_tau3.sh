@@ -10,6 +10,7 @@ NUM_TRIALS="${NUM_TRIALS:-4}"
 MAX_CONCURRENCY="${MAX_CONCURRENCY:-6}"
 WORKERS="${WORKERS:-0}"
 TIMEOUT="${TIMEOUT:-300}"
+PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-1}"
 SEED="${SEED:-0}"
 BASE_DIR="${BASE_DIR:-runs/table10_tau3}"
 SOURCE_CONTROLLER_DIR="${SOURCE_CONTROLLER_DIR:-${BASE_DIR}/source_controller_seed${SEED}}"
@@ -32,6 +33,7 @@ Environment overrides:
   NUM_TASKS=100
   NUM_TRIALS=4
   MAX_CONCURRENCY=6
+  PARALLEL_DOMAINS=1
   WORKERS=0
   TIMEOUT=300
   BASE_DIR=runs/table10_tau3
@@ -111,6 +113,26 @@ run_source_controller() {
     --epochs "${SOURCE_EPOCHS}" \
     --max-states-per-task "${SOURCE_MAX_STATES}" \
     --overwrite
+}
+
+run_domain_pair() {
+  local count="$1"
+  local suffix="$2"
+  local method="${3:-native}"
+  local checkpoint="${4:-}"
+  local certified="${5:-0}"
+  if [[ "${PARALLEL_DOMAINS}" == "1" ]]; then
+    run_native_domain retail "${count}" "${suffix}" "${method}" "${checkpoint}" "${certified}" &
+    local retail_pid=$!
+    run_native_domain airline "${count}" "${suffix}" "${method}" "${checkpoint}" "${certified}" &
+    local airline_pid=$!
+    local status=0
+    wait "${retail_pid}" || status=$?
+    wait "${airline_pid}" || status=$?
+    return "${status}"
+  fi
+  run_native_domain retail "${count}" "${suffix}" "${method}" "${checkpoint}" "${certified}"
+  run_native_domain airline "${count}" "${suffix}" "${method}" "${checkpoint}" "${certified}"
 }
 
 build_best_of_n() {
@@ -196,13 +218,11 @@ case "${1:-}" in
     ;;
   native-smoke)
     run_preflight
-    NUM_TASKS=2 run_native_domain retail 2 native_smoke
-    NUM_TASKS=2 run_native_domain airline 2 native_smoke
+    run_domain_pair 2 native_smoke
     ;;
   native-full)
     run_preflight
-    run_native_domain retail "${NUM_TASKS}" native
-    run_native_domain airline "${NUM_TASKS}" native
+    run_domain_pair "${NUM_TASKS}" native
     build_best_of_n
     build_table
     ;;
@@ -211,38 +231,32 @@ case "${1:-}" in
     ;;
   solver-smoke)
     run_preflight
-    NUM_TASKS=2 run_native_domain retail 2 solver_smoke solver
-    NUM_TASKS=2 run_native_domain airline 2 solver_smoke solver
+    run_domain_pair 2 solver_smoke solver
     ;;
   solver-full)
     run_preflight
-    run_native_domain retail "${NUM_TASKS}" solver solver
-    run_native_domain airline "${NUM_TASKS}" solver solver
+    run_domain_pair "${NUM_TASKS}" solver solver
     ;;
   solver-canonical-smoke)
     run_preflight
     run_source_controller
-    NUM_TASKS=2 run_native_domain retail 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
-    NUM_TASKS=2 run_native_domain airline 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
+    run_domain_pair 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
     ;;
   solver-canonical-full)
     run_preflight
     run_source_controller
-    run_native_domain retail "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
-    run_native_domain airline "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
+    run_domain_pair "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
     audit_solver_canonical_traces
     ;;
   solver-canonical-certified-smoke)
     run_preflight
     run_source_controller
-    NUM_TASKS=2 run_native_domain retail 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
-    NUM_TASKS=2 run_native_domain airline 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
+    run_domain_pair 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
     ;;
   solver-canonical-certified-full)
     run_preflight
     run_source_controller
-    run_native_domain retail "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
-    run_native_domain airline "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
+    run_domain_pair "${NUM_TASKS}" solver_canonical_certified solver "${SOLVER_RANKER_CHECKPOINT}" 1
     audit_solver_canonical_certified_traces
     ;;
   audit-solver-canonical)

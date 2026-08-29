@@ -503,6 +503,8 @@ def build_table10_tau3_results(out_dir: Path, row_dirs: Sequence[Path], expected
     for row_dir in row_dirs:
         row_path = row_dir / "q4_tau_row.json"
         if not row_path.exists():
+            domain, method = _table10_expected_label(row_dir)
+            rows.append(_table10_row({"Domain": domain, "Method": method, "status": "missing: q4_tau_row.json", "official_results": str(row_dir)}, expected_test_count))
             continue
         row = json.loads(row_path.read_text(encoding="utf-8"))
         rows.append(_table10_row(row, expected_test_count))

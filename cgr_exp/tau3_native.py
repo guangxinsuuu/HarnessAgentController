@@ -100,6 +100,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         "max_concurrency": config.max_concurrency,
         "workers": config.workers,
         "solver_ranker_checkpoint": None if config.solver_ranker_checkpoint is None else str(config.solver_ranker_checkpoint),
+        "source_controller_protocol": _source_controller_protocol(config.solver_ranker_checkpoint),
         "enable_certified_filter": config.enable_certified_filter,
         "controller_trace_path": None if controller_trace_path is None else str(controller_trace_path),
         "official_source": str(TAU2_SUBMODULE),
@@ -401,6 +402,45 @@ def _expected_tau3_task_count(config: Tau3RunConfig) -> Optional[int]:
     return config.num_tasks
 
 
+def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]:
+    if checkpoint is None:
+        return {"manifest_found": False}
+    manifest_path = checkpoint.parent / "canonical_harness_source_validation.json"
+    protocol: Dict[str, object] = {
+        "checkpoint": str(checkpoint),
+        "manifest": str(manifest_path),
+        "manifest_found": manifest_path.exists() and manifest_path.is_file(),
+    }
+    if not protocol["manifest_found"]:
+        return protocol
+    data = _read_json_or_empty(manifest_path)
+    protocol.update(
+        {
+            "benchmark": data.get("benchmark", ""),
+            "controller_checkpoint_frozen": _as_bool(data.get("controller_checkpoint_frozen")),
+            "adapter_changes_checkpoint_stays_frozen": _as_bool(data.get("adapter_changes_checkpoint_stays_frozen")),
+            "tau3_train_trajectories_used": _as_bool(data.get("tau3_train_trajectories_used")),
+            "oracle_labels_in_inference_features": _as_bool(data.get("oracle_labels_in_inference_features")),
+            "learned_score_authorizes_pruning": _as_bool(data.get("learned_score_authorizes_pruning")),
+            "tool_names_used_as_features": _as_bool(data.get("tool_names_used_as_features")),
+            "train_count": data.get("train_count", ""),
+            "validation_count": data.get("validation_count", ""),
+            "seed": data.get("seed", ""),
+        }
+    )
+    return protocol
+
+
+def _source_controller_protocol_from_manifest(command_manifest: Mapping[str, object]) -> Dict[str, object]:
+    protocol = command_manifest.get("source_controller_protocol")
+    if isinstance(protocol, Mapping):
+        return dict(protocol)
+    checkpoint = command_manifest.get("solver_ranker_checkpoint")
+    if checkpoint:
+        return _source_controller_protocol(Path(str(checkpoint)))
+    return {"manifest_found": False}
+
+
 def _python_version(python_bin: str) -> str:
     result = subprocess.run(
         [python_bin, "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))"],
@@ -482,6 +522,17 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
         if "canonical controller" in method:
             if not command_manifest.get("solver_ranker_checkpoint"):
                 blockers.append("solver_ranker_checkpoint missing")
+            source_protocol = _source_controller_protocol_from_manifest(command_manifest)
+            if not source_protocol.get("manifest_found"):
+                blockers.append("source controller manifest missing")
+            if source_protocol.get("tau3_train_trajectories_used"):
+                blockers.append("source controller used tau3 train trajectories")
+            if source_protocol.get("oracle_labels_in_inference_features"):
+                blockers.append("source controller leaks oracle labels")
+            if source_protocol.get("tool_names_used_as_features"):
+                blockers.append("source controller uses tool names as features")
+            if not source_protocol.get("controller_checkpoint_frozen"):
+                blockers.append("source controller checkpoint freeze evidence missing")
             trace_summary = audit_tau3_controller_trace(out_dir / f"{row_dir.name}_trace_audit", row_dir / "tau3_controller_trace.jsonl")
             if trace_summary["event_count"] <= 0:
                 blockers.append("controller trace missing")

@@ -1239,12 +1239,14 @@ def main() -> None:
                 "candidate_retry_backoff": args.candidate_retry_backoff,
                 "num_tasks": args.num_tasks,
                 "num_trials": args.num_trials,
+                "reused_existing_results": row.get("reused_existing_results", False),
                 "pass^1": row.get("pass^1"),
                 "pass^4": row.get("pass^4"),
                 "produced_artifacts": manifest["produced_artifacts"],
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
-            print(f"wrote {args.output_dir / 'q4_tau_table.csv'}")
+            reused = " (reused existing results)" if row.get("reused_existing_results") else ""
+            print(f"wrote {args.output_dir / 'q4_tau_table.csv'}{reused}")
             return
         if args.command == "build-tau3-best-of-n":
             manifest = build_tau3_best_of_n_from_native(args.output_dir, args.native_dir, n=args.n, method=f"Best-of-{args.n}")

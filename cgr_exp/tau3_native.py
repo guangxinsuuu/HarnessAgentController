@@ -129,6 +129,10 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         expected_tasks = _expected_tau3_task_count(config)
         existing_tasks = int(_as_float(existing["row"].get("task_count")) if not math.isnan(_as_float(existing["row"].get("task_count"))) else 0)
         if expected_tasks is None or existing_tasks >= expected_tasks:
+            existing["row"]["reused_existing_results"] = True
+            _rewrite_tau3_row_artifacts(config.output_dir, existing["row"])
+            command_manifest["reused_existing_results"] = True
+            (config.output_dir / "tau3_native_command.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             return existing
         command_manifest["resume_from_partial_results"] = True
         command_manifest["existing_task_count"] = existing_tasks
@@ -364,6 +368,7 @@ def aggregate_tau3_official_results(
         "task_count": len(task_ids),
         "simulation_count": len(sims),
         "avg_rollouts_per_task": avg_rollouts,
+        "reused_existing_results": False,
         "notes": "official tau2-bench text half-duplex run; pass^k uses tau2 pass_hat_k formula",
     }
     _write_csv(out_dir / "q4_tau_per_instance.csv", rows)
@@ -944,6 +949,11 @@ def _write_pending_row(out_dir: Path, *, method: str, domain: str, status: str) 
     (out_dir / "q4_tau_row.json").write_text(json.dumps(row, indent=2, sort_keys=True), encoding="utf-8")
     _write_csv(out_dir / "q4_tau_table.csv", [row])
     return {"row": row}
+
+
+def _rewrite_tau3_row_artifacts(out_dir: Path, row: Mapping[str, object]) -> None:
+    (out_dir / "q4_tau_row.json").write_text(json.dumps(dict(row), indent=2, sort_keys=True), encoding="utf-8")
+    _write_csv(out_dir / "q4_tau_table.csv", [row])
 
 
 def _table10_missing_compute_blockers(row: Mapping[str, object]) -> List[str]:

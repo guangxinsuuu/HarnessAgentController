@@ -269,6 +269,9 @@ class Tau3NativeTest(unittest.TestCase):
             ):
                 result = run_tau3_native(Tau3RunConfig(output_dir=root / "native", domain="retail", num_tasks=2, num_trials=1))
             self.assertEqual(result["row"]["task_count"], 2)
+            self.assertTrue(result["row"]["reused_existing_results"])
+            row_artifact = json.loads((root / "native" / "q4_tau_row.json").read_text(encoding="utf-8"))
+            self.assertTrue(row_artifact["reused_existing_results"])
             run_mock.assert_not_called()
 
     def test_existing_partial_results_resume_native_run(self) -> None:

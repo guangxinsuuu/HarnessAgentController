@@ -294,6 +294,17 @@ audit_controller_trace_pair() {
     --overwrite
 }
 
+audit_smoke_gate_pair() {
+  local suffix="$1"
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-table10-tau3-smoke \
+    --output-dir "${BASE_DIR}/${suffix}_gate" \
+    --expected-smoke-count 2 \
+    --row-dirs \
+      "${BASE_DIR}/${suffix}_retail" \
+      "${BASE_DIR}/${suffix}_airline" \
+    --overwrite
+}
+
 case "${1:-}" in
   preflight)
     run_preflight
@@ -336,6 +347,7 @@ case "${1:-}" in
     ensure_source_controller
     run_domain_pair 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
     audit_controller_trace_pair solver_canonical_smoke
+    audit_smoke_gate_pair solver_canonical_smoke
     ;;
   solver-canonical-full)
     run_preflight
@@ -348,6 +360,7 @@ case "${1:-}" in
     ensure_source_controller
     run_domain_pair 2 solver_canonical_certified_smoke solver "${SOLVER_RANKER_CHECKPOINT}" 1
     audit_controller_trace_pair solver_canonical_certified_smoke
+    audit_smoke_gate_pair solver_canonical_certified_smoke
     ;;
   solver-canonical-certified-full)
     run_preflight

@@ -48,6 +48,7 @@ from cgr_exp.table6_authority import run_table6_authority_experiment
 from cgr_exp.tau3_native import (
     Tau3RunConfig,
     audit_table10_tau3_readiness,
+    audit_table10_tau3_smoke_gate,
     audit_tau3_controller_trace,
     build_table10_tau3_results,
     build_table10_tau3_run_preflight,
@@ -105,6 +106,7 @@ COMMANDS = [
     "build-table10-tau3-run-preflight",
     "summarize-table10-tau3-progress",
     "audit-table10-tau3",
+    "audit-table10-tau3-smoke",
     "audit-tau3-controller-trace",
     "run-table6-authority",
     "audit-certification-authority-source",
@@ -401,6 +403,9 @@ def main() -> None:
             p.add_argument("--best-of-n", type=int, default=4)
         if name == "audit-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
+            p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
+        if name == "audit-table10-tau3-smoke":
+            p.add_argument("--expected-smoke-count", type=int, default=2)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
         if name == "build-tau3-best-of-n":
             p.add_argument("--native-dir", type=Path, required=True)
@@ -1357,6 +1362,22 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table10_tau3_readiness.csv'}")
+            return
+        if args.command == "audit-table10-tau3-smoke":
+            manifest = audit_table10_tau3_smoke_gate(args.output_dir, args.row_dirs, expected_smoke_count=args.expected_smoke_count)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "expected_smoke_count": args.expected_smoke_count,
+                "row_dirs": [str(path) for path in args.row_dirs],
+                "status": "complete",
+                "all_smoke_rows_ready": manifest["all_smoke_rows_ready"],
+                "pending_or_failed_rows": manifest["pending_or_failed_rows"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'table10_tau3_smoke_gate.csv'}")
             return
         if args.command == "audit-tau3-controller-trace":
             manifest = audit_tau3_controller_trace(args.output_dir, args.trace_path)

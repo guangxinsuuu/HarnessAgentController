@@ -128,6 +128,14 @@ For canonical smoke to be valid, the trace audit should show
 `ranker_checkpoint_loaded_events>0`, and all oracle visibility/use flags
 `False`.
 
+They also write a promotion gate:
+
+- `solver_canonical_smoke_gate/table10_tau3_smoke_gate.csv`
+- `solver_canonical_certified_smoke_gate/table10_tau3_smoke_gate.csv`
+
+Only move from smoke to full when the corresponding gate has
+`all_smoke_rows_ready=True` in `table10_tau3_smoke_gate.json`.
+
 ## Full Rows
 
 Run all Table10 rows:

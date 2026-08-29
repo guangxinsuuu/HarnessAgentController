@@ -14,6 +14,7 @@ from cgr_exp.tau3_native import (
     _run_tau2_solver_controller,
     aggregate_tau3_official_results,
     audit_table10_tau3_readiness,
+    audit_table10_tau3_smoke_gate,
     audit_tau3_controller_trace,
     build_tau3_best_of_n_from_native,
     build_tau2_run_command,
@@ -42,6 +43,8 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("FORCE_SOURCE_CONTROLLER", text)
         self.assertIn("audit_controller_trace_pair solver_canonical_smoke", text)
         self.assertIn("audit_controller_trace_pair solver_canonical_certified_smoke", text)
+        self.assertIn("audit_smoke_gate_pair solver_canonical_smoke", text)
+        self.assertIn("audit_smoke_gate_pair solver_canonical_certified_smoke", text)
         result = subprocess.run(["zsh", "-n", str(script)], check=False, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -121,6 +124,8 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("CANDIDATE_WORKERS=4", text)
         self.assertIn("CANDIDATE_RETRIES=2", text)
         self.assertIn("candidate_sample_failures", text)
+        self.assertIn("table10_tau3_smoke_gate.json", text)
+        self.assertIn("all_smoke_rows_ready=True", text)
         self.assertIn("FORCE_SOURCE_CONTROLLER=1", text)
         self.assertIn("tool-identity stress passed", text)
         self.assertIn("contract-coverage stress passed", text)
@@ -729,6 +734,76 @@ class Tau3NativeTest(unittest.TestCase):
             blockers = readiness["audit_rows"][0]["result_blockers"]
             self.assertIn("Best-of-N selector evidence missing", blockers)
             self.assertIn("Best-of-N rollout coverage incomplete", blockers)
+
+    def test_audits_table10_tau3_smoke_gate_for_canonical_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
+            contract = canonical_contract_manifest()
+            row_dirs = []
+            for domain in ("retail", "airline"):
+                row_dir = root / f"solver_canonical_smoke_{domain}"
+                row_dir.mkdir()
+                row_dirs.append(row_dir)
+                _write_row(row_dir, domain, method="Solver-derived canonical controller", task_count=2, status="complete")
+                (row_dir / "tau3_native_command.json").write_text(
+                    json.dumps(
+                        {
+                            "solver_ranker_checkpoint": str(source / "generic_harness_ranker.json"),
+                            "tau3_adapter_protocol": tau3_adapter_manifest(),
+                            "source_controller_protocol": {
+                                "manifest_found": True,
+                                "controller_checkpoint_frozen": True,
+                                "tau3_train_trajectories_used": False,
+                                "oracle_labels_in_inference_features": False,
+                                "tool_names_used_as_features": False,
+                                "source_generator_distribution_fixed_before_target_test_evaluation": True,
+                                "tau3_heldout_test_seen_before_freeze": False,
+                                "source_generator_uses_tau3_trajectories": False,
+                                "source_generator_anonymized_tool_names": True,
+                                "tool_identity_generalization_ready": True,
+                                "contract_coverage_stress_ready": True,
+                            },
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (row_dir / "tau3_controller_trace.jsonl").write_text(
+                    json.dumps(
+                        {
+                            "scoring_mode": "canonical_ranker",
+                            "canonical_contract": contract["contract"],
+                            "canonical_feature_schema_hash": contract["feature_schema_hash"],
+                            "canonical_feature_count": len(canonical_feature_names()),
+                            "ranker_checkpoint_loaded": True,
+                            "oracle_visible_to_controller": False,
+                            "oracle_used_for_candidate_generation": False,
+                            "oracle_used_for_filtering": False,
+                            "tool_names_used_as_features": False,
+                            "candidate_scores": [{"candidate_index": 0, "score": 1.0}],
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            manifest = audit_table10_tau3_smoke_gate(root / "gate", row_dirs, expected_smoke_count=2)
+            self.assertTrue(manifest["all_smoke_rows_ready"])
+            self.assertEqual(manifest["pending_or_failed_rows"], [])
+            self.assertTrue((root / "gate" / "table10_tau3_smoke_gate.csv").exists())
+            self.assertTrue((root / "gate" / "readiness" / "table10_tau3_readiness.csv").exists())
+
+    def test_audits_table10_tau3_smoke_gate_rejects_incomplete_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row_dir = root / "solver_canonical_smoke_retail"
+            row_dir.mkdir()
+            _write_row(row_dir, "retail", method="Solver-derived canonical controller", task_count=2, status="complete")
+            manifest = audit_table10_tau3_smoke_gate(root / "gate", [row_dir], expected_smoke_count=2)
+            self.assertFalse(manifest["all_smoke_rows_ready"])
+            self.assertIn("retail: Solver-derived canonical controller", manifest["pending_or_failed_rows"])
+            self.assertIn("controller trace missing", manifest["rows"][0]["result_blockers"])
 
     def test_builds_table10_tau3_run_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -655,6 +655,44 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
     return readiness
 
 
+def audit_table10_tau3_smoke_gate(out_dir: Path, row_dirs: Sequence[Path], expected_smoke_count: int = 2) -> Dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    readiness = audit_table10_tau3_readiness(out_dir / "readiness", row_dirs, expected_test_count=expected_smoke_count)
+    rows = [
+        {
+            "Domain": row["Domain"],
+            "Method": row["Method"],
+            "row_dir": row["row_dir"],
+            "task_count": row["task_count"],
+            "expected_smoke_count": expected_smoke_count,
+            "canonical_ranker_events": row.get("canonical_ranker_events", ""),
+            "ranker_checkpoint_loaded_events": row.get("ranker_checkpoint_loaded_events", ""),
+            "canonical_feature_schema_match": row.get("canonical_feature_schema_match", ""),
+            "canonical_feature_count_match": row.get("canonical_feature_count_match", ""),
+            "tau3_adapter": row.get("tau3_adapter", ""),
+            "tau3_adapter_train_trajectories_hidden": row.get("tau3_adapter_train_trajectories_hidden", ""),
+            "tau3_adapter_oracle_hidden": row.get("tau3_adapter_oracle_hidden", ""),
+            "result_ready": row["result_ready"],
+            "result_blockers": row["result_blockers"],
+        }
+        for row in readiness["audit_rows"]
+    ]
+    csv_path = out_dir / "table10_tau3_smoke_gate.csv"
+    json_path = out_dir / "table10_tau3_smoke_gate.json"
+    _write_csv(csv_path, rows)
+    manifest = {
+        "artifact": "table10_tau3_smoke_gate",
+        "expected_smoke_count": expected_smoke_count,
+        "all_smoke_rows_ready": all(row["result_ready"] for row in rows),
+        "pending_or_failed_rows": [_table10_row_id(row) for row in rows if not row["result_ready"]],
+        "rows": rows,
+        "readiness_dir": str(out_dir / "readiness"),
+        "produced_artifacts": [csv_path.name, json_path.name, "readiness"],
+    }
+    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
 def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_test_count: int = 100, best_of_n: int = 4) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = []

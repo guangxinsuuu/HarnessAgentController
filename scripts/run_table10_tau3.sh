@@ -22,7 +22,7 @@ BEST_OF_N="${BEST_OF_N:-4}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|audit-solver-canonical|audit-solver-canonical-certified|build]
+scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|audit-solver-canonical|audit-solver-canonical-certified|audit-table|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -130,6 +130,24 @@ build_table() {
     --overwrite
 }
 
+audit_table() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-table10-tau3 \
+    --output-dir "${BASE_DIR}/table10_readiness" \
+    --expected-test-count "${NUM_TASKS}" \
+    --row-dirs \
+      "${BASE_DIR}/native_retail" \
+      "${BASE_DIR}/native_airline" \
+      "${BASE_DIR}/best_of_${BEST_OF_N}_retail" \
+      "${BASE_DIR}/best_of_${BEST_OF_N}_airline" \
+      "${BASE_DIR}/solver_retail" \
+      "${BASE_DIR}/solver_airline" \
+      "${BASE_DIR}/solver_canonical_retail" \
+      "${BASE_DIR}/solver_canonical_airline" \
+      "${BASE_DIR}/solver_canonical_certified_retail" \
+      "${BASE_DIR}/solver_canonical_certified_airline" \
+    --overwrite
+}
+
 audit_solver_canonical_traces() {
   "${PYTHON_BIN}" -m cgr_exp.cli audit-tau3-controller-trace \
     --output-dir "${BASE_DIR}/solver_canonical_retail_trace_audit" \
@@ -216,8 +234,12 @@ case "${1:-}" in
   audit-solver-canonical-certified)
     audit_solver_canonical_certified_traces
     ;;
+  audit-table)
+    audit_table
+    ;;
   build)
     build_table
+    audit_table
     ;;
   *)
     usage

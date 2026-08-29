@@ -45,7 +45,7 @@ from cgr_exp.q4_tau_adapter_contract import build_q4_tau_adapter_contract
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
 from cgr_exp.table6_authority import run_table6_authority_experiment
-from cgr_exp.tau3_native import Tau3RunConfig, audit_tau3_controller_trace, build_tau3_best_of_n_from_native, build_table10_tau3_results, run_tau3_native, tau3_preflight
+from cgr_exp.tau3_native import Tau3RunConfig, audit_table10_tau3_readiness, audit_tau3_controller_trace, build_tau3_best_of_n_from_native, build_table10_tau3_results, run_tau3_native, tau3_preflight
 
 COMMANDS = [
     "run-game24-offline",
@@ -92,6 +92,7 @@ COMMANDS = [
     "run-tau3-native",
     "build-tau3-best-of-n",
     "build-table10-tau3",
+    "audit-table10-tau3",
     "audit-tau3-controller-trace",
     "run-table6-authority",
     "audit-certification-authority-source",
@@ -360,6 +361,9 @@ def main() -> None:
             p.add_argument("--solver-ranker-checkpoint", type=Path, default=None)
             p.add_argument("--enable-certified-filter", action="store_true", default=False)
         if name == "build-table10-tau3":
+            p.add_argument("--expected-test-count", type=int, default=100)
+            p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
+        if name == "audit-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
         if name == "build-tau3-best-of-n":
@@ -1233,6 +1237,22 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'table10_tau3_results.csv'}")
+            return
+        if args.command == "audit-table10-tau3":
+            manifest = audit_table10_tau3_readiness(args.output_dir, args.row_dirs, expected_test_count=args.expected_test_count)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "expected_test_count": args.expected_test_count,
+                "row_dirs": [str(path) for path in args.row_dirs],
+                "status": "complete",
+                "all_rows_result_ready": manifest["all_rows_result_ready"],
+                "pending_or_partial_rows": manifest["pending_or_partial_rows"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'table10_tau3_readiness.csv'}")
             return
         if args.command == "audit-tau3-controller-trace":
             manifest = audit_tau3_controller_trace(args.output_dir, args.trace_path)

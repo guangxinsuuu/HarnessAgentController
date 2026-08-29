@@ -8,6 +8,7 @@ from pathlib import Path
 from cgr_exp.tau3_native import (
     Tau3RunConfig,
     aggregate_tau3_official_results,
+    audit_table10_tau3_readiness,
     audit_tau3_controller_trace,
     build_tau3_best_of_n_from_native,
     build_tau2_run_command,
@@ -197,6 +198,52 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertFalse(manifest["tool_names_used_as_features"])
             self.assertTrue((root / "audit" / "tau3_controller_trace_audit.csv").exists())
 
+    def test_audits_table10_tau3_readiness_with_canonical_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            canonical = root / "canonical"
+            native.mkdir()
+            canonical.mkdir()
+            _write_row(native, "retail", method="Native tool-calling rerun", task_count=2, status="complete")
+            _write_row(canonical, "retail", method="Solver-derived canonical controller", task_count=2, status="complete")
+            (canonical / "tau3_native_command.json").write_text(json.dumps({"solver_ranker_checkpoint": "ranker.json"}), encoding="utf-8")
+            (canonical / "tau3_controller_trace.jsonl").write_text(
+                json.dumps(
+                    {
+                        "scoring_mode": "canonical_ranker",
+                        "ranker_checkpoint_loaded": True,
+                        "certified_filter_enabled": False,
+                        "certified_pruned_count": 0,
+                        "oracle_visible_to_controller": False,
+                        "oracle_used_for_candidate_generation": False,
+                        "oracle_used_for_filtering": False,
+                        "tool_names_used_as_features": False,
+                        "candidate_scores": [{"candidate_index": 0, "score": 1.0}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            readiness = audit_table10_tau3_readiness(root / "audit", [native, canonical], expected_test_count=2)
+            self.assertTrue(readiness["all_rows_result_ready"])
+            rows = {row["Method"]: row for row in readiness["audit_rows"]}
+            self.assertTrue(rows["Solver-derived canonical controller"]["result_ready"])
+
+    def test_audits_table10_tau3_readiness_rejects_missing_canonical_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            canonical = root / "canonical"
+            canonical.mkdir()
+            _write_row(canonical, "retail", method="Solver-derived canonical controller", task_count=1, status="complete")
+            (canonical / "tau3_native_command.json").write_text(json.dumps({"solver_ranker_checkpoint": "ranker.json"}), encoding="utf-8")
+            readiness = audit_table10_tau3_readiness(root / "audit", [canonical], expected_test_count=2)
+            self.assertFalse(readiness["all_rows_result_ready"])
+            self.assertIn("Solver-derived canonical controller", readiness["pending_or_partial_rows"])
+            blockers = readiness["audit_rows"][0]["result_blockers"]
+            self.assertIn("partial: 1/2", blockers)
+            self.assertIn("controller trace missing", blockers)
+
 
 def _sim(task_id: str, trial: int, reward: float) -> dict:
     return {
@@ -218,20 +265,20 @@ def _sim(task_id: str, trial: int, reward: float) -> dict:
     }
 
 
-def _write_row(path: Path, domain: str) -> None:
+def _write_row(path: Path, domain: str, method: str = "Native tool-calling rerun", task_count: int = 2, status: str = "complete") -> None:
     (path / "q4_tau_row.json").write_text(
         json.dumps(
             {
                 "Domain": domain,
-                "Method": "Native tool-calling rerun",
+                "Method": method,
                 "pass^1": 0.5,
                 "pass^4": 0.75,
                 "violations": 0.0,
                 "tool_calls": 3.0,
                 "tokens": 123.0,
                 "wall_clock_seconds": 4.0,
-                "status": "complete",
-                "task_count": 2,
+                "status": status,
+                "task_count": task_count,
                 "official_results": "x",
             }
         ),

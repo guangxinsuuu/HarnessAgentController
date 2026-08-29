@@ -442,6 +442,56 @@ def build_table10_tau3_results(out_dir: Path, row_dirs: Sequence[Path], expected
     return manifest
 
 
+def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expected_test_count: int = 100) -> Dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    audit_rows = []
+    for row_dir in row_dirs:
+        row_path = row_dir / "q4_tau_row.json"
+        blockers = []
+        if not row_path.exists():
+            audit_rows.append(_table10_audit_row(row_dir, {}, ["q4_tau_row.json missing"], expected_test_count))
+            continue
+        row = json.loads(row_path.read_text(encoding="utf-8"))
+        task_count = int(_as_float(row.get("task_count")) if not math.isnan(_as_float(row.get("task_count"))) else 0)
+        status = str(row.get("status", ""))
+        method = str(row.get("Method", ""))
+        if status != "complete":
+            blockers.append(status or "status missing")
+        if task_count < expected_test_count:
+            blockers.append(f"partial: {task_count}/{expected_test_count}")
+        command_manifest = _read_json_or_empty(row_dir / "tau3_native_command.json")
+        if "canonical controller" in method:
+            if not command_manifest.get("solver_ranker_checkpoint"):
+                blockers.append("solver_ranker_checkpoint missing")
+            trace_summary = audit_tau3_controller_trace(out_dir / f"{row_dir.name}_trace_audit", row_dir / "tau3_controller_trace.jsonl")
+            if trace_summary["event_count"] <= 0:
+                blockers.append("controller trace missing")
+            if trace_summary["canonical_ranker_events"] <= 0:
+                blockers.append("canonical ranker events missing")
+            if trace_summary["oracle_visible_to_controller"]:
+                blockers.append("oracle visible to controller")
+            if trace_summary["oracle_used_for_candidate_generation"]:
+                blockers.append("oracle used for candidate generation")
+            if trace_summary["oracle_used_for_filtering"]:
+                blockers.append("oracle used for filtering")
+            if trace_summary["tool_names_used_as_features"]:
+                blockers.append("tool names used as features")
+            if "certified filter" in method and trace_summary["certified_filter_enabled_events"] <= 0:
+                blockers.append("certified filter events missing")
+        audit_rows.append(_table10_audit_row(row_dir, row, blockers, expected_test_count))
+    _write_csv(out_dir / "table10_tau3_readiness.csv", audit_rows)
+    readiness = {
+        "table": "Table 10 tau3 maintained-protocol evaluation",
+        "expected_test_count": expected_test_count,
+        "all_rows_result_ready": all(row["result_ready"] for row in audit_rows),
+        "pending_or_partial_rows": [row["Method"] for row in audit_rows if not row["result_ready"]],
+        "audit_rows": audit_rows,
+        "produced_artifacts": ["table10_tau3_readiness.csv", "table10_tau3_readiness.json"],
+    }
+    (out_dir / "table10_tau3_readiness.json").write_text(json.dumps(readiness, indent=2, sort_keys=True), encoding="utf-8")
+    return readiness
+
+
 def build_tau3_best_of_n_from_native(out_dir: Path, native_dir: Path, n: int = 4, method: Optional[str] = None) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     n = max(1, int(n))
@@ -650,6 +700,28 @@ def _write_pending_row(out_dir: Path, *, method: str, domain: str, status: str) 
     (out_dir / "q4_tau_row.json").write_text(json.dumps(row, indent=2, sort_keys=True), encoding="utf-8")
     _write_csv(out_dir / "q4_tau_table.csv", [row])
     return {"row": row}
+
+
+def _table10_audit_row(row_dir: Path, row: Mapping[str, object], blockers: Sequence[str], expected_test_count: int) -> Dict[str, object]:
+    method = str(row.get("Method", "missing row"))
+    task_count = int(_as_float(row.get("task_count")) if not math.isnan(_as_float(row.get("task_count"))) else 0)
+    return {
+        "Method": method,
+        "Domain": row.get("Domain", ""),
+        "row_dir": str(row_dir),
+        "status": row.get("status", "missing"),
+        "task_count": task_count,
+        "expected_test_count": expected_test_count,
+        "result_ready": not blockers,
+        "result_blockers": "; ".join(blockers),
+    }
+
+
+def _read_json_or_empty(path: Path) -> Dict[str, object]:
+    if not path.exists() or path.stat().st_size == 0:
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
 
 
 def _tau_manifest(method: str, domain: str, task_count: int, num_trials: int, official_results: Path) -> Dict[str, object]:

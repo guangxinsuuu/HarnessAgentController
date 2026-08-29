@@ -55,8 +55,8 @@ Environment overrides:
   FORCE_SOURCE_CONTROLLER=0
   BEST_OF_N=4
 
-For OpenAI via tau2/litellm, set OPENAI_API_KEY. If you only have
-CGR_LLM_API_KEY, export OPENAI_API_KEY="$CGR_LLM_API_KEY" first.
+For OpenAI via tau2/litellm, set either OPENAI_API_KEY or CGR_LLM_API_KEY.
+The runner maps CGR_LLM_API_KEY into OPENAI_API_KEY before API-backed rows.
 EOF
 }
 

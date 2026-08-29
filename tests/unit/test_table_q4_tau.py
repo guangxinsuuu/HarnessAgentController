@@ -39,6 +39,7 @@ class TableQ4TauTest(unittest.TestCase):
             self.assertFalse(readiness["all_rows_result_ready"])
             self.assertEqual(rows["Native agent rerun"]["result_ready"], "True")
             self.assertIn("native/q4_tau_row.json", rows["Native agent rerun"]["source_artifact"])
+            self.assertIn("tasks=2", rows["Native agent rerun"]["diagnostics"])
             self.assertEqual(rows["Native agent rerun"]["source_revision"], q4_tau_source_evidence("tau-bench")["source_revision"])
             self.assertEqual(rows["Best-of-N"]["result_ready"], "False")
 

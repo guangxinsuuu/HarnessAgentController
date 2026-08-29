@@ -148,6 +148,7 @@ def _pending_row(method: str, transfer_setting: str, source_dir: Optional[Path],
         "preferred_current_source_url": TAU2_SOURCE_URL,
         "source_revision": "",
         "expected_test_count": expected_test_count,
+        "diagnostics": "",
         "notes": "native tau/tau2 artifact missing; external adapter is currently an explicit stub",
     }
 
@@ -186,6 +187,7 @@ def _row_from_tau_artifacts(method: str, transfer_setting: str, source_dir: Path
         "preferred_current_source_url": str(data.get("preferred_current_source_url", TAU2_SOURCE_URL)),
         "source_revision": source_revision,
         "expected_test_count": expected_test_count,
+        "diagnostics": _artifact_diagnostics(source_dir, method),
         "notes": str(data.get("notes", "native tau/tau2 protocol artifact")),
     }
 
@@ -211,6 +213,7 @@ def _audit_row(row: Mapping[str, object]) -> Dict[str, object]:
         "Status": status,
         "result_ready": not blockers,
         "result_blockers": "; ".join(blockers),
+        "diagnostics": row.get("diagnostics", ""),
         "notes": row.get("notes", ""),
     }
 
@@ -422,6 +425,33 @@ def _task_ids(path: Path, method: str) -> List[str]:
         if task_id:
             task_ids.add(task_id)
     return sorted(task_ids)
+
+
+def _artifact_diagnostics(source_dir: Path, method: str) -> str:
+    rows = [row for row in _read_csv(source_dir / "q4_tau_per_instance.csv") if str(row.get("Method", method)) == method]
+    if not rows:
+        return ""
+    task_ids = sorted({str(row.get("task_id", row.get("instance_id", ""))) for row in rows if str(row.get("task_id", row.get("instance_id", "")))})
+    parts = [f"tasks={len(task_ids)}"]
+    if "task_success_count" in rows[0]:
+        by_task = {}
+        for row in rows:
+            task_id = str(row.get("task_id", row.get("instance_id", "")))
+            if task_id and task_id not in by_task:
+                by_task[task_id] = row
+        zero_success = sum(1 for row in by_task.values() if _as_float(row.get("task_success_count")) <= 0)
+        error_rollouts = sum(int(_as_float(row.get("task_error_count"))) for row in by_task.values() if _as_float(row.get("task_error_count")) == _as_float(row.get("task_error_count")))
+        parts.extend([f"zero_success_tasks={zero_success}", f"error_rollouts={error_rollouts}"])
+    if "any_success" in rows[0]:
+        no_success = sum(1 for row in rows if _as_float(row.get("any_success")) <= 0)
+        first_success = sum(1 for row in rows if _as_float(row.get("first_success")) >= 1)
+        selected_success = sum(1 for row in rows if _as_float(row.get("success")) >= 1)
+        parts.extend([f"first_success_tasks={first_success}", f"selected_success_tasks={selected_success}", f"no_candidate_success_tasks={no_success}"])
+    if "candidate_sample_failures" in rows[0]:
+        failures = sum(int(_as_float(row.get("candidate_sample_failures"))) for row in rows if _as_float(row.get("candidate_sample_failures")) == _as_float(row.get("candidate_sample_failures")))
+        if failures:
+            parts.append(f"candidate_sample_failures={failures}")
+    return "; ".join(parts)
 
 
 def _read_json_manifest(path: Path) -> tuple[Dict[str, object], str]:

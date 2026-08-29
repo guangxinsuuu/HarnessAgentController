@@ -99,6 +99,7 @@ def _verify_method_refs(
             blockers.append("paper official_code_refs must cite the exact arxiv version")
 
     online_errors: List[str] = []
+    raw_anchor_locations: Dict[str, List[int]] = {}
     raw_anchor_matches = 0
     if online:
         for url in [source_revision_url] if source_revision_url else []:
@@ -106,11 +107,12 @@ def _verify_method_refs(
             if error:
                 online_errors.append(f"{url}: {error}")
         for url, anchor in raw_targets:
-            error = _check_raw_url(url, anchor=anchor, timeout=timeout, urlopen=urlopen)
+            error, line_numbers = _check_raw_url(url, anchor=anchor, timeout=timeout, urlopen=urlopen)
             if error:
                 online_errors.append(f"{url}: {error}")
             else:
                 raw_anchor_matches += 1
+                raw_anchor_locations[f"{url}::{anchor}"] = line_numbers
 
     return {
         "Method": method,
@@ -121,6 +123,7 @@ def _verify_method_refs(
         "checked_url_count": len(urls_to_check) if online else 0,
         "raw_anchor_count": len(raw_targets),
         "raw_anchor_match_count": raw_anchor_matches if online else 0,
+        "raw_anchor_locations": json.dumps(raw_anchor_locations, sort_keys=True) if online else "",
         "pinned_ref_count": sum(1 for ref in code_refs if source_revision and source_revision in ref),
         "symbol_ref_count": sum(1 for ref in code_refs if "::" in ref),
         "static_refs_ready": not blockers,
@@ -161,22 +164,33 @@ def _check_url(url: str, *, timeout: float, urlopen: Callable[..., object]) -> s
         return exc.__class__.__name__
 
 
-def _check_raw_url(url: str, *, anchor: str, timeout: float, urlopen: Callable[..., object]) -> str:
+def _check_raw_url(
+    url: str,
+    *,
+    anchor: str,
+    timeout: float,
+    urlopen: Callable[..., object],
+) -> tuple[str, List[int]]:
     request = urllib.request.Request(url, method="GET", headers={"User-Agent": "cgr-q2-source-verifier/1.0"})
     try:
         with urlopen(request, timeout=timeout) as response:
             status = getattr(response, "status", 200)
             if int(status) >= 400:
-                return f"http_status_{status}"
+                return f"http_status_{status}", []
             if not anchor:
-                return "missing raw content anchor"
+                return "missing raw content anchor", []
             body = response.read()
             text = body.decode("utf-8", errors="replace") if isinstance(body, bytes) else str(body)
-            if anchor not in text:
-                return f"missing raw content anchor {anchor!r}"
-            return ""
+            line_numbers = [
+                idx
+                for idx, line in enumerate(text.splitlines(), start=1)
+                if anchor in line
+            ]
+            if not line_numbers:
+                return f"missing raw content anchor {anchor!r}", []
+            return "", line_numbers
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return exc.__class__.__name__
+        return exc.__class__.__name__, []
 
 
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:

@@ -89,7 +89,9 @@ It writes `q2_source_ref_verification.csv` and checks that GitHub-backed rows
 use full pinned SHAs, raw GitHub URLs are pinned to the same SHA, symbol/schema
 anchors are present, and paper-backed rows cite explicit arXiv versions. Its
 default mode is offline and deterministic; `--online` additionally verifies
-that the pinned revision and raw-source URLs are reachable.
+that the pinned revision and raw-source URLs are reachable, and records
+`raw_anchor_locations` for matched raw-source anchors so the official-source
+line evidence can be inspected without manually reopening each GitHub file.
 
 Each current Q2 runner embeds the relevant `source_evidence` block in its own
 manifest (`scheduling_structured_q2_metrics.json`,

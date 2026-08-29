@@ -236,6 +236,9 @@ class Q2MethodContractsTest(unittest.TestCase):
             self.assertEqual(by_method["Tree of Thoughts"]["raw_anchor_match_count"], 1)
             self.assertEqual(by_method["Target-PRM priority"]["raw_anchor_match_count"], 1)
             self.assertEqual(by_method["PRM-guided MCTS (ReST-MCTS-style)"]["raw_anchor_match_count"], 1)
+            locations = json.loads(by_method["Tree of Thoughts"]["raw_anchor_locations"])
+            self.assertTrue(any("::def solve" in key for key in locations))
+            self.assertIn(1, next(iter(locations.values())))
 
     def test_source_ref_verifier_rejects_online_raw_anchor_mismatch(self) -> None:
         class FakeResponse:

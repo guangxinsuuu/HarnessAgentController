@@ -82,6 +82,7 @@ AGENT_LLM="${AGENT_LLM:-openai/gpt-4o-mini}"
 USER_LLM="${USER_LLM:-openai/gpt-4o-mini}"
 NUM_TRIALS="${NUM_TRIALS:-4}"
 MAX_CONCURRENCY="${MAX_CONCURRENCY:-6}"
+CANDIDATE_WORKERS="${CANDIDATE_WORKERS:-4}"
 TIMEOUT="${TIMEOUT:-300}"
 PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-1}"
 PARALLEL_METHOD_GROUPS="${PARALLEL_METHOD_GROUPS:-0}"
@@ -189,6 +190,7 @@ print_summary() {
   print "tau3_run_preflight_dir: ${TAU3_RUN_PREFLIGHT_DIR}"
   print "tau3_parallel_domains: ${PARALLEL_DOMAINS}"
   print "tau3_parallel_method_groups: ${PARALLEL_METHOD_GROUPS}"
+  print "tau3_candidate_workers: ${CANDIDATE_WORKERS}"
   print "secret_audit_dir: ${SECRET_AUDIT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: not required"
@@ -230,6 +232,7 @@ build_tau3_run_preflight() {
     --user-llm "${USER_LLM}" \
     --num-trials "${NUM_TRIALS}" \
     --max-concurrency "${MAX_CONCURRENCY}" \
+    --candidate-workers "${CANDIDATE_WORKERS}" \
     "${parallel_args[@]}" \
     "${method_group_args[@]}" \
     --overwrite

@@ -380,6 +380,7 @@ def main() -> None:
             p.add_argument("--best-of-n", type=int, default=4)
             p.add_argument("--num-trials", type=int, default=4)
             p.add_argument("--max-concurrency", type=int, default=6)
+            p.add_argument("--candidate-workers", type=int, default=1)
             p.add_argument("--agent-llm", default="openai/gpt-4o-mini")
             p.add_argument("--user-llm", default="openai/gpt-4o-mini")
             p.add_argument("--tau-python-bin", default="python3")
@@ -1260,6 +1261,7 @@ def main() -> None:
                 num_trials=args.num_trials,
                 seed=args.seed,
                 max_concurrency=args.max_concurrency,
+                candidate_workers=args.candidate_workers,
                 agent_llm=args.agent_llm,
                 user_llm=args.user_llm,
                 tau_python_bin=args.tau_python_bin,
@@ -1274,6 +1276,7 @@ def main() -> None:
                 "expected_test_count": args.expected_test_count,
                 "best_of_n": args.best_of_n,
                 "seed": args.seed,
+                "candidate_workers": args.candidate_workers,
                 "status": "complete",
                 "all_rows_result_ready": manifest["all_rows_result_ready"],
                 "produced_artifacts": manifest["produced_artifacts"],

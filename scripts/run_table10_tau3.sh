@@ -80,6 +80,7 @@ build_run_preflight() {
     --num-trials "${NUM_TRIALS}" \
     --seed "${SEED}" \
     --max-concurrency "${MAX_CONCURRENCY}" \
+    --candidate-workers "${CANDIDATE_WORKERS}" \
     --agent-llm "${AGENT_LLM}" \
     --user-llm "${USER_LLM}" \
     --tau-python-bin "${TAU_PYTHON_BIN}" \

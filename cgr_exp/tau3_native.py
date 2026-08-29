@@ -609,6 +609,7 @@ def build_table10_tau3_run_preflight(
     num_trials: int = 4,
     seed: int = 0,
     max_concurrency: int = 6,
+    candidate_workers: int = 1,
     agent_llm: str = "openai/gpt-4o-mini",
     user_llm: str = "openai/gpt-4o-mini",
     tau_python_bin: str = sys.executable,
@@ -626,6 +627,7 @@ def build_table10_tau3_run_preflight(
         num_trials=num_trials,
         seed=seed,
         max_concurrency=max_concurrency,
+        candidate_workers=candidate_workers,
         agent_llm=agent_llm,
         user_llm=user_llm,
         tau_python_bin=tau_python_bin,
@@ -634,7 +636,7 @@ def build_table10_tau3_run_preflight(
     ):
         group_methods = _methods_for_dirs(readiness["audit_rows"], required_dirs)
         group_ready = bool(group_methods) and all(bool(row["result_ready"]) for row in group_methods)
-        effective_concurrency = _table10_effective_concurrency(group, max_concurrency, parallel_domains, parallel_method_groups)
+        effective_concurrency = _table10_effective_concurrency(group, max_concurrency, candidate_workers, parallel_domains, parallel_method_groups)
         rows.append(
             {
                 "run_group": group,
@@ -661,6 +663,7 @@ def build_table10_tau3_run_preflight(
         "num_trials": num_trials,
         "seed": seed,
         "max_concurrency": max_concurrency,
+        "candidate_workers": candidate_workers,
         "agent_llm": agent_llm,
         "user_llm": user_llm,
         "tau_python_bin": tau_python_bin,
@@ -1024,6 +1027,7 @@ def _table10_run_groups(
     num_trials: int,
     seed: int,
     max_concurrency: int,
+    candidate_workers: int,
     agent_llm: str,
     user_llm: str,
     tau_python_bin: str,
@@ -1034,7 +1038,7 @@ def _table10_run_groups(
         f"TAU_PYTHON_BIN={tau_python_bin} PYTHON_BIN=python3 "
         f"AGENT_LLM={agent_llm} USER_LLM={user_llm} "
         f"NUM_TASKS={expected_test_count} NUM_TRIALS={num_trials} "
-        f"SEED={seed} MAX_CONCURRENCY={max_concurrency} BEST_OF_N={best_of_n} "
+        f"SEED={seed} MAX_CONCURRENCY={max_concurrency} CANDIDATE_WORKERS={candidate_workers} BEST_OF_N={best_of_n} "
         f"PARALLEL_DOMAINS={1 if parallel_domains else 0} "
         f"PARALLEL_METHOD_GROUPS={1 if parallel_method_groups else 0} "
         f"BASE_DIR={base_dir}"
@@ -1114,12 +1118,19 @@ def _table10_source_controller_preflight_row(base_dir: Path, *, seed: int = 0) -
     }
 
 
-def _table10_effective_concurrency(group: str, max_concurrency: int, parallel_domains: bool, parallel_method_groups: bool) -> int:
+def _table10_effective_concurrency(group: str, max_concurrency: int, candidate_workers: int, parallel_domains: bool, parallel_method_groups: bool) -> int:
     if group in {"build_and_audit", "source_controller"}:
         return 0
     domain_factor = 2 if parallel_domains else 1
-    method_factor = 4 if group == "full" and parallel_method_groups else 1
-    return max(1, int(max_concurrency)) * domain_factor * method_factor
+    base = max(1, int(max_concurrency)) * domain_factor
+    solver_candidate_factor = max(1, int(candidate_workers))
+    if group == "native_full":
+        return base
+    if group == "full" and parallel_method_groups:
+        return base * (1 + 3 * solver_candidate_factor)
+    if group == "full":
+        return base * solver_candidate_factor
+    return base * solver_candidate_factor
 
 
 def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
@@ -1129,13 +1140,14 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         f"Base dir: `{manifest['base_dir']}`",
         f"Expected test count: `{manifest['expected_test_count']}`",
         f"Best-of-N: `{manifest['best_of_n']}`",
+        f"Candidate workers: `{manifest['candidate_workers']}`",
         f"Parallel domains: `{manifest['parallel_domains']}`",
         f"Parallel method groups: `{manifest['parallel_method_groups']}`",
         f"Max API-backed effective concurrency: `{manifest['max_api_backed_effective_concurrency']}`",
         f"All rows ready: `{manifest['all_rows_result_ready']}`",
         f"Recommended next run group: `{manifest['recommended_next_run_group'] or 'none'}`",
         "",
-        "Set `OPENAI_API_KEY` before API-backed run groups. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; effective API concurrency can reach roughly two times `MAX_CONCURRENCY`. `best-of-n` and `build_and_audit` reuse local artifacts.",
+        "Set `OPENAI_API_KEY` before API-backed run groups. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; solver-controller rows also multiply active requests by `CANDIDATE_WORKERS`. `best-of-n` and `build_and_audit` reuse local artifacts.",
         "",
     ]
     if manifest.get("recommended_next_command"):

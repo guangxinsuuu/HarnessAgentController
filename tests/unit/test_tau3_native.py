@@ -34,6 +34,8 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertIn("2", command)
         self.assertIn("--auto-resume", command)
         self.assertIn("--enforce-communication-protocol", command)
+        save_to = command[command.index("--save-to") + 1]
+        self.assertFalse(save_to.endswith("results.json"))
 
     def test_aggregates_official_results_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -69,6 +71,13 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(row["simulation_count"], 8)
             self.assertTrue((out / "q4_tau_row.json").exists())
             self.assertTrue((out / "q4_tau_per_instance.csv").exists())
+
+    def test_aggregate_skips_directory_named_results_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "official_tau2_results" / "results.json").mkdir(parents=True)
+            manifest = aggregate_tau3_official_results(out, method="Native tool-calling rerun", domain="retail")
+            self.assertEqual(manifest["row"]["status"], "official results missing")
 
     def test_build_table10_from_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

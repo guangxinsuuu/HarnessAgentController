@@ -63,7 +63,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
     (config.output_dir / "tau3_preflight.json").write_text(json.dumps(preflight, indent=2, sort_keys=True), encoding="utf-8")
 
     official_results_dir = (config.output_dir / "official_tau2_results").resolve()
-    save_to = str(official_results_dir / "results.json")
+    save_to = str(official_results_dir)
     command = build_tau2_run_command(config, save_to=save_to)
     command_manifest = {
         "command": command,
@@ -109,6 +109,8 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
 
 def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subprocess.CompletedProcess[str]:
     try:
+        if "OPENAI_API_KEY" not in os.environ and "CGR_LLM_API_KEY" in os.environ:
+            os.environ["OPENAI_API_KEY"] = os.environ["CGR_LLM_API_KEY"]
         from tau2.data_model.simulation import TextRunConfig
         from tau2.registry import registry
         from tau2.runner import run_domain
@@ -154,6 +156,9 @@ def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subpr
 
 def build_tau2_run_command(config: Tau3RunConfig, *, save_to: str) -> List[str]:
     agent = "llm_agent" if config.method != "solver" else "cgr_solver_controller"
+    save_to_path = Path(save_to)
+    if save_to_path.name == "results.json":
+        save_to = str(save_to_path.parent)
     cmd = [
         config.python_bin,
         "-m",
@@ -512,7 +517,7 @@ def _find_official_results(out_dir: Path) -> Optional[Path]:
     ]
     candidates.extend(sorted(out_dir.glob("**/results.json")))
     for candidate in candidates:
-        if candidate.exists() and candidate.stat().st_size > 0:
+        if candidate.is_file() and candidate.stat().st_size > 0:
             return candidate
     return None
 

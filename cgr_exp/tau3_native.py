@@ -1523,7 +1523,7 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         f"All rows ready: `{manifest['all_rows_result_ready']}`",
         f"Recommended next run group: `{manifest['recommended_next_run_group'] or 'none'}`",
         "",
-        "Set `OPENAI_API_KEY` or `CGR_LLM_API_KEY` before API-backed run groups; the runner maps `CGR_LLM_API_KEY` into `OPENAI_API_KEY` for tau2/litellm. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; solver-controller rows also multiply active requests by `CANDIDATE_WORKERS`. `best-of-n` and `build_and_audit` reuse local artifacts.",
+        "Set `OPENAI_API_KEY` or `CGR_LLM_API_KEY` before API-backed run groups; the runner maps `CGR_LLM_API_KEY` into `OPENAI_API_KEY` for tau2/litellm. `PARALLEL_DOMAINS=1` runs Retail and Airline concurrently; solver-controller rows also multiply configured capacity by `CANDIDATE_WORKERS`. The displayed effective concurrency is capped by runnable tau2 simulations; `best-of-n` and `build_and_audit` reuse local artifacts.",
         "",
         "Resume policy: generated commands use `--auto-resume --overwrite`; `--overwrite` only permits writing into an existing output directory, while `--force` is the opt-in switch that ignores existing tau2 results and reruns from scratch.",
         "",

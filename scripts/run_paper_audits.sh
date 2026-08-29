@@ -54,6 +54,7 @@ CERTIFICATION_AUDIT_DIR="${CERTIFICATION_AUDIT_DIR:-runs/certification_tables_re
 CERTIFICATION_DIR="${CERTIFICATION_DIR:-runs/q2_structured_cert_reference_100_seed0}"
 AUTHORITY_DIR="${AUTHORITY_DIR:-runs/table7_grounding_robustness_100_seed0}"
 STATUS_REPORT_DIR="${STATUS_REPORT_DIR:-runs/current_experiment_status}"
+SECRET_AUDIT_DIR="${SECRET_AUDIT_DIR:-runs/secret_safety_audit}"
 
 usage() {
   cat <<'EOF'
@@ -130,6 +131,7 @@ print_summary() {
   print "status_report_dir: ${STATUS_REPORT_DIR}"
   print "q2_remaining_runs_dir: ${Q2_REMAINING_RUNS_DIR}"
   print "q4_adapter_contract_dir: ${Q4_ADAPTER_CONTRACT_DIR}"
+  print "secret_audit_dir: ${SECRET_AUDIT_DIR}"
   if [[ -z "${CGR_LLM_API_KEY:-}" ]]; then
     print "llm_key: not required"
   else
@@ -148,6 +150,13 @@ build_status_report() {
     --overwrite
 }
 
+audit_secret_safety() {
+  "${PYTHON_BIN}" -m cgr_exp.cli audit-secret-safety \
+    --output-dir "${SECRET_AUDIT_DIR}" \
+    --root . \
+    --overwrite
+}
+
 build_q2_remaining_runs() {
   "${PYTHON_BIN}" -m cgr_exp.cli build-q2-remaining-runs \
     --output-dir "${Q2_REMAINING_RUNS_DIR}" \
@@ -162,6 +171,7 @@ case "${MODE}" in
     audit_q2
     audit_q4
     audit_certification
+    audit_secret_safety
     build_q2_remaining_runs
     build_status_report
     ;;
@@ -179,6 +189,7 @@ case "${MODE}" in
     ;;
   status)
     print_summary
+    audit_secret_safety
     build_q2_remaining_runs
     build_status_report
     ;;

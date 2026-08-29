@@ -29,6 +29,8 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("Q4_ADAPTER_CONTRACT_DIR", text)
         self.assertIn("build-q4-tau-adapter-contract", text)
         self.assertIn("q4_adapter_contract_dir", text)
+        self.assertIn("audit-secret-safety", text)
+        self.assertIn("secret_audit_dir", text)
         self.assertIn("prefer_existing_dir", text)
         self.assertIn("scheduling_table5_prm_rest_cert_100_seed0", text)
         self.assertIn("scheduling_missing_gpt_frontier_rank_100_seed0", text)
@@ -64,6 +66,7 @@ class PaperAuditScriptTest(unittest.TestCase):
                 "CERTIFICATION_DIR": str(root / "missing_cert"),
                 "AUTHORITY_DIR": str(root / "missing_authority"),
                 "STATUS_REPORT_DIR": str(root / "status"),
+                "SECRET_AUDIT_DIR": str(root / "secret_audit"),
             }
             env.pop("CGR_LLM_API_KEY", None)
             result = subprocess.run(
@@ -76,6 +79,7 @@ class PaperAuditScriptTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("llm_key: not required", result.stdout)
             self.assertIn("q4_adapter_contract_dir:", result.stdout)
+            self.assertIn("secret_audit_dir:", result.stdout)
             self.assertTrue((root / "q2_table_audit" / "table5_q2_readiness.csv").exists())
             self.assertTrue((root / "q2_source_audit" / "q2_source_evidence_audit.csv").exists())
             self.assertTrue((root / "q2_source_refs" / "q2_source_ref_verification.csv").exists())
@@ -86,6 +90,7 @@ class PaperAuditScriptTest(unittest.TestCase):
             self.assertTrue((root / "q4_source_refs" / "q4_tau_source_ref_verification.csv").exists())
             self.assertTrue((root / "q4_contract" / "q4_tau_adapter_contract.csv").exists())
             self.assertTrue((root / "cert_audit" / "certification_tables_readiness.csv").exists())
+            self.assertTrue((root / "secret_audit" / "secret_safety_audit.csv").exists())
             self.assertTrue((root / "status" / "current_experiment_status.md").exists())
 
     def test_current_status_doc_records_audit_outputs_and_pending_tau(self) -> None:
@@ -94,6 +99,7 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv", text)
         self.assertIn("q4_tau_table_current_audit/q4_tau_readiness.csv", text)
         self.assertIn("q4_tau_adapter_contract/q4_tau_adapter_contract.md", text)
+        self.assertIn("secret_safety_audit/secret_safety_audit.csv", text)
         self.assertIn("certification_tables_readiness/certification_tables_readiness.csv", text)
         self.assertIn("All Q4 tau/tau2 rows remain pending", text)
         self.assertIn("Only rows marked ready", text)

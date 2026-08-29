@@ -3,6 +3,8 @@
 This file is generated from machine-readable readiness artifacts. Do not
 promote a paper-table row unless the relevant readiness row is ready.
 
+Secret safety audit: `runs/secret_safety_audit/secret_safety_audit.csv`.
+
 Audit command:
 
 ```bash

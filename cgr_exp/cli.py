@@ -29,6 +29,7 @@ from cgr_exp.scheduling_transfer import (
     run_scheduling_llm_pilot_from_env,
     run_scheduling_zero_shot_transfer,
 )
+from cgr_exp.secret_safety import audit_secret_safety
 from cgr_exp.q2_implementation_matrix import build_q2_implementation_matrix
 from cgr_exp.q2_remaining_runs import build_q2_remaining_runs
 from cgr_exp.q2_source_evidence import audit_q2_source_evidence
@@ -80,6 +81,7 @@ COMMANDS = [
     "audit-table-q4-tau",
     "run-table6-authority",
     "audit-certification-tables",
+    "audit-secret-safety",
     "build-current-experiment-status",
 ]
 
@@ -301,6 +303,8 @@ def main() -> None:
             p.add_argument("--certification-dir", type=Path, default=None)
             p.add_argument("--authority-dir", type=Path, default=None)
             p.add_argument("--expected-test-count", type=int, default=100)
+        if name == "audit-secret-safety":
+            p.add_argument("--root", type=Path, default=Path("."))
         if name == "build-current-experiment-status":
             p.add_argument("--q2-readiness", type=Path, default=Path("runs/q2_table_current_seed0_protocol_v2_audit/table5_q2_readiness.csv"))
             p.add_argument("--q4-readiness", type=Path, default=Path("runs/q4_tau_table_current_audit/q4_tau_readiness.csv"))
@@ -1179,6 +1183,21 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'certification_tables_readiness.csv'}")
+            return
+        if args.command == "audit-secret-safety":
+            manifest = audit_secret_safety(args.output_dir, root=args.root)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "root": str(args.root),
+                "secrets_ready": manifest["secrets_ready"],
+                "finding_count": manifest["finding_count"],
+                "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'secret_safety_audit.csv'}")
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

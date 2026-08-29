@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
+from cgr_exp.harness_contract import canonical_feature_names
+from cgr_exp.harness_ranker import GenericHarnessRanker
 from tau2.data_model.message import AssistantMessage, ToolCall, UserMessage
 from tau2.environment.tool import as_tool
 
@@ -55,6 +59,43 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertEqual(selected.content, "Could you confirm the order id?")
         self.assertIsNone(selected.tool_calls)
         self.assertAlmostEqual(selected.cost, 0.03)
+
+    def test_checkpoint_ranker_can_override_heuristic_candidate_order(self) -> None:
+        calls = [
+            AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="update_order", arguments={"order_id": "A"})],
+                cost=0.01,
+                usage={"prompt_tokens": 10, "completion_tokens": 1},
+            ),
+            AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": "A"})],
+                cost=0.02,
+                usage={"prompt_tokens": 11, "completion_tokens": 2},
+            ),
+        ]
+        names = canonical_feature_names()
+        weights = [0.0 for _name in names]
+        weights[names.index("action_is_read")] = 5.0
+        weights[names.index("action_is_write")] = -5.0
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            checkpoint.write_text(GenericHarnessRanker(weights).to_json(), encoding="utf-8")
+            agent = Tau3SolverControllerAgent(
+                [as_tool(_get_order), as_tool(_update_order)],
+                "policy",
+                "mock",
+                {"temperature": 0},
+                candidate_count=2,
+                ranker_checkpoint=str(checkpoint),
+            )
+            state = agent.get_init_state()
+            with patch("cgr_exp.tau3_solver_agent.generate", side_effect=calls):
+                selected, _state = agent.generate_next_message(UserMessage(role="user", content="change order A"), state)
+        self.assertEqual(selected.tool_calls[0].name, "get_order")
 
 
 def _get_order(order_id: str) -> str:

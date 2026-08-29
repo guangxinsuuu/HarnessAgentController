@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 from typing import Any, List, Optional
+
+from cgr_exp.harness_ranker import GenericHarnessRanker
+from cgr_exp.tau3_contract_adapter import tau3_candidate_to_canonical
 
 from tau2.agent.base_agent import ValidAgentInputMessage
 from tau2.agent.llm_agent import LLMAgent, LLMAgentState
@@ -25,9 +29,18 @@ class Tau3SolverControllerAgent(LLMAgent):
         llm: str,
         llm_args: Optional[dict] = None,
         candidate_count: int = 4,
+        ranker_checkpoint: Optional[str] = None,
+        max_turns: int = 200,
+        max_tool_budget: int = 200,
     ):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self.candidate_count = max(1, int(candidate_count))
+        self.max_turns = max(1, int(max_turns))
+        self.max_tool_budget = max(1, int(max_tool_budget))
+        self.ranker_checkpoint = ranker_checkpoint
+        self.ranker: Optional[GenericHarnessRanker] = None
+        if ranker_checkpoint:
+            self.ranker = GenericHarnessRanker.from_json(Path(ranker_checkpoint).read_text(encoding="utf-8"))
 
     def get_init_state(self, message_history: Optional[list[Message]] = None) -> LLMAgentState:
         if message_history is None:
@@ -78,6 +91,26 @@ class Tau3SolverControllerAgent(LLMAgent):
         return candidates
 
     def _score_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, str]:
+        if self.ranker is not None:
+            return self._score_canonical_candidate(candidate, history)
+        return self._score_heuristic_candidate(candidate, history)
+
+    def _score_canonical_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, str]:
+        used_tool_calls = sum(len(getattr(item, "tool_calls", None) or []) for item in history)
+        canonical = tau3_candidate_to_canonical(
+            candidate_id=f"tau3-candidate-{len(history)}",
+            message_history=history,
+            tools=self.tools,
+            candidate=candidate,
+            remaining_turns=max(0, self.max_turns - len(history)),
+            max_turns=self.max_turns,
+            remaining_tool_budget=max(0, self.max_tool_budget - used_tool_calls),
+            max_tool_budget=self.max_tool_budget,
+        )
+        assert self.ranker is not None
+        return self.ranker.score(canonical.feature_vector()), self._score_heuristic_candidate(candidate, history)[1]
+
+    def _score_heuristic_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, str]:
         score = 0.0
         if candidate.tool_calls:
             score += 3.0
@@ -137,10 +170,16 @@ class Tau3SolverControllerAgent(LLMAgent):
 def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
     llm_args = deepcopy(kwargs.get("llm_args") or {})
     candidate_count = int(llm_args.pop("cgr_candidate_count", 4))
+    ranker_checkpoint = llm_args.pop("cgr_ranker_checkpoint", None)
+    max_turns = int(llm_args.pop("cgr_max_turns", 200))
+    max_tool_budget = int(llm_args.pop("cgr_max_tool_budget", max_turns))
     return Tau3SolverControllerAgent(
         tools=tools,
         domain_policy=domain_policy,
         llm=kwargs.get("llm"),
         llm_args=llm_args,
         candidate_count=candidate_count,
+        ranker_checkpoint=ranker_checkpoint,
+        max_turns=max_turns,
+        max_tool_budget=max_tool_budget,
     )

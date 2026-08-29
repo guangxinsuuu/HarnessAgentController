@@ -47,6 +47,7 @@ class Tau3RunConfig:
     verbose_logs: bool = False
     dry_run: bool = False
     force: bool = False
+    solver_ranker_checkpoint: Optional[Path] = None
 
 
 def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
@@ -77,6 +78,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         "num_trials": config.num_trials,
         "max_concurrency": config.max_concurrency,
         "workers": config.workers,
+        "solver_ranker_checkpoint": None if config.solver_ranker_checkpoint is None else str(config.solver_ranker_checkpoint),
         "official_source": str(TAU2_SUBMODULE),
         "source_url": TAU2_BENCH_SOURCE_URL,
         "source_revision": _tau2_revision(),
@@ -121,6 +123,10 @@ def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subpr
             registry.register_agent_factory(create_tau3_solver_controller_agent, "cgr_solver_controller")
         llm_args = json.loads(config.agent_llm_args)
         llm_args.setdefault("cgr_candidate_count", 4)
+        if config.solver_ranker_checkpoint is not None:
+            llm_args["cgr_ranker_checkpoint"] = str(config.solver_ranker_checkpoint)
+        llm_args.setdefault("cgr_max_turns", config.max_steps)
+        llm_args.setdefault("cgr_max_tool_budget", config.max_steps)
         run_config = TextRunConfig(
             domain=config.domain,
             agent="cgr_solver_controller",

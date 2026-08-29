@@ -12,10 +12,16 @@ WORKERS="${WORKERS:-0}"
 TIMEOUT="${TIMEOUT:-300}"
 SEED="${SEED:-0}"
 BASE_DIR="${BASE_DIR:-runs/table10_tau3}"
+SOURCE_CONTROLLER_DIR="${SOURCE_CONTROLLER_DIR:-${BASE_DIR}/source_controller_seed${SEED}}"
+SOLVER_RANKER_CHECKPOINT="${SOLVER_RANKER_CHECKPOINT:-${SOURCE_CONTROLLER_DIR}/generic_harness_ranker.json}"
+SOURCE_TRAIN_COUNT="${SOURCE_TRAIN_COUNT:-80}"
+SOURCE_VALIDATION_COUNT="${SOURCE_VALIDATION_COUNT:-30}"
+SOURCE_EPOCHS="${SOURCE_EPOCHS:-20}"
+SOURCE_MAX_STATES="${SOURCE_MAX_STATES:-200}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|native-smoke|native-full|solver-smoke|solver-full|build]
+scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -28,6 +34,8 @@ Environment overrides:
   WORKERS=0
   TIMEOUT=300
   BASE_DIR=runs/table10_tau3
+  SOURCE_CONTROLLER_DIR=runs/table10_tau3/source_controller_seed0
+  SOLVER_RANKER_CHECKPOINT=runs/table10_tau3/source_controller_seed0/generic_harness_ranker.json
 
 For OpenAI via tau2/litellm, set OPENAI_API_KEY. If you only have
 CGR_LLM_API_KEY, export OPENAI_API_KEY="$CGR_LLM_API_KEY" first.
@@ -46,6 +54,11 @@ run_native_domain() {
   local count="$2"
   local suffix="$3"
   local method="${4:-native}"
+  local checkpoint="${5:-}"
+  local extra_args=()
+  if [[ -n "${checkpoint}" ]]; then
+    extra_args+=(--solver-ranker-checkpoint "${checkpoint}")
+  fi
   "${PYTHON_BIN}" -m cgr_exp.cli run-tau3-native \
     --output-dir "${BASE_DIR}/${suffix}_${domain}" \
     --domain "${domain}" \
@@ -65,6 +78,18 @@ run_native_domain() {
     --seed "${SEED}" \
     --tau-python-bin "${TAU_PYTHON_BIN}" \
     --auto-resume \
+    --overwrite \
+    "${extra_args[@]}"
+}
+
+run_source_controller() {
+  "${PYTHON_BIN}" -m cgr_exp.cli run-workflow-source-validation \
+    --output-dir "${SOURCE_CONTROLLER_DIR}" \
+    --seed "${SEED}" \
+    --train-count "${SOURCE_TRAIN_COUNT}" \
+    --validation-count "${SOURCE_VALIDATION_COUNT}" \
+    --epochs "${SOURCE_EPOCHS}" \
+    --max-states-per-task "${SOURCE_MAX_STATES}" \
     --overwrite
 }
 
@@ -83,6 +108,9 @@ build_table() {
 case "${1:-}" in
   preflight)
     run_preflight
+    ;;
+  source-controller)
+    run_source_controller
     ;;
   native-smoke)
     run_preflight
@@ -104,6 +132,18 @@ case "${1:-}" in
     run_preflight
     run_native_domain retail "${NUM_TASKS}" solver solver
     run_native_domain airline "${NUM_TASKS}" solver solver
+    ;;
+  solver-canonical-smoke)
+    run_preflight
+    run_source_controller
+    NUM_TASKS=2 run_native_domain retail 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
+    NUM_TASKS=2 run_native_domain airline 2 solver_canonical_smoke solver "${SOLVER_RANKER_CHECKPOINT}"
+    ;;
+  solver-canonical-full)
+    run_preflight
+    run_source_controller
+    run_native_domain retail "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
+    run_native_domain airline "${NUM_TASKS}" solver_canonical solver "${SOLVER_RANKER_CHECKPOINT}"
     ;;
   build)
     build_table

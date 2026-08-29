@@ -62,6 +62,7 @@ build_run_preflight() {
     --expected-test-count "${NUM_TASKS}" \
     --best-of-n "${BEST_OF_N}" \
     --num-trials "${NUM_TRIALS}" \
+    --seed "${SEED}" \
     --max-concurrency "${MAX_CONCURRENCY}" \
     --agent-llm "${AGENT_LLM}" \
     --user-llm "${USER_LLM}" \

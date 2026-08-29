@@ -604,6 +604,7 @@ def build_table10_tau3_run_preflight(
     expected_test_count: int = 100,
     best_of_n: int = 4,
     num_trials: int = 4,
+    seed: int = 0,
     max_concurrency: int = 6,
     agent_llm: str = "openai/gpt-4o-mini",
     user_llm: str = "openai/gpt-4o-mini",
@@ -614,12 +615,13 @@ def build_table10_tau3_run_preflight(
     out_dir.mkdir(parents=True, exist_ok=True)
     row_dirs = _table10_default_row_dirs(base_dir, best_of_n)
     readiness = audit_table10_tau3_readiness(out_dir / "readiness", row_dirs, expected_test_count=expected_test_count)
-    rows = [_table10_source_controller_preflight_row(base_dir)]
+    rows = [_table10_source_controller_preflight_row(base_dir, seed=seed)]
     for group, command, required_dirs in _table10_run_groups(
         base_dir=base_dir,
         expected_test_count=expected_test_count,
         best_of_n=best_of_n,
         num_trials=num_trials,
+        seed=seed,
         max_concurrency=max_concurrency,
         agent_llm=agent_llm,
         user_llm=user_llm,
@@ -654,6 +656,7 @@ def build_table10_tau3_run_preflight(
         "expected_test_count": expected_test_count,
         "best_of_n": best_of_n,
         "num_trials": num_trials,
+        "seed": seed,
         "max_concurrency": max_concurrency,
         "agent_llm": agent_llm,
         "user_llm": user_llm,
@@ -1016,6 +1019,7 @@ def _table10_run_groups(
     expected_test_count: int,
     best_of_n: int,
     num_trials: int,
+    seed: int,
     max_concurrency: int,
     agent_llm: str,
     user_llm: str,
@@ -1027,7 +1031,7 @@ def _table10_run_groups(
         f"TAU_PYTHON_BIN={tau_python_bin} PYTHON_BIN=python3 "
         f"AGENT_LLM={agent_llm} USER_LLM={user_llm} "
         f"NUM_TASKS={expected_test_count} NUM_TRIALS={num_trials} "
-        f"MAX_CONCURRENCY={max_concurrency} BEST_OF_N={best_of_n} "
+        f"SEED={seed} MAX_CONCURRENCY={max_concurrency} BEST_OF_N={best_of_n} "
         f"PARALLEL_DOMAINS={1 if parallel_domains else 0} "
         f"PARALLEL_METHOD_GROUPS={1 if parallel_method_groups else 0} "
         f"BASE_DIR={base_dir}"
@@ -1064,8 +1068,8 @@ def _table10_next_run_group(rows: Sequence[Mapping[str, object]]) -> Optional[Ma
     return None
 
 
-def _table10_source_controller_preflight_row(base_dir: Path) -> Dict[str, object]:
-    checkpoint = base_dir / "source_controller_seed0" / "generic_harness_ranker.json"
+def _table10_source_controller_preflight_row(base_dir: Path, *, seed: int = 0) -> Dict[str, object]:
+    checkpoint = base_dir / f"source_controller_seed{seed}" / "generic_harness_ranker.json"
     protocol = _source_controller_protocol(checkpoint)
     blockers = []
     if not checkpoint.exists():
@@ -1100,7 +1104,7 @@ def _table10_source_controller_preflight_row(base_dir: Path) -> Dict[str, object
         "api_required": False,
         "resume_safe": True,
         "effective_max_concurrency": 0,
-        "command": f"BASE_DIR={base_dir} scripts/run_table10_tau3.sh source-controller",
+        "command": f"BASE_DIR={base_dir} SEED={seed} scripts/run_table10_tau3.sh source-controller",
         "blockers": "; ".join(blockers),
         "source_controller_checkpoint": str(checkpoint),
         "source_controller_protocol": protocol.get("manifest", ""),

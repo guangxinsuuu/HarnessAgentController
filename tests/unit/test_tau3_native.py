@@ -331,6 +331,9 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertFalse(groups["build_and_audit"]["api_required"])
             self.assertTrue(manifest["parallel_domains"])
             self.assertFalse(manifest["parallel_method_groups"])
+            self.assertEqual(groups["native_full"]["effective_max_concurrency"], 4)
+            self.assertEqual(groups["full"]["effective_max_concurrency"], 4)
+            self.assertEqual(manifest["max_api_backed_effective_concurrency"], 4)
             self.assertEqual(manifest["recommended_next_run_group"], "native_full")
             self.assertIn("scripts/run_table10_tau3.sh native-full", manifest["recommended_next_command"])
             self.assertIn("scripts/run_table10_tau3.sh full", groups["full"]["command"])
@@ -355,6 +358,23 @@ class Tau3NativeTest(unittest.TestCase):
             manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
             self.assertEqual(manifest["recommended_next_run_group"], "legacy_solver_full")
             self.assertIn("scripts/run_table10_tau3.sh solver-full", manifest["recommended_next_command"])
+
+    def test_table10_preflight_reports_parallel_method_group_concurrency(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = build_table10_tau3_run_preflight(
+                root / "preflight",
+                base_dir=root / "runs",
+                expected_test_count=3,
+                max_concurrency=2,
+                parallel_domains=True,
+                parallel_method_groups=True,
+            )
+            groups = {row["run_group"]: row for row in manifest["rows"]}
+            self.assertEqual(groups["full"]["effective_max_concurrency"], 16)
+            self.assertEqual(groups["native_full"]["effective_max_concurrency"], 4)
+            self.assertEqual(groups["build_and_audit"]["effective_max_concurrency"], 0)
+            self.assertEqual(manifest["max_api_backed_effective_concurrency"], 16)
 
 
 def _sim(task_id: str, trial: int, reward: float) -> dict:

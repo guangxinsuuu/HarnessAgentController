@@ -538,6 +538,7 @@ def build_table10_tau3_run_preflight(
     ):
         group_methods = _methods_for_dirs(readiness["audit_rows"], required_dirs)
         group_ready = bool(group_methods) and all(bool(row["result_ready"]) for row in group_methods)
+        effective_concurrency = _table10_effective_concurrency(group, max_concurrency, parallel_domains, parallel_method_groups)
         rows.append(
             {
                 "run_group": group,
@@ -546,10 +547,12 @@ def build_table10_tau3_run_preflight(
                 "remaining_rows": sum(1 for row in group_methods if not bool(row["result_ready"])) if group_methods else len(required_dirs),
                 "api_required": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
                 "resume_safe": group in {"full", "native_full", "legacy_solver_full", "solver_canonical_full", "solver_canonical_certified_full"},
+                "effective_max_concurrency": effective_concurrency,
                 "command": command,
             }
         )
     next_run = _table10_next_run_group(rows)
+    max_api_concurrency = max((int(row["effective_max_concurrency"]) for row in rows if bool(row["api_required"])), default=0)
     csv_path = out_dir / "table10_tau3_run_preflight.csv"
     json_path = out_dir / "table10_tau3_run_preflight.json"
     md_path = out_dir / "table10_tau3_run_preflight.md"
@@ -571,6 +574,7 @@ def build_table10_tau3_run_preflight(
         "all_rows_result_ready": readiness["all_rows_result_ready"],
         "recommended_next_run_group": "" if next_run is None else next_run["run_group"],
         "recommended_next_command": "" if next_run is None else next_run["command"],
+        "max_api_backed_effective_concurrency": max_api_concurrency,
         "rows": rows,
         "produced_artifacts": [csv_path.name, json_path.name, md_path.name, "readiness"],
     }
@@ -911,6 +915,14 @@ def _table10_next_run_group(rows: Sequence[Mapping[str, object]]) -> Optional[Ma
     return None
 
 
+def _table10_effective_concurrency(group: str, max_concurrency: int, parallel_domains: bool, parallel_method_groups: bool) -> int:
+    if group == "build_and_audit":
+        return 0
+    domain_factor = 2 if parallel_domains else 1
+    method_factor = 4 if group == "full" and parallel_method_groups else 1
+    return max(1, int(max_concurrency)) * domain_factor * method_factor
+
+
 def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
     lines = [
         "# Table10 Tau3 Run Preflight",
@@ -920,6 +932,7 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
         f"Best-of-N: `{manifest['best_of_n']}`",
         f"Parallel domains: `{manifest['parallel_domains']}`",
         f"Parallel method groups: `{manifest['parallel_method_groups']}`",
+        f"Max API-backed effective concurrency: `{manifest['max_api_backed_effective_concurrency']}`",
         f"All rows ready: `{manifest['all_rows_result_ready']}`",
         f"Recommended next run group: `{manifest['recommended_next_run_group'] or 'none'}`",
         "",
@@ -945,6 +958,7 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
                 f"Ready: `{row['ready']}`",
                 f"API required: `{row['api_required']}`",
                 f"Resume safe: `{row['resume_safe']}`",
+                f"Effective max concurrency: `{row['effective_max_concurrency']}`",
                 f"Methods: {row['methods']}",
                 "",
                 "```bash",

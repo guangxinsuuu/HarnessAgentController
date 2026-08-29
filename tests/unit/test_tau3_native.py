@@ -314,6 +314,15 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(rows["Solver-derived canonical controller"]["result_ready"])
             self.assertEqual(rows["Solver-derived canonical controller"]["source_artifact"], str(canonical))
             self.assertEqual(rows["Solver-derived canonical controller"]["source_policy"], "official tau3 maintained protocol")
+            canonical_row = rows["Solver-derived canonical controller"]
+            self.assertTrue(canonical_row["source_generator_freeze_ready"])
+            self.assertTrue(canonical_row["source_generator_anonymized_tools"])
+            self.assertTrue(canonical_row["tool_identity_generalization_ready"])
+            self.assertTrue(canonical_row["contract_coverage_stress_ready"])
+            self.assertEqual(canonical_row["canonical_ranker_events"], 1)
+            self.assertIn("source generator frozen before target test", canonical_row["notes"])
+            self.assertIn("tool-identity stress delta=0.0", canonical_row["notes"])
+            self.assertIn("contract coverage black-box delta=0.0", canonical_row["notes"])
 
     def test_audits_table10_tau3_readiness_rejects_missing_compute_accounting(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

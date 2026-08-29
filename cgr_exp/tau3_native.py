@@ -540,6 +540,8 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
             if not _as_bool(row.get("selector_full_coverage")):
                 blockers.append("Best-of-N rollout coverage incomplete")
         command_manifest = _read_json_or_empty(row_dir / "tau3_native_command.json")
+        source_protocol: Dict[str, object] = {}
+        trace_summary: Dict[str, object] = {}
         if "canonical controller" in method:
             if not command_manifest.get("solver_ranker_checkpoint"):
                 blockers.append("solver_ranker_checkpoint missing")
@@ -581,7 +583,7 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
                 blockers.append("tool names used as features")
             if "certified filter" in method and trace_summary["certified_filter_enabled_events"] <= 0:
                 blockers.append("certified filter events missing")
-        audit_rows.append(_table10_audit_row(row_dir, row, blockers, expected_test_count))
+        audit_rows.append(_table10_audit_row(row_dir, row, blockers, expected_test_count, source_protocol=source_protocol, trace_summary=trace_summary))
     _write_csv(out_dir / "table10_tau3_readiness.csv", audit_rows)
     readiness = {
         "table": "Table 10 tau3 maintained-protocol evaluation",
@@ -903,10 +905,21 @@ def _table10_missing_compute_blockers(row: Mapping[str, object]) -> List[str]:
     return blockers
 
 
-def _table10_audit_row(row_dir: Path, row: Mapping[str, object], blockers: Sequence[str], expected_test_count: int) -> Dict[str, object]:
+def _table10_audit_row(
+    row_dir: Path,
+    row: Mapping[str, object],
+    blockers: Sequence[str],
+    expected_test_count: int,
+    *,
+    source_protocol: Optional[Mapping[str, object]] = None,
+    trace_summary: Optional[Mapping[str, object]] = None,
+) -> Dict[str, object]:
     expected_domain, expected_method = _table10_expected_label(row_dir)
     method = str(row.get("Method") or expected_method or "missing row")
     task_count = int(_as_float(row.get("task_count")) if not math.isnan(_as_float(row.get("task_count"))) else 0)
+    source_protocol = source_protocol or {}
+    trace_summary = trace_summary or {}
+    notes = _table10_evidence_notes(source_protocol, trace_summary)
     return {
         "Method": method,
         "Domain": row.get("Domain") or expected_domain,
@@ -916,9 +929,35 @@ def _table10_audit_row(row_dir: Path, row: Mapping[str, object], blockers: Seque
         "status": row.get("status", "missing"),
         "task_count": task_count,
         "expected_test_count": expected_test_count,
+        "source_generator_freeze_ready": source_protocol.get("source_generator_distribution_fixed_before_target_test_evaluation", ""),
+        "source_generator_anonymized_tools": source_protocol.get("source_generator_anonymized_tool_names", ""),
+        "tool_identity_generalization_ready": source_protocol.get("tool_identity_generalization_ready", ""),
+        "tool_identity_generalization_top1_delta": source_protocol.get("tool_identity_generalization_top1_delta", ""),
+        "contract_coverage_stress_ready": source_protocol.get("contract_coverage_stress_ready", ""),
+        "contract_coverage_black_box_top1_delta_from_full": source_protocol.get("contract_coverage_black_box_top1_delta_from_full", ""),
+        "canonical_ranker_events": trace_summary.get("canonical_ranker_events", ""),
+        "certified_prune_rate": trace_summary.get("certified_prune_rate", ""),
+        "notes": notes,
         "result_ready": not blockers,
         "result_blockers": "; ".join(blockers),
     }
+
+
+def _table10_evidence_notes(source_protocol: Mapping[str, object], trace_summary: Mapping[str, object]) -> str:
+    if not source_protocol and not trace_summary:
+        return ""
+    notes = []
+    if source_protocol.get("source_generator_distribution_fixed_before_target_test_evaluation"):
+        notes.append("source generator frozen before target test")
+    if source_protocol.get("source_generator_anonymized_tool_names"):
+        notes.append("source tools anonymized")
+    if source_protocol.get("tool_identity_generalization_ready"):
+        notes.append(f"tool-identity stress delta={source_protocol.get('tool_identity_generalization_top1_delta', '')}")
+    if source_protocol.get("contract_coverage_stress_ready"):
+        notes.append(f"contract coverage black-box delta={source_protocol.get('contract_coverage_black_box_top1_delta_from_full', '')}")
+    if trace_summary.get("canonical_ranker_events"):
+        notes.append(f"canonical ranker events={trace_summary.get('canonical_ranker_events')}")
+    return "; ".join(notes)
 
 
 def _read_json_or_empty(path: Path) -> Dict[str, object]:

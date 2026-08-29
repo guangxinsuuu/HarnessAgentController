@@ -307,6 +307,22 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(rows["Solver-derived canonical controller"]["source_artifact"], str(canonical))
             self.assertEqual(rows["Solver-derived canonical controller"]["source_policy"], "official tau3 maintained protocol")
 
+    def test_audits_table10_tau3_readiness_rejects_missing_compute_accounting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            native.mkdir()
+            _write_row(native, "retail", method="Native tool-calling rerun", task_count=2, status="complete")
+            row = json.loads((native / "q4_tau_row.json").read_text(encoding="utf-8"))
+            row["llm_calls"] = ""
+            row["tokens"] = ""
+            (native / "q4_tau_row.json").write_text(json.dumps(row), encoding="utf-8")
+            readiness = audit_table10_tau3_readiness(root / "audit", [native], expected_test_count=2)
+            self.assertFalse(readiness["all_rows_result_ready"])
+            blockers = readiness["audit_rows"][0]["result_blockers"]
+            self.assertIn("LLM call accounting missing", blockers)
+            self.assertIn("token accounting missing", blockers)
+
     def test_audits_table10_tau3_readiness_rejects_missing_canonical_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -486,6 +502,7 @@ def _write_row(path: Path, domain: str, method: str = "Native tool-calling rerun
                 "pass^4": 0.75,
                 "violations": 0.0,
                 "tool_calls": 3.0,
+                "llm_calls": 7.0,
                 "tokens": 123.0,
                 "wall_clock_seconds": 4.0,
                 "status": status,

@@ -513,6 +513,8 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
             blockers.append(status or "status missing")
         if task_count < expected_test_count:
             blockers.append(f"partial: {task_count}/{expected_test_count}")
+        if status == "complete":
+            blockers.extend(_table10_missing_compute_blockers(row))
         if method == "Best-of-N":
             if row.get("selector") != "official_reward_best_of_n":
                 blockers.append("Best-of-N selector evidence missing")
@@ -855,6 +857,19 @@ def _write_pending_row(out_dir: Path, *, method: str, domain: str, status: str) 
     (out_dir / "q4_tau_row.json").write_text(json.dumps(row, indent=2, sort_keys=True), encoding="utf-8")
     _write_csv(out_dir / "q4_tau_table.csv", [row])
     return {"row": row}
+
+
+def _table10_missing_compute_blockers(row: Mapping[str, object]) -> List[str]:
+    blockers = []
+    for key, label in (
+        ("tool_calls", "tool call accounting missing"),
+        ("llm_calls", "LLM call accounting missing"),
+        ("tokens", "token accounting missing"),
+        ("wall_clock_seconds", "wall-clock accounting missing"),
+    ):
+        if math.isnan(_as_float(row.get(key))):
+            blockers.append(label)
+    return blockers
 
 
 def _table10_audit_row(row_dir: Path, row: Mapping[str, object], blockers: Sequence[str], expected_test_count: int) -> Dict[str, object]:

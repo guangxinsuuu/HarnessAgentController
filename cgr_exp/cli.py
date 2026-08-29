@@ -1198,6 +1198,8 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'secret_safety_audit.csv'}")
+            if not manifest["secrets_ready"]:
+                raise SystemExit(f"secret safety audit failed: {manifest['finding_count']} finding(s)")
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

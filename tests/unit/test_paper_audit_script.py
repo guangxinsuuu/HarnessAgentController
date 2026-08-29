@@ -144,6 +144,16 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("All Q4 tau/tau2 rows remain pending", text)
         self.assertIn("Only rows marked ready", text)
 
+    def test_tau3_runbook_documents_ten_row_paper_audit(self) -> None:
+        text = Path("docs/tau3_runbook.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/run_paper_audits.sh tau3", text)
+        self.assertIn("10 maintained-protocol Table10 rows", text)
+        self.assertIn("native retail and airline", text)
+        self.assertIn("Best-of-N retail and airline", text)
+        self.assertIn("legacy solver-controller retail and airline", text)
+        self.assertIn("canonical solver-controller retail and airline", text)
+        self.assertIn("certified canonical solver-controller retail and airline", text)
+
 
 if __name__ == "__main__":
     unittest.main()

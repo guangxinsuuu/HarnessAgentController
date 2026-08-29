@@ -289,6 +289,22 @@ BEST_OF_N=4 \
 scripts/run_table10_tau3.sh build
 ```
 
+For the paper-wide readiness audit, run:
+
+```bash
+TAU3_TABLE_BASE_DIR=runs/table10_tau3 \
+TEST_COUNT=100 \
+scripts/run_paper_audits.sh tau3
+```
+
+This audits the 10 maintained-protocol Table10 rows:
+
+- native retail and airline
+- Best-of-N retail and airline
+- legacy solver-controller retail and airline
+- canonical solver-controller retail and airline
+- certified canonical solver-controller retail and airline
+
 Promote only rows whose readiness audit has `result_ready=True`.
 Canonical rows must show evidence for:
 

@@ -442,6 +442,104 @@ def build_table10_tau3_results(out_dir: Path, row_dirs: Sequence[Path], expected
     return manifest
 
 
+def build_tau3_best_of_n_from_native(out_dir: Path, native_dir: Path, n: int = 4, method: Optional[str] = None) -> Dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    n = max(1, int(n))
+    result_path = _find_official_results(native_dir)
+    if result_path is None:
+        return _write_pending_row(out_dir, method=method or f"Best-of-{n}", domain="", status="native results missing")
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    sims = _load_simulations(result_path, data)
+    by_task: Dict[str, List[Mapping[str, object]]] = {}
+    for sim in sims:
+        task_id = str(sim.get("task_id", ""))
+        if task_id:
+            by_task.setdefault(task_id, []).append(sim)
+    selected_rows = []
+    success_count = 0
+    total_tool_calls = 0
+    total_tokens = 0
+    token_observed = False
+    total_llm_calls = 0
+    total_wall = 0.0
+    violations = 0
+    for task_id, task_sims in sorted(by_task.items()):
+        candidates = task_sims[:n]
+        if not candidates:
+            continue
+        selected = max(candidates, key=lambda sim: (_reward(sim), -_as_float(sim.get("duration")) if not math.isnan(_as_float(sim.get("duration"))) else 0.0))
+        reward = _reward(selected)
+        success = reward >= 1.0 - 1e-6
+        success_count += 1 if success else 0
+        selected_term = str(selected.get("termination_reason", ""))
+        if selected_term not in {"user_stop", "agent_stop"} and not success:
+            violations += 1
+        task_tokens = 0
+        task_token_observed = False
+        task_calls = 0
+        task_tool_calls = 0
+        task_wall = 0.0
+        for sim in candidates:
+            messages = sim.get("messages") or []
+            task_tool_calls += _count_agent_tool_calls(messages)
+            tokens, calls = _token_usage(messages)
+            if tokens is not None:
+                task_tokens += tokens
+                task_token_observed = True
+            task_calls += calls
+            duration = _as_float(sim.get("duration"))
+            if not math.isnan(duration):
+                task_wall += duration
+        total_tool_calls += task_tool_calls
+        total_llm_calls += task_calls
+        total_wall += task_wall
+        if task_token_observed:
+            total_tokens += task_tokens
+            token_observed = True
+        selected_rows.append(
+            {
+                "Domain": _domain_from_results(data),
+                "Method": method or f"Best-of-{n}",
+                "task_id": task_id,
+                "selected_reward": reward,
+                "success": 1 if success else 0,
+                "sampled_rollouts": len(candidates),
+                "tool_calls": task_tool_calls,
+                "tokens": "" if not task_token_observed else task_tokens,
+                "llm_calls": task_calls,
+                "duration_seconds": task_wall,
+                "selected_termination_reason": selected_term,
+            }
+        )
+    task_count = len(selected_rows)
+    aggregate_row = {
+        "Domain": _domain_from_results(data),
+        "Method": method or f"Best-of-{n}",
+        "pass^1": success_count / max(task_count, 1),
+        "pass^4": "",
+        "violations": violations / max(task_count, 1),
+        "tool_calls": total_tool_calls / max(task_count, 1),
+        "llm_calls": total_llm_calls / max(task_count, 1),
+        "tokens": "" if not token_observed else total_tokens / max(task_count, 1),
+        "wall_clock_seconds": total_wall / max(task_count, 1),
+        "status": "complete" if task_count else "pending",
+        "source_url": TAU2_BENCH_SOURCE_URL,
+        "preferred_current_source_url": TAU2_BENCH_SOURCE_URL,
+        "source_revision": _tau2_revision(),
+        "official_results": str(result_path),
+        "task_count": task_count,
+        "simulation_count": sum(len(values[:n]) for values in by_task.values()),
+        "avg_rollouts_per_task": 0.0 if task_count == 0 else sum(row["sampled_rollouts"] for row in selected_rows) / task_count,
+        "notes": "Best-of-N row reuses native tau2 rollouts and selects by official evaluator reward; compute counts all sampled rollouts.",
+    }
+    _write_csv(out_dir / "q4_tau_per_instance.csv", selected_rows)
+    _write_csv(out_dir / "q4_tau_table.csv", [aggregate_row])
+    (out_dir / "q4_tau_row.json").write_text(json.dumps(aggregate_row, indent=2, sort_keys=True), encoding="utf-8")
+    manifest = _tau_manifest(method or f"Best-of-{n}", aggregate_row["Domain"], task_count, n, result_path)
+    (out_dir / "q4_tau_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return {"row": aggregate_row, "manifest": manifest, "produced_artifacts": ["q4_tau_row.json", "q4_tau_table.csv", "q4_tau_per_instance.csv", "q4_tau_manifest.json"]}
+
+
 def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     event_count = 0
@@ -556,11 +654,29 @@ def _write_pending_row(out_dir: Path, *, method: str, domain: str, status: str) 
 
 def _tau_manifest(method: str, domain: str, task_count: int, num_trials: int, official_results: Path) -> Dict[str, object]:
     evidence = q4_tau_source_evidence("tau2-bench")
-    method_primitives = {
+    solver_like = method in {
+        "Solver-derived controller",
+        "Solver-derived canonical controller",
+        "Solver-derived canonical controller + certified filter",
+    }
+    method_primitives_by_name = {
         "Native tool-calling rerun": ["single_native_agent_rollout"],
         "Best-of-N": ["multiple_independent_native_rollouts", "benchmark_compatible_selection"],
         "Solver-derived controller": ["source_solver_training", "zero_shot_target_tool_transfer", "native_tool_state_preserved"],
-    }.get(method, ["single_native_agent_rollout"])
+        "Solver-derived canonical controller": ["source_workflow_training", "canonical_harness_adapter", "zero_shot_target_tool_transfer", "native_tool_state_preserved"],
+        "Solver-derived canonical controller + certified filter": [
+            "source_workflow_training",
+            "canonical_harness_adapter",
+            "certified_interface_filtering",
+            "zero_shot_target_tool_transfer",
+            "native_tool_state_preserved",
+        ],
+    }
+    method_primitives = method_primitives_by_name.get(method)
+    if method_primitives is None and method.startswith("Best-of-"):
+        method_primitives = method_primitives_by_name["Best-of-N"]
+    if method_primitives is None:
+        method_primitives = ["single_native_agent_rollout"]
     return {
         "benchmark": "tau3-bench",
         "native_protocol_preserved": True,
@@ -603,7 +719,7 @@ def _tau_manifest(method: str, domain: str, task_count: int, num_trials: int, of
             method: {
                 "method_primitives": method_primitives,
                 "training_eval_overlap": False,
-                "zero_shot_transfer": True if method == "Solver-derived controller" else None,
+                "zero_shot_transfer": True if solver_like else None,
             }
         },
     }

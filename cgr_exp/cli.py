@@ -45,7 +45,7 @@ from cgr_exp.q4_tau_adapter_contract import build_q4_tau_adapter_contract
 from cgr_exp.table5_q2 import audit_table5_q2_readiness, build_table5_q2_results
 from cgr_exp.table_q4_tau import audit_q4_tau_readiness, build_q4_tau_results
 from cgr_exp.table6_authority import run_table6_authority_experiment
-from cgr_exp.tau3_native import Tau3RunConfig, audit_tau3_controller_trace, build_table10_tau3_results, run_tau3_native, tau3_preflight
+from cgr_exp.tau3_native import Tau3RunConfig, audit_tau3_controller_trace, build_tau3_best_of_n_from_native, build_table10_tau3_results, run_tau3_native, tau3_preflight
 
 COMMANDS = [
     "run-game24-offline",
@@ -90,6 +90,7 @@ COMMANDS = [
     "audit-table-q4-tau",
     "preflight-tau3-native",
     "run-tau3-native",
+    "build-tau3-best-of-n",
     "build-table10-tau3",
     "audit-tau3-controller-trace",
     "run-table6-authority",
@@ -361,6 +362,9 @@ def main() -> None:
         if name == "build-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
+        if name == "build-tau3-best-of-n":
+            p.add_argument("--native-dir", type=Path, required=True)
+            p.add_argument("--n", type=int, default=4)
         if name == "audit-tau3-controller-trace":
             p.add_argument("--trace-path", type=Path, required=True)
         if name == "build-q4-tau-adapter-contract":
@@ -1197,6 +1201,21 @@ def main() -> None:
                 "pass^1": row.get("pass^1"),
                 "pass^4": row.get("pass^4"),
                 "produced_artifacts": manifest["produced_artifacts"],
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'q4_tau_table.csv'}")
+            return
+        if args.command == "build-tau3-best-of-n":
+            manifest = build_tau3_best_of_n_from_native(args.output_dir, args.native_dir, n=args.n, method=f"Best-of-{args.n}")
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "native_dir": str(args.native_dir),
+                "n": args.n,
+                "status": manifest["row"].get("status", "complete"),
+                "task_count": manifest["row"].get("task_count", 0),
+                "produced_artifacts": manifest.get("produced_artifacts", []),
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'q4_tau_table.csv'}")

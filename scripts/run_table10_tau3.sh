@@ -18,10 +18,11 @@ SOURCE_TRAIN_COUNT="${SOURCE_TRAIN_COUNT:-80}"
 SOURCE_VALIDATION_COUNT="${SOURCE_VALIDATION_COUNT:-30}"
 SOURCE_EPOCHS="${SOURCE_EPOCHS:-20}"
 SOURCE_MAX_STATES="${SOURCE_MAX_STATES:-200}"
+BEST_OF_N="${BEST_OF_N:-4}"
 
 usage() {
   cat <<'EOF'
-scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|audit-solver-canonical|audit-solver-canonical-certified|build]
+scripts/run_table10_tau3.sh [preflight|source-controller|native-smoke|native-full|best-of-n|solver-smoke|solver-full|solver-canonical-smoke|solver-canonical-full|solver-canonical-certified-smoke|solver-canonical-certified-full|audit-solver-canonical|audit-solver-canonical-certified|build]
 
 Environment overrides:
   PYTHON_BIN=python3
@@ -36,6 +37,7 @@ Environment overrides:
   BASE_DIR=runs/table10_tau3
   SOURCE_CONTROLLER_DIR=runs/table10_tau3/source_controller_seed0
   SOLVER_RANKER_CHECKPOINT=runs/table10_tau3/source_controller_seed0/generic_harness_ranker.json
+  BEST_OF_N=4
 
 For OpenAI via tau2/litellm, set OPENAI_API_KEY. If you only have
 CGR_LLM_API_KEY, export OPENAI_API_KEY="$CGR_LLM_API_KEY" first.
@@ -97,6 +99,19 @@ run_source_controller() {
     --overwrite
 }
 
+build_best_of_n() {
+  "${PYTHON_BIN}" -m cgr_exp.cli build-tau3-best-of-n \
+    --output-dir "${BASE_DIR}/best_of_${BEST_OF_N}_retail" \
+    --native-dir "${BASE_DIR}/native_retail" \
+    --n "${BEST_OF_N}" \
+    --overwrite
+  "${PYTHON_BIN}" -m cgr_exp.cli build-tau3-best-of-n \
+    --output-dir "${BASE_DIR}/best_of_${BEST_OF_N}_airline" \
+    --native-dir "${BASE_DIR}/native_airline" \
+    --n "${BEST_OF_N}" \
+    --overwrite
+}
+
 build_table() {
   "${PYTHON_BIN}" -m cgr_exp.cli build-table10-tau3 \
     --output-dir "${BASE_DIR}/table10_current" \
@@ -104,6 +119,8 @@ build_table() {
     --row-dirs \
       "${BASE_DIR}/native_retail" \
       "${BASE_DIR}/native_airline" \
+      "${BASE_DIR}/best_of_${BEST_OF_N}_retail" \
+      "${BASE_DIR}/best_of_${BEST_OF_N}_airline" \
       "${BASE_DIR}/solver_retail" \
       "${BASE_DIR}/solver_airline" \
       "${BASE_DIR}/solver_canonical_retail" \
@@ -151,7 +168,11 @@ case "${1:-}" in
     run_preflight
     run_native_domain retail "${NUM_TASKS}" native
     run_native_domain airline "${NUM_TASKS}" native
+    build_best_of_n
     build_table
+    ;;
+  best-of-n)
+    build_best_of_n
     ;;
   solver-smoke)
     run_preflight

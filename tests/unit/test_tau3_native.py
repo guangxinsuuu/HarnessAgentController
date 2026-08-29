@@ -9,6 +9,7 @@ from cgr_exp.tau3_native import (
     Tau3RunConfig,
     aggregate_tau3_official_results,
     audit_tau3_controller_trace,
+    build_tau3_best_of_n_from_native,
     build_tau2_run_command,
     build_table10_tau3_results,
     run_tau3_native,
@@ -128,6 +129,37 @@ class Tau3NativeTest(unittest.TestCase):
             )
             self.assertEqual(canonical["row"]["Method"], "Solver-derived canonical controller")
             self.assertEqual(certified["row"]["Method"], "Solver-derived canonical controller + certified filter")
+
+    def test_builds_best_of_n_from_native_rollouts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native = root / "native"
+            official = native / "official_tau2_results"
+            official.mkdir(parents=True)
+            (official / "results.json").write_text(
+                json.dumps(
+                    {
+                        "info": {"environment_info": {"domain_name": "retail"}},
+                        "simulations": [
+                            _sim("0", 0, 0.0),
+                            _sim("0", 1, 1.0),
+                            _sim("1", 0, 0.0),
+                            _sim("1", 1, 0.0),
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifest = build_tau3_best_of_n_from_native(root / "best", native, n=2, method="Best-of-2")
+            row = manifest["row"]
+            self.assertEqual(row["Method"], "Best-of-2")
+            self.assertAlmostEqual(row["pass^1"], 0.5)
+            self.assertEqual(row["task_count"], 2)
+            self.assertEqual(row["simulation_count"], 4)
+            self.assertAlmostEqual(row["tokens"], 42.0)
+            self.assertAlmostEqual(row["tool_calls"], 2.0)
+            self.assertIn("benchmark_compatible_selection", manifest["manifest"]["method_protocols"]["Best-of-2"]["method_primitives"])
+            self.assertTrue((root / "best" / "q4_tau_table.csv").exists())
 
     def test_audits_tau3_controller_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

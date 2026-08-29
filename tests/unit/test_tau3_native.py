@@ -290,6 +290,10 @@ class Tau3NativeTest(unittest.TestCase):
             run_mock.assert_called_once()
             command_manifest = json.loads((root / "native" / "tau3_native_command.json").read_text(encoding="utf-8"))
             self.assertTrue(command_manifest["resume_from_partial_results"])
+            self.assertTrue(command_manifest["resume_safe"])
+            self.assertFalse(command_manifest["force_rerun"])
+            self.assertTrue(command_manifest["overwrite_is_output_dir_guard_only"])
+            self.assertIn("--force is required", command_manifest["resume_note"])
             self.assertEqual(command_manifest["existing_task_count"], 1)
             self.assertEqual(command_manifest["expected_task_count"], 2)
 
@@ -705,6 +709,8 @@ class Tau3NativeTest(unittest.TestCase):
             text = (root / "preflight" / "table10_tau3_run_preflight.md").read_text(encoding="utf-8")
             self.assertIn("API key present: `False`", text)
             self.assertIn("Warning: recommended next run needs `OPENAI_API_KEY`", text)
+            self.assertIn("Resume policy:", text)
+            self.assertIn("`--force` is the opt-in switch", text)
 
     def test_table10_preflight_reports_parallel_method_group_concurrency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

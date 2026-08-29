@@ -71,7 +71,12 @@ def train_generic_harness_ranker(tasks: Sequence[WorkflowTask], epochs: int = 20
     return ranker, pairs
 
 
-def evaluate_workflow_ranker(tasks: Sequence[WorkflowTask], ranker: GenericHarnessRanker, max_states_per_task: int = 200) -> Dict[str, object]:
+def evaluate_workflow_ranker(
+    tasks: Sequence[WorkflowTask],
+    ranker: GenericHarnessRanker,
+    max_states_per_task: int = 200,
+    contract_coverage: str = "full",
+) -> Dict[str, object]:
     total = 0
     top1 = 0
     random_top1 = 0.0
@@ -88,7 +93,7 @@ def evaluate_workflow_ranker(tasks: Sequence[WorkflowTask], ranker: GenericHarne
             if len(actions) < 2:
                 continue
             oracle_best = rank_actions_by_oracle(task, state, actions)[0].tool_index
-            state_features = workflow_runtime_features(task, state)
+            state_features = _apply_contract_coverage(workflow_runtime_features(task, state), contract_coverage)
             scored = []
             for action in actions:
                 action_features = workflow_action_features(task, state, action)
@@ -112,8 +117,53 @@ def evaluate_workflow_ranker(tasks: Sequence[WorkflowTask], ranker: GenericHarne
         "decision_count": total,
         "top1_accuracy": 0.0 if total == 0 else top1 / total,
         "random_expected_top1": 0.0 if total == 0 else random_top1 / total,
+        "contract_coverage": contract_coverage,
         "by_family": family_rows,
     }
+
+
+def _apply_contract_coverage(features, coverage: str):
+    if coverage == "full":
+        return features
+    if coverage == "partial":
+        return type(features)(
+            verified_progress_frac=0.0,
+            verified_progress_known_mask=0.0,
+            remaining_requirement_frac=0.0,
+            remaining_requirement_known_mask=0.0,
+            observed_fact_frac=features.observed_fact_frac,
+            observed_fact_known_mask=features.observed_fact_known_mask,
+            remaining_turn_budget_frac=features.remaining_turn_budget_frac,
+            remaining_tool_budget_frac=features.remaining_tool_budget_frac,
+            constraint_pressure=features.constraint_pressure,
+            constraint_pressure_known_mask=features.constraint_pressure_known_mask,
+            valid_action_ratio=features.valid_action_ratio,
+            previous_failure_rate=features.previous_failure_rate,
+            stagnation_steps_frac=features.stagnation_steps_frac,
+            uncertainty_score=max(features.uncertainty_score, 0.5),
+            read_write_balance=features.read_write_balance,
+            irreversible_action_used=features.irreversible_action_used,
+        )
+    if coverage == "black_box":
+        return type(features)(
+            verified_progress_frac=0.0,
+            verified_progress_known_mask=0.0,
+            remaining_requirement_frac=0.0,
+            remaining_requirement_known_mask=0.0,
+            observed_fact_frac=0.0,
+            observed_fact_known_mask=0.0,
+            remaining_turn_budget_frac=features.remaining_turn_budget_frac,
+            remaining_tool_budget_frac=features.remaining_tool_budget_frac,
+            constraint_pressure=0.0,
+            constraint_pressure_known_mask=0.0,
+            valid_action_ratio=features.valid_action_ratio,
+            previous_failure_rate=features.previous_failure_rate,
+            stagnation_steps_frac=features.stagnation_steps_frac,
+            uncertainty_score=1.0,
+            read_write_balance=features.read_write_balance,
+            irreversible_action_used=features.irreversible_action_used,
+        )
+    raise ValueError(f"unknown contract coverage: {coverage}")
 
 
 def run_workflow_source_validation(
@@ -135,7 +185,39 @@ def run_workflow_source_validation(
     validation_pairs = make_workflow_ranking_pairs(validation_records)
     eval_metrics = evaluate_workflow_ranker(validation_tasks, ranker, max_states_per_task=max_states_per_task)
     named_tool_eval_metrics = evaluate_workflow_ranker(named_tool_validation_tasks, ranker, max_states_per_task=max_states_per_task)
+    partial_contract_eval_metrics = evaluate_workflow_ranker(
+        validation_tasks,
+        ranker,
+        max_states_per_task=max_states_per_task,
+        contract_coverage="partial",
+    )
+    black_box_contract_eval_metrics = evaluate_workflow_ranker(
+        validation_tasks,
+        ranker,
+        max_states_per_task=max_states_per_task,
+        contract_coverage="black_box",
+    )
     tool_identity_top1_delta = abs(float(eval_metrics["top1_accuracy"]) - float(named_tool_eval_metrics["top1_accuracy"]))
+    contract_coverage_rows = [
+        {
+            "condition": "full_contract",
+            "top1_accuracy": eval_metrics["top1_accuracy"],
+            "random_expected_top1": eval_metrics["random_expected_top1"],
+            "decision_count": eval_metrics["decision_count"],
+        },
+        {
+            "condition": "partial_contract_missing_progress_requirements",
+            "top1_accuracy": partial_contract_eval_metrics["top1_accuracy"],
+            "random_expected_top1": partial_contract_eval_metrics["random_expected_top1"],
+            "decision_count": partial_contract_eval_metrics["decision_count"],
+        },
+        {
+            "condition": "black_box_contract_missing_semantic_state",
+            "top1_accuracy": black_box_contract_eval_metrics["top1_accuracy"],
+            "random_expected_top1": black_box_contract_eval_metrics["random_expected_top1"],
+            "decision_count": black_box_contract_eval_metrics["decision_count"],
+        },
+    ]
     manifest = {
         "benchmark": "canonical_harness_source_workflow_validation",
         "seed": seed,
@@ -154,6 +236,15 @@ def run_workflow_source_validation(
             "top1_absolute_delta": tool_identity_top1_delta,
             "ready": tool_identity_top1_delta <= 1e-12,
             "stress_protocol": "same validation task seed with anonymous vs semantic tool names; canonical features exclude tool identity",
+        },
+        "contract_coverage_stress": {
+            "ready": all(int(row["decision_count"]) == int(eval_metrics["decision_count"]) for row in contract_coverage_rows),
+            "full_contract_top1_accuracy": eval_metrics["top1_accuracy"],
+            "partial_contract_top1_accuracy": partial_contract_eval_metrics["top1_accuracy"],
+            "black_box_contract_top1_accuracy": black_box_contract_eval_metrics["top1_accuracy"],
+            "partial_contract_top1_delta_from_full": float(eval_metrics["top1_accuracy"]) - float(partial_contract_eval_metrics["top1_accuracy"]),
+            "black_box_contract_top1_delta_from_full": float(eval_metrics["top1_accuracy"]) - float(black_box_contract_eval_metrics["top1_accuracy"]),
+            "stress_protocol": "evaluate the frozen source-trained controller under explicit known-mask degradation without changing labels, tasks, or ranker weights",
         },
         "contract": canonical_contract_manifest(),
         "source_generator": source_generator_manifest(seed, train_count),
@@ -197,6 +288,7 @@ def run_workflow_source_validation(
             },
         ],
     )
+    _write_csv(out_dir / "canonical_harness_contract_coverage_stress.csv", contract_coverage_rows)
     return manifest
 
 

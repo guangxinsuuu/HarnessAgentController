@@ -420,6 +420,9 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
     tool_identity = data.get("tool_identity_generalization")
     if not isinstance(tool_identity, Mapping):
         tool_identity = {}
+    contract_coverage = data.get("contract_coverage_stress")
+    if not isinstance(contract_coverage, Mapping):
+        contract_coverage = {}
     protocol.update(
         {
             "benchmark": data.get("benchmark", ""),
@@ -437,6 +440,8 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
             "source_generator_anonymized_tool_names": _as_bool(source_generator.get("anonymized_tool_names")),
             "tool_identity_generalization_ready": _as_bool(tool_identity.get("ready")),
             "tool_identity_generalization_top1_delta": tool_identity.get("top1_absolute_delta", ""),
+            "contract_coverage_stress_ready": _as_bool(contract_coverage.get("ready")),
+            "contract_coverage_black_box_top1_delta_from_full": contract_coverage.get("black_box_contract_top1_delta_from_full", ""),
             "train_count": data.get("train_count", ""),
             "validation_count": data.get("validation_count", ""),
             "seed": data.get("seed", ""),
@@ -559,6 +564,8 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
                 blockers.append("source generator tool-name anonymization evidence missing")
             if not source_protocol.get("tool_identity_generalization_ready"):
                 blockers.append("tool-identity generalization stress missing or failed")
+            if not source_protocol.get("contract_coverage_stress_ready"):
+                blockers.append("contract coverage stress missing or failed")
             trace_summary = audit_tau3_controller_trace(out_dir / f"{row_dir.name}_trace_audit", row_dir / "tau3_controller_trace.jsonl")
             if trace_summary["event_count"] <= 0:
                 blockers.append("controller trace missing")

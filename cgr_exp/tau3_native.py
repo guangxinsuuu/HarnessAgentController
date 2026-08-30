@@ -29,6 +29,8 @@ TRACE_AUDIT_COLUMNS = [
     "event_count",
     "canonical_ranker_events",
     "heuristic_events",
+    "greedy_content_passthrough_events",
+    "fallback_greedy_events",
     "ranker_checkpoint_loaded_events",
     "certified_filter_enabled_events",
     "certified_pruned_candidates",
@@ -1061,6 +1063,8 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
     event_count = 0
     canonical_events = 0
     heuristic_events = 0
+    greedy_content_passthrough_events = 0
+    fallback_greedy_events = 0
     ranker_loaded = 0
     certified_filter_enabled_events = 0
     certified_pruned_candidates = 0
@@ -1086,6 +1090,8 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
             mode = str(row.get("scoring_mode", ""))
             canonical_events += 1 if mode == "canonical_ranker" else 0
             heuristic_events += 1 if mode == "heuristic" else 0
+            greedy_content_passthrough_events += 1 if mode == "greedy_content_passthrough" else 0
+            fallback_greedy_events += 1 if mode == "fallback_greedy" else 0
             ranker_loaded += 1 if row.get("ranker_checkpoint_loaded") else 0
             certified_filter_enabled_events += 1 if row.get("certified_filter_enabled") else 0
             pruned_count = _as_float(row.get("certified_pruned_count"))
@@ -1116,6 +1122,8 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
         "event_count": event_count,
         "canonical_ranker_events": canonical_events,
         "heuristic_events": heuristic_events,
+        "greedy_content_passthrough_events": greedy_content_passthrough_events,
+        "fallback_greedy_events": fallback_greedy_events,
         "ranker_checkpoint_loaded_events": ranker_loaded,
         "certified_filter_enabled_events": certified_filter_enabled_events,
         "certified_pruned_candidates": certified_pruned_candidates,
@@ -1253,6 +1261,8 @@ def _table10_audit_row(
         "tau3_adapter_train_trajectories_hidden": adapter_protocol.get("uses_tau3_train_trajectories", "") is False,
         "tau3_adapter_oracle_hidden": adapter_protocol.get("oracle_visible_to_controller", "") is False,
         "canonical_ranker_events": trace_summary.get("canonical_ranker_events", ""),
+        "greedy_content_passthrough_events": trace_summary.get("greedy_content_passthrough_events", ""),
+        "fallback_greedy_events": trace_summary.get("fallback_greedy_events", ""),
         "ranker_checkpoint_loaded_events": trace_summary.get("ranker_checkpoint_loaded_events", ""),
         "canonical_feature_schema_hash": trace_summary.get("canonical_feature_schema_hash", ""),
         "canonical_feature_schema_match": trace_summary.get("canonical_feature_schema_match", ""),
@@ -1280,6 +1290,10 @@ def _table10_evidence_notes(source_protocol: Mapping[str, object], trace_summary
         notes.append(f"contract coverage black-box delta={source_protocol.get('contract_coverage_black_box_top1_delta_from_full', '')}")
     if trace_summary.get("canonical_ranker_events"):
         notes.append(f"canonical ranker events={trace_summary.get('canonical_ranker_events')}")
+    if trace_summary.get("greedy_content_passthrough_events"):
+        notes.append(f"greedy content passthrough events={trace_summary.get('greedy_content_passthrough_events')}")
+    if trace_summary.get("fallback_greedy_events"):
+        notes.append(f"fallback greedy events={trace_summary.get('fallback_greedy_events')}")
     if _as_float(trace_summary.get("candidate_sample_failures")) > 0:
         notes.append(f"candidate sample failures after retries={trace_summary.get('candidate_sample_failures')}")
     return "; ".join(notes)

@@ -462,17 +462,43 @@ class Tau3NativeTest(unittest.TestCase):
                         ],
                     }
                 )
+                + "\n"
+                + json.dumps(
+                    {
+                        "event": "tau3_controller_selection",
+                        "scoring_mode": "greedy_content_passthrough",
+                        "canonical_contract": contract["contract"],
+                        "canonical_feature_schema_hash": contract["feature_schema_hash"],
+                        "canonical_feature_count": len(canonical_feature_names()),
+                        "ranker_checkpoint_loaded": True,
+                        "candidate_scores": [{"candidate_index": 0, "score": None, "action_type": "respond"}],
+                    }
+                )
+                + "\n"
+                + json.dumps(
+                    {
+                        "event": "tau3_controller_selection",
+                        "scoring_mode": "fallback_greedy",
+                        "canonical_contract": contract["contract"],
+                        "canonical_feature_schema_hash": contract["feature_schema_hash"],
+                        "canonical_feature_count": len(canonical_feature_names()),
+                        "ranker_checkpoint_loaded": True,
+                        "candidate_scores": [{"candidate_index": 0, "score": None, "action_type": "terminate"}],
+                    }
+                )
                 + "\n",
                 encoding="utf-8",
             )
             manifest = audit_tau3_controller_trace(root / "audit", trace)
-            self.assertEqual(manifest["event_count"], 1)
+            self.assertEqual(manifest["event_count"], 3)
             self.assertEqual(manifest["canonical_ranker_events"], 1)
-            self.assertEqual(manifest["ranker_checkpoint_loaded_events"], 1)
+            self.assertEqual(manifest["greedy_content_passthrough_events"], 1)
+            self.assertEqual(manifest["fallback_greedy_events"], 1)
+            self.assertEqual(manifest["ranker_checkpoint_loaded_events"], 3)
             self.assertEqual(manifest["certified_filter_enabled_events"], 1)
             self.assertEqual(manifest["certified_pruned_candidates"], 1)
             self.assertEqual(manifest["candidate_sample_failures"], 1)
-            self.assertAlmostEqual(manifest["certified_prune_rate"], 0.5)
+            self.assertAlmostEqual(manifest["certified_prune_rate"], 0.25)
             self.assertFalse(manifest["oracle_visible_to_controller"])
             self.assertFalse(manifest["tool_names_used_as_features"])
             self.assertEqual(manifest["canonical_contract"], "CanonicalHarnessContractV1")
@@ -482,6 +508,8 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue((root / "audit" / "tau3_controller_trace_audit.csv").exists())
             csv_text = (root / "audit" / "tau3_controller_trace_audit.csv").read_text(encoding="utf-8")
             self.assertIn("candidate_sample_failures", csv_text.splitlines()[0])
+            self.assertIn("greedy_content_passthrough_events", csv_text.splitlines()[0])
+            self.assertIn("fallback_greedy_events", csv_text.splitlines()[0])
             self.assertIn(",1,", csv_text)
 
     def test_audits_table10_tau3_readiness_with_canonical_trace(self) -> None:

@@ -567,15 +567,23 @@ def _tau3_method_label(config: Tau3RunConfig) -> str:
 
 def build_table10_tau3_results(out_dir: Path, row_dirs: Sequence[Path], expected_test_count: int = 100) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
+    readiness = audit_table10_tau3_readiness(out_dir / "readiness", row_dirs, expected_test_count=expected_test_count)
+    readiness_by_dir = {str(row.get("row_dir", "")): row for row in readiness["audit_rows"]}
     rows: List[Dict[str, object]] = []
     for row_dir in row_dirs:
         row_path = row_dir / "q4_tau_row.json"
         if not row_path.exists():
             domain, method = _table10_expected_label(row_dir)
-            rows.append(_table10_row({"Domain": domain, "Method": method, "status": "missing: q4_tau_row.json", "official_results": str(row_dir)}, expected_test_count))
+            rows.append(
+                _table10_row(
+                    {"Domain": domain, "Method": method, "status": "missing: q4_tau_row.json", "official_results": str(row_dir)},
+                    expected_test_count,
+                    readiness_by_dir.get(str(row_dir)),
+                )
+            )
             continue
         row = json.loads(row_path.read_text(encoding="utf-8"))
-        rows.append(_table10_row(row, expected_test_count))
+        rows.append(_table10_row(row, expected_test_count, readiness_by_dir.get(str(row_dir))))
     csv_path = out_dir / "table10_tau3_results.csv"
     tex_path = out_dir / "table10_tau3_results.tex"
     _write_csv(csv_path, rows)
@@ -586,6 +594,10 @@ def build_table10_tau3_results(out_dir: Path, row_dirs: Sequence[Path], expected
         "source_url": TAU2_BENCH_SOURCE_URL,
         "source_revision": _tau2_revision(),
         "expected_test_count": expected_test_count,
+        "strict_readiness_policy": True,
+        "all_rows_result_ready": readiness["all_rows_result_ready"],
+        "pending_or_partial_rows": readiness["pending_or_partial_rows"],
+        "readiness_dir": str(out_dir / "readiness"),
         "row_dirs": [str(path) for path in row_dirs],
         "rows": rows,
         "produced_artifacts": [csv_path.name, tex_path.name],
@@ -1945,22 +1957,29 @@ def _tau2_revision() -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def _table10_row(row: Mapping[str, object], expected_test_count: int) -> Dict[str, object]:
+def _table10_row(row: Mapping[str, object], expected_test_count: int, readiness_row: Optional[Mapping[str, object]] = None) -> Dict[str, object]:
     task_count = int(_as_float(row.get("task_count")) if not math.isnan(_as_float(row.get("task_count"))) else 0)
     status = str(row.get("status", ""))
     if status == "complete" and task_count < expected_test_count:
         status = f"partial: {task_count}/{expected_test_count}"
+    readiness_ready = readiness_row.get("result_ready") if readiness_row else ""
+    readiness_blockers = str(readiness_row.get("result_blockers", "")) if readiness_row else ""
+    readiness_blocked = status == "complete" and readiness_ready is False
+    if readiness_blocked:
+        status = "blocked_by_readiness"
     return {
         "Domain": row.get("Domain", ""),
         "Method": row.get("Method", ""),
-        "pass^1": _fmt_float(_as_float(row.get("pass^1")), 4),
-        "pass^4": _fmt_float(_as_float(row.get("pass^4")), 4),
-        "Violations": _fmt_float(_as_float(row.get("violations")), 4),
-        "Tool calls": _fmt_float(_as_float(row.get("tool_calls")), 2),
-        "LLM calls": _fmt_float(_as_float(row.get("llm_calls")), 2),
-        "Tokens": _fmt_float(_as_float(row.get("tokens")), 0),
-        "Wall-clock": _fmt_float(_as_float(row.get("wall_clock_seconds")), 2),
+        "pass^1": "--" if readiness_blocked else _fmt_float(_as_float(row.get("pass^1")), 4),
+        "pass^4": "--" if readiness_blocked else _fmt_float(_as_float(row.get("pass^4")), 4),
+        "Violations": "--" if readiness_blocked else _fmt_float(_as_float(row.get("violations")), 4),
+        "Tool calls": "--" if readiness_blocked else _fmt_float(_as_float(row.get("tool_calls")), 2),
+        "LLM calls": "--" if readiness_blocked else _fmt_float(_as_float(row.get("llm_calls")), 2),
+        "Tokens": "--" if readiness_blocked else _fmt_float(_as_float(row.get("tokens")), 0),
+        "Wall-clock": "--" if readiness_blocked else _fmt_float(_as_float(row.get("wall_clock_seconds")), 2),
         "Status": status,
+        "Readiness": readiness_ready,
+        "readiness_blockers": readiness_blockers,
         "task_count": task_count,
         "source_artifact": row.get("official_results", ""),
     }

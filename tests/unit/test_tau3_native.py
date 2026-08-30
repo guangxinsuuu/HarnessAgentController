@@ -246,6 +246,25 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("missing: q4_tau_row.json", csv_text)
             self.assertIn("LLM calls", tex_text)
             self.assertIn("Wall-clock", tex_text)
+            self.assertFalse(manifest["all_rows_result_ready"])
+            self.assertTrue((root / "table" / "readiness" / "table10_tau3_readiness.csv").exists())
+
+    def test_build_table10_blocks_canonical_row_without_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            canonical = root / "solver_canonical_retail"
+            canonical.mkdir()
+            _write_row(canonical, "retail", method="Solver-derived canonical controller", task_count=2, status="complete")
+            manifest = build_table10_tau3_results(root / "table", [canonical], expected_test_count=2)
+            row = manifest["rows"][0]
+            self.assertEqual(row["Status"], "blocked_by_readiness")
+            self.assertFalse(row["Readiness"])
+            self.assertIn("solver_ranker_checkpoint missing", row["readiness_blockers"])
+            self.assertIn("controller trace missing", row["readiness_blockers"])
+            self.assertEqual(row["pass^1"], "--")
+            self.assertEqual(row["Tokens"], "--")
+            tex_text = (root / "table" / "table10_tau3_results.tex").read_text(encoding="utf-8")
+            self.assertIn("Solver-derived canonical controller & -- & --", tex_text)
 
     def test_dry_run_labels_canonical_and_certified_controller_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

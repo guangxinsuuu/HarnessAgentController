@@ -17,6 +17,7 @@ from cgr_exp.workflow_source_generator import SOURCE_WORKFLOW_FAMILIES, generate
 
 
 READ_VERBS = ("look", "inventory", "examine")
+HELP_VERBS = ("help",)
 MOVE_VERBS = ("go",)
 OPEN_VERBS = ("open", "close")
 TAKE_VERBS = ("take", "pick")
@@ -38,6 +39,30 @@ class AlfworldEpisodeResult:
     opportunity_rate: float
     invalid_actions: int
     wall_clock_seconds: float
+
+
+@dataclass(frozen=True)
+class AlfworldStepTrace:
+    policy: str
+    episode: int
+    step: int
+    command: str
+    command_type: str
+    score: float | str
+    second_best_score: float | str
+    score_margin: float | str
+    expert_available: int
+    admissible_count: int
+    verified_progress_frac: float
+    remaining_requirement_frac: float
+    observed_fact_frac: float
+    uncertainty_score: float
+    declared_observation_gain: float
+    declared_requirement_gain: float
+    precondition_satisfied: float
+    policy_risk: float
+    duplicates_previous_action: float
+    success_after_step: int
 
 
 @dataclass(frozen=True)
@@ -88,8 +113,14 @@ def run_alfworld_transfer(
         source_difficulty=source_difficulty,
     )
     all_results: list[AlfworldEpisodeResult] = []
+    step_trace_rows: list[dict[str, object]] = []
     for policy in policies:
-        env = _make_alfworld_env(split=split, config_path=config_path, env_factory=env_factory)
+        env = _make_alfworld_env(
+            split=split,
+            config_path=config_path,
+            env_factory=env_factory,
+            training_method=_alfworld_env_method_for_policy(policy),
+        )
         for episode in range(episodes):
             all_results.append(
                 _run_episode(
@@ -99,6 +130,7 @@ def run_alfworld_transfer(
                     seed=seed * 100000 + episode,
                     episode=episode,
                     max_steps=max_steps,
+                    step_trace_rows=step_trace_rows,
                 )
             )
     rows = [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies]
@@ -124,6 +156,7 @@ def run_alfworld_transfer(
     }
     _write_csv(out_dir / "alfworld_transfer_table.csv", rows)
     _write_csv(out_dir / "alfworld_transfer_per_episode.csv", [row.__dict__ for row in all_results])
+    _write_csv(out_dir / "alfworld_transfer_step_trace.csv", step_trace_rows)
     (out_dir / "alfworld_transfer.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
 
@@ -175,8 +208,14 @@ def run_alfworld_dense_transfer(
             env_factory=env_factory,
         )
     all_results: list[AlfworldEpisodeResult] = []
+    step_trace_rows: list[dict[str, object]] = []
     for policy in policies:
-        env = _make_alfworld_env(split=eval_split, config_path=config_path, env_factory=env_factory)
+        env = _make_alfworld_env(
+            split=eval_split,
+            config_path=config_path,
+            env_factory=env_factory,
+            training_method=_alfworld_env_method_for_policy(policy),
+        )
         for episode in range(eval_episodes):
             all_results.append(
                 _run_episode(
@@ -186,6 +225,7 @@ def run_alfworld_dense_transfer(
                     seed=seed * 100000 + episode,
                     episode=episode,
                     max_steps=max_steps,
+                    step_trace_rows=step_trace_rows,
                 )
             )
     rows = [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies]
@@ -215,6 +255,7 @@ def run_alfworld_dense_transfer(
     (out_dir / "alfworld_dense_ranker.json").write_text(ranker.to_json(), encoding="utf-8")
     _write_csv(out_dir / "alfworld_dense_transfer_table.csv", rows)
     _write_csv(out_dir / "alfworld_dense_transfer_per_episode.csv", [row.__dict__ for row in all_results])
+    _write_csv(out_dir / "alfworld_dense_transfer_step_trace.csv", step_trace_rows)
     _write_csv(out_dir / "alfworld_dense_training_trace.csv", train_rows)
     _write_csv(out_dir / "alfworld_dense_action_labels.csv", action_label_rows)
     (out_dir / "alfworld_dense_transfer.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
@@ -376,8 +417,14 @@ def run_alfworld_expert_transfer(
             env_factory=env_factory,
         )
     all_results: list[AlfworldEpisodeResult] = []
+    step_trace_rows: list[dict[str, object]] = []
     for policy in policies:
-        env = _make_alfworld_env(split=eval_split, config_path=config_path, env_factory=env_factory)
+        env = _make_alfworld_env(
+            split=eval_split,
+            config_path=config_path,
+            env_factory=env_factory,
+            training_method=_alfworld_env_method_for_policy(policy),
+        )
         for episode in range(eval_episodes):
             all_results.append(
                 _run_episode(
@@ -387,6 +434,7 @@ def run_alfworld_expert_transfer(
                     seed=seed * 100000 + episode,
                     episode=episode,
                     max_steps=max_steps,
+                    step_trace_rows=step_trace_rows,
                 )
             )
     rows = [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies]
@@ -416,6 +464,7 @@ def run_alfworld_expert_transfer(
     (out_dir / "alfworld_expert_ranker.json").write_text(ranker.to_json(), encoding="utf-8")
     _write_csv(out_dir / "alfworld_expert_transfer_table.csv", rows)
     _write_csv(out_dir / "alfworld_expert_transfer_per_episode.csv", [row.__dict__ for row in all_results])
+    _write_csv(out_dir / "alfworld_expert_transfer_step_trace.csv", step_trace_rows)
     _write_csv(out_dir / "alfworld_expert_training_trace.csv", train_rows)
     (out_dir / "alfworld_expert_transfer.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
@@ -1071,6 +1120,10 @@ def _make_alfworld_env(*, split: str, config_path: Path | None, env_factory: Cal
     return env_cls(config, train_eval=split).init_env(batch_size=1)
 
 
+def _alfworld_env_method_for_policy(policy: str) -> str:
+    return "dagger" if policy == "ALFWorld expert-plan diagnostic" else "dqn"
+
+
 def _default_alfworld_textworld_config(*, training_method: str = "dqn") -> dict[str, Any]:
     data_root = os.environ.get("ALFWORLD_DATA")
     if not data_root:
@@ -1108,7 +1161,16 @@ def _assert_alfworld_available() -> None:
         )
 
 
-def _run_episode(env: Any, *, policy: str, ranker: GenericHarnessRanker, seed: int, episode: int, max_steps: int) -> AlfworldEpisodeResult:
+def _run_episode(
+    env: Any,
+    *,
+    policy: str,
+    ranker: GenericHarnessRanker,
+    seed: int,
+    episode: int,
+    max_steps: int,
+    step_trace_rows: list[dict[str, object]] | None = None,
+) -> AlfworldEpisodeResult:
     rng = random.Random(seed)
     start = time.perf_counter()
     obs, info = env.reset()
@@ -1127,12 +1189,29 @@ def _run_episode(env: Any, *, policy: str, ranker: GenericHarnessRanker, seed: i
             break
         admissible_counts.append(len(admissible))
         opportunities += 1 if len(admissible) >= 2 else 0
-        command = _select_command(policy, observation, objective, history, admissible, ranker, rng, max_steps)
+        expert = _expert_action_from_info(info)
+        command, selection = _select_command_with_trace(policy, observation, objective, history, admissible, ranker, rng, max_steps, expert=expert)
         if command not in admissible:
             invalid_actions += 1
         next_obs, scores, dones, info = env.step([command])
         final_score = float(_first(scores, 0.0))
         done = bool(_first(dones, False))
+        if step_trace_rows is not None:
+            step_trace_rows.append(
+                _step_trace_row(
+                    policy=policy,
+                    episode=episode,
+                    step=step,
+                    command=command,
+                    selection=selection,
+                    observation=observation,
+                    objective=objective,
+                    history=history,
+                    admissible=admissible,
+                    max_steps=max_steps,
+                    success_after_step=1 if done and final_score > 0 else 0,
+                )
+            )
         observation = str(_first(next_obs, ""))
         history.extend([f"act:{command}", f"obs:{observation}"])
         steps = step + 1
@@ -1160,11 +1239,48 @@ def _select_command(
     ranker: GenericHarnessRanker,
     rng: random.Random,
     max_steps: int,
+    expert: str | None = None,
 ) -> str:
+    return _select_command_with_trace(policy, observation, objective, history, admissible, ranker, rng, max_steps, expert=expert)[0]
+
+
+def _select_command_with_trace(
+    policy: str,
+    observation: str,
+    objective: str,
+    history: Sequence[str],
+    admissible: Sequence[str],
+    ranker: GenericHarnessRanker,
+    rng: random.Random,
+    max_steps: int,
+    expert: str | None = None,
+) -> tuple[str, dict[str, object]]:
     if policy == "Random":
-        return rng.choice(list(admissible))
+        command = rng.choice(list(admissible))
+        return command, {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 0}
+    if policy == "ALFWorld expert-plan diagnostic":
+        if expert in admissible:
+            return str(expert), {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 1}
+        return rng.choice(list(admissible)), {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 0}
     if policy == "Hand heuristic":
-        return max(admissible, key=lambda command: (_hand_score(command, observation, objective, history), -admissible.index(command)))
+        scored = [(_hand_score(command, observation, objective, history), -idx, command) for idx, command in enumerate(admissible)]
+        scored.sort(reverse=True)
+        scored = _prefer_non_stagnating_selection(
+            scored=scored,
+            observation=observation,
+            objective=objective,
+            history=history,
+            admissible=admissible,
+            max_steps=max_steps,
+        )
+        score = scored[0][0]
+        second = scored[1][0] if len(scored) >= 2 else ""
+        return scored[0][2], {
+            "score": score,
+            "second_best_score": second,
+            "score_margin": "" if second == "" else score - float(second),
+            "expert_available": 0,
+        }
     if policy in {"Source-trained controller", "ALFWorld expert-ranker", "ALFWorld dense-ranker"}:
         scored = []
         for idx, command in enumerate(admissible):
@@ -1178,8 +1294,114 @@ def _select_command(
                 max_steps=max_steps,
             )
             scored.append((ranker.score(candidate.feature_vector()), -idx, command))
-        return max(scored)[2]
+        scored.sort(reverse=True)
+        scored = _prefer_non_stagnating_selection(
+            scored=scored,
+            observation=observation,
+            objective=objective,
+            history=history,
+            admissible=admissible,
+            max_steps=max_steps,
+        )
+        score = scored[0][0]
+        second = scored[1][0] if len(scored) >= 2 else ""
+        return scored[0][2], {
+            "score": score,
+            "second_best_score": second,
+            "score_margin": "" if second == "" else score - float(second),
+            "expert_available": 0,
+        }
     raise ValueError(f"unknown ALFWorld policy: {policy}")
+
+
+def _prefer_non_stagnating_selection(
+    *,
+    scored: list[tuple[float, int, str]],
+    observation: str,
+    objective: str,
+    history: Sequence[str],
+    admissible: Sequence[str],
+    max_steps: int,
+) -> list[tuple[float, int, str]]:
+    if len(scored) <= 1 or not _is_stagnating_noop(scored[0][2], observation=observation, objective=objective, history=history, admissible=admissible, max_steps=max_steps):
+        return scored
+    for idx in range(1, len(scored)):
+        if not _is_stagnating_noop(scored[idx][2], observation=observation, objective=objective, history=history, admissible=admissible, max_steps=max_steps):
+            return [scored[idx], *scored[:idx], *scored[idx + 1 :]]
+    return scored
+
+
+def _is_stagnating_noop(
+    command: str,
+    *,
+    observation: str,
+    objective: str,
+    history: Sequence[str],
+    admissible: Sequence[str],
+    max_steps: int,
+) -> bool:
+    last_action = next((item[4:].strip() for item in reversed(history) if item.startswith("act:")), "")
+    previous_actions = {item[4:].strip() for item in history if item.startswith("act:")}
+    if command != last_action and command not in previous_actions:
+        return False
+    candidate = alfworld_candidate_to_canonical(
+        candidate_id="alfworld-stagnation-check",
+        observation=observation,
+        objective=objective,
+        history=history,
+        admissible_commands=admissible,
+        command=command,
+        max_steps=max_steps,
+    )
+    return candidate.action.declared_observation_gain == 0.0 and candidate.action.declared_requirement_gain == 0.0
+
+
+def _step_trace_row(
+    *,
+    policy: str,
+    episode: int,
+    step: int,
+    command: str,
+    selection: Mapping[str, object],
+    observation: str,
+    objective: str,
+    history: Sequence[str],
+    admissible: Sequence[str],
+    max_steps: int,
+    success_after_step: int,
+) -> dict[str, object]:
+    candidate = alfworld_candidate_to_canonical(
+        candidate_id=f"alfworld-trace:{episode}:{step}",
+        observation=observation,
+        objective=objective,
+        history=history,
+        admissible_commands=admissible,
+        command=command,
+        max_steps=max_steps,
+    )
+    trace = AlfworldStepTrace(
+        policy=policy,
+        episode=episode,
+        step=step,
+        command=command,
+        command_type=_command_type(command),
+        score=selection.get("score", ""),
+        second_best_score=selection.get("second_best_score", ""),
+        score_margin=selection.get("score_margin", ""),
+        expert_available=int(selection.get("expert_available", 0)),
+        admissible_count=len(admissible),
+        verified_progress_frac=candidate.state.verified_progress_frac,
+        remaining_requirement_frac=candidate.state.remaining_requirement_frac,
+        observed_fact_frac=candidate.state.observed_fact_frac,
+        uncertainty_score=candidate.state.uncertainty_score,
+        declared_observation_gain=candidate.action.declared_observation_gain,
+        declared_requirement_gain=candidate.action.declared_requirement_gain,
+        precondition_satisfied=candidate.action.precondition_satisfied,
+        policy_risk=candidate.action.policy_risk,
+        duplicates_previous_action=candidate.action.duplicates_previous_action,
+        success_after_step=success_after_step,
+    )
+    return trace.__dict__
 
 
 def _expert_action_from_info(info: Mapping[str, Any]) -> str | None:
@@ -1221,7 +1443,9 @@ def _hand_score(command: str, observation: str, objective: str, history: Sequenc
     action_type = _command_type(command)
     repeats = any(item == f"act:{command}" for item in history)
     score = -2.0 if repeats else 0.0
-    if action_type == "read":
+    if action_type == "help":
+        score -= 5.0
+    elif action_type == "read":
         score += 2.5
     elif action_type == "write":
         score += 2.0
@@ -1238,6 +1462,8 @@ def _hand_score(command: str, observation: str, objective: str, history: Sequenc
 
 def _command_type(command: str) -> str:
     lowered = command.lower().strip()
+    if lowered.startswith(HELP_VERBS):
+        return "help"
     if lowered.startswith(TERMINATE_VERBS):
         return "terminate"
     if lowered.startswith(READ_VERBS):
@@ -1398,17 +1624,21 @@ def _action_goal_relation(
     observation_gain = 0.0
     requirement_gain = 0.0
     precondition = 1.0
-    risk = 0.1 if action_type in {"read", "move"} else (0.35 if action_type == "write" else 0.0)
+    risk = 0.9 if action_type == "help" else (0.1 if action_type in {"read", "move"} else (0.35 if action_type == "write" else 0.0))
 
     if repeats:
         risk += 0.25
+        if action_type in {"read", "help"}:
+            risk += 0.35
     if action_type in {"read", "move"}:
         missing_object = goal.object_terms and not object_observed
         missing_receptacle = goal.receptacle_terms and not receptacle_observed
         if not repeats and (missing_object or missing_receptacle or goal_receptacle_ref or goal_object_ref):
             observation_gain = 1.0
 
-    if lowered.startswith(TAKE_VERBS):
+    if action_type == "help":
+        precondition = 0.0
+    elif lowered.startswith(TAKE_VERBS):
         requirement_gain = 1.0 if goal_object_ref and object_observed and not object_held and not repeats else 0.0
         precondition = 1.0 if object_observed else 0.0
     elif lowered.startswith(PUT_VERBS):

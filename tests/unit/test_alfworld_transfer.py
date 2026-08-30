@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import random
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_expert_train,
     run_alfworld_expert_transfer,
     run_alfworld_transfer,
+    _select_command,
 )
 from cgr_exp.harness_contract import canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
@@ -213,6 +215,63 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(unrelated.action.declared_requirement_gain, 0.0)
         self.assertEqual(related.action.precondition_satisfied, 1.0)
 
+    def test_help_command_is_not_treated_as_write_progress(self) -> None:
+        candidate = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You see an apple and a table.",
+            objective="put apple on table",
+            history=["obs:You see an apple and a table. Your task is to: put apple on table."],
+            admissible_commands=["help", "take apple"],
+            command="help",
+            max_steps=10,
+        )
+        self.assertEqual(candidate.action.action_is_write, 0.0)
+        self.assertEqual(candidate.action.action_is_read, 0.0)
+        self.assertEqual(candidate.action.declared_requirement_gain, 0.0)
+        self.assertEqual(candidate.action.declared_observation_gain, 0.0)
+        self.assertEqual(candidate.action.precondition_satisfied, 0.0)
+        self.assertGreaterEqual(candidate.action.policy_risk, 0.9)
+
+    def test_ranked_policy_skips_immediate_repeated_noop(self) -> None:
+        names = canonical_feature_names()
+        weights = [0.0 for _name in names]
+        weights[names.index("action_is_read")] = 5.0
+        ranker = GenericHarnessRanker(weights)
+        command = _select_command(
+            "ALFWorld dense-ranker",
+            observation="You see an apple and a table.",
+            objective="put apple on table",
+            history=["obs:You see an apple and a table.", "act:inventory", "obs:You are carrying nothing."],
+            admissible=["inventory", "take apple"],
+            ranker=ranker,
+            rng=random.Random(0),
+            max_steps=10,
+        )
+        self.assertEqual(command, "take apple")
+
+    def test_ranked_policy_skips_recent_read_noop_cycle(self) -> None:
+        names = canonical_feature_names()
+        weights = [0.0 for _name in names]
+        weights[names.index("action_is_read")] = 5.0
+        ranker = GenericHarnessRanker(weights)
+        command = _select_command(
+            "ALFWorld dense-ranker",
+            observation="You see an apple and a table.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple and a table.",
+                "act:inventory",
+                "obs:You are carrying nothing.",
+                "act:look",
+                "obs:You see an apple and a table.",
+            ],
+            admissible=["inventory", "look", "take apple"],
+            ranker=ranker,
+            rng=random.Random(0),
+            max_steps=10,
+        )
+        self.assertEqual(command, "take apple")
+
     def test_adapter_extracts_task_text_from_full_alfworld_observation(self) -> None:
         candidate = alfworld_candidate_to_canonical(
             candidate_id="c0",
@@ -255,6 +314,8 @@ class AlfworldTransferTest(unittest.TestCase):
             )
             with (out / "alfworld_transfer_table.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
+            with (out / "alfworld_transfer_step_trace.csv").open() as handle:
+                trace_rows = list(csv.DictReader(handle))
         self.assertEqual(manifest["benchmark"], "alfworld_admissible_action_transfer")
         self.assertFalse(manifest["alfworld_train_trajectories_used"])
         self.assertFalse(manifest["oracle_labels_in_inference_features"])
@@ -262,6 +323,8 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(manifest["alfworld_adapter_version"], ALFWORLD_ADAPTER_VERSION)
         self.assertTrue(manifest["relational_goal_action_features"])
         self.assertEqual({row["policy"] for row in rows}, {"Random", "Source-trained controller"})
+        self.assertGreater(len(trace_rows), 0)
+        self.assertIn("declared_requirement_gain", trace_rows[0])
 
     def test_run_alfworld_expert_transfer_trains_from_frontier_expert_labels(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -274,18 +337,19 @@ class AlfworldTransferTest(unittest.TestCase):
                 epochs=3,
                 warmup_random_steps=0,
                 perturbation_prob=0.0,
-                policies=("Random", "ALFWorld expert-ranker"),
+                policies=("Random", "ALFWorld expert-ranker", "ALFWorld expert-plan diagnostic"),
                 env_factory=lambda **_kwargs: FakeExpertAlfworldEnv(),
             )
             with (out / "alfworld_expert_transfer_table.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
+            self.assertTrue((out / "alfworld_expert_transfer_step_trace.csv").exists())
             self.assertTrue((out / "alfworld_expert_ranker.json").exists())
         self.assertEqual(manifest["benchmark"], "alfworld_expert_frontier_transfer")
         self.assertEqual(manifest["training_source"], "alfworld_train_expert_plan_frontier_labels")
         self.assertFalse(manifest["llm_rollout_trajectories_used"])
         self.assertFalse(manifest["target_eval_trajectories_used_for_training"])
         self.assertGreater(manifest["train"]["train_pair_count"], 0)
-        self.assertEqual({row["policy"] for row in rows}, {"Random", "ALFWorld expert-ranker"})
+        self.assertEqual({row["policy"] for row in rows}, {"Random", "ALFWorld expert-ranker", "ALFWorld expert-plan diagnostic"})
 
     def test_run_alfworld_expert_train_writes_reusable_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -381,6 +445,7 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertFalse(manifest["train"]["trained_in_this_run"])
             self.assertEqual(manifest["train"]["checkpoint"], str(checkpoint))
             self.assertTrue((out / "alfworld_dense_transfer_table.csv").exists())
+            self.assertTrue((out / "alfworld_dense_transfer_step_trace.csv").exists())
 
 
 if __name__ == "__main__":

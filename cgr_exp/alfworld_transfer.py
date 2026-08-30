@@ -91,6 +91,7 @@ class AlfworldDenseActionLabel:
     final_score: float
     rollout_steps: int
     label_source: str
+    label_status: str = "ok"
 
 
 @dataclass(frozen=True)
@@ -700,6 +701,7 @@ def train_alfworld_dense_ranker(
     skipped_states = 0
     finite_action_labels = 0
     infinite_action_labels = 0
+    label_status_counts: dict[str, int] = {}
     expert_monotone_checks = 0
     expert_monotone_failures = 0
     walkthrough_policy_steps = 0
@@ -783,11 +785,13 @@ def train_alfworld_dense_ranker(
                     final_score=label.final_score,
                     rollout_steps=label.rollout_steps,
                     label_source=label.label_source,
+                    label_status=label.label_status,
                 )
                 action_label_rows.append(action_label.__dict__)
                 row_labels.append(label)
                 finite_action_labels += 1 if label.reachable else 0
                 infinite_action_labels += 0 if label.reachable else 1
+                label_status_counts[label.label_status] = label_status_counts.get(label.label_status, 0) + 1
             state_pairs = _dense_labels_to_pairs(
                 labels=row_labels,
                 observation=observation,
@@ -898,6 +902,7 @@ def train_alfworld_dense_ranker(
         "planner_policy_steps": planner_policy_steps,
         "planner_policy_misses": planner_policy_misses,
         "planner_policy_miss_rate": 0.0 if planner_policy_steps == 0 else planner_policy_misses / planner_policy_steps,
+        "label_status_counts": dict(sorted(label_status_counts.items())),
         "expert_monotone_checks": expert_monotone_checks,
         "expert_monotone_failures": expert_monotone_failures,
         "expert_monotone_failure_rate": 0.0 if expert_monotone_checks == 0 else expert_monotone_failures / expert_monotone_checks,
@@ -1096,7 +1101,7 @@ def _label_frontier_by_planner_cost(
     unreachable_cost = max_rollout_steps + len(prefix) + len(commands) + 2
     for command in commands:
         try:
-            cost, reachable, score, next_done, rollout_steps = _run_with_timeout(
+            cost, reachable, score, next_done, rollout_steps, label_status = _run_with_timeout(
                 timeout_seconds,
                 lambda: _planner_cost_for_candidate(
                     env,
@@ -1116,6 +1121,35 @@ def _label_frontier_by_planner_cost(
                     final_score=1.0 if next_done and score > 0 else 0.0,
                     rollout_steps=int(rollout_steps),
                     label_source="textworld_pddl_replan_cost_to_go",
+                    label_status=label_status,
+                )
+            )
+        except TimeoutError:
+            labels.append(
+                AlfworldDenseActionLabel(
+                    episode=-1,
+                    step=-1,
+                    command=command,
+                    cost_to_success=unreachable_cost,
+                    reachable=0,
+                    final_score=0.0,
+                    rollout_steps=0,
+                    label_source="textworld_pddl_replan_cost_to_go",
+                    label_status="planner_timeout",
+                )
+            )
+        except ValueError:
+            labels.append(
+                AlfworldDenseActionLabel(
+                    episode=-1,
+                    step=-1,
+                    command=command,
+                    cost_to_success=unreachable_cost,
+                    reachable=0,
+                    final_score=0.0,
+                    rollout_steps=0,
+                    label_source="textworld_pddl_replan_cost_to_go",
+                    label_status="candidate_not_admissible_after_replay",
                 )
             )
         except Exception:
@@ -1129,6 +1163,7 @@ def _label_frontier_by_planner_cost(
                     final_score=0.0,
                     rollout_steps=0,
                     label_source="textworld_pddl_replan_cost_to_go",
+                    label_status="planner_error",
                 )
             )
     return labels
@@ -1141,20 +1176,20 @@ def _planner_cost_for_candidate(
     prefix: Sequence[str],
     command: str,
     unreachable_cost: int,
-) -> tuple[int, bool, float, bool, int]:
+) -> tuple[int, bool, float, bool, int, str]:
     target, _observation, info, _score, done = _replay_prefix(env, gamefile=gamefile, prefix=prefix)
     if done:
-        return 1, True, 1.0, True, 0
+        return 1, True, 1.0, True, 0, "already_done"
     current_admissible = _filtered_admissible_commands(_admissible_from_info(info))
     if command not in current_admissible:
         raise ValueError("candidate is not admissible in replayed planner state")
     _next_observation, score, next_done, next_info = _step_any(target, command)
     if next_done and score > 0:
-        return 1, True, score, True, 1
+        return 1, True, score, True, 1, "candidate_solves"
     remaining_plan = _planner_policy_commands_from_info(next_info)
     reachable = bool(remaining_plan)
     cost = 1 + len(remaining_plan) if reachable else unreachable_cost
-    return cost, reachable, score, next_done, cost if reachable else 0
+    return cost, reachable, score, next_done, cost if reachable else 0, "planner_replanned" if reachable else "planner_no_plan"
 
 
 def _label_frontier_by_walkthrough_suffix(
@@ -1315,6 +1350,7 @@ def _dense_labels_to_pairs(
 
 def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]], *, train_manifest: Mapping[str, object]) -> dict[str, object]:
     by_state: dict[tuple[int, int], list[int]] = {}
+    status_counts: dict[str, int] = {}
     finite = 0
     infinite = 0
     costs: list[int] = []
@@ -1322,6 +1358,8 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
         key = (int(row["episode"]), int(row["step"]))
         cost = int(row["cost_to_success"])
         reachable = int(row["reachable"])
+        status = str(row.get("label_status", "ok") or "ok")
+        status_counts[status] = status_counts.get(status, 0) + 1
         by_state.setdefault(key, []).append(cost)
         costs.append(cost)
         if reachable:
@@ -1330,7 +1368,7 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
             infinite += 1
     varied_states = sum(1 for values in by_state.values() if len(set(values)) >= 2)
     comparable_states = len(by_state)
-    return {
+    summary = {
         "states": comparable_states,
         "action_labels": len(action_label_rows),
         "finite_action_labels": finite,
@@ -1348,6 +1386,11 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
         "label_source": str(train_manifest.get("label_source", "")),
         "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
     }
+    for status, count in sorted(status_counts.items()):
+        safe_status = re.sub(r"[^a-zA-Z0-9_]+", "_", status).strip("_") or "unknown"
+        summary[f"label_status_{safe_status}"] = count
+    summary["label_status_unique"] = len(status_counts)
+    return summary
 
 
 def _expert_rollout_cost_from_prefix(

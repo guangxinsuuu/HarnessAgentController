@@ -300,6 +300,8 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(by_command["go to kitchen"].cost_to_success, 3)
         self.assertEqual(by_command["open cabinet"].reachable, 0)
         self.assertEqual(by_command["go to kitchen"].label_source, "textworld_pddl_replan_cost_to_go")
+        self.assertEqual(by_command["go to kitchen"].label_status, "planner_replanned")
+        self.assertEqual(by_command["open cabinet"].label_status, "planner_no_plan")
 
     def test_planner_training_rollout_prefers_planner_next_command(self) -> None:
         command = _planner_training_rollout_command(
@@ -842,6 +844,8 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(manifest["label_source"], "textworld_pddl_replan_cost_to_go")
         self.assertTrue(manifest["counterfactual_planner_cost_to_go"])
         self.assertEqual(manifest["train"]["planner_policy_miss_rate"], 0.0)
+        self.assertIn("label_status_counts", manifest["train"])
+        self.assertGreater(manifest["train"]["label_status_counts"].get("planner_replanned", 0), 0)
 
     def test_audit_alfworld_dense_labels_reports_cost_variation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

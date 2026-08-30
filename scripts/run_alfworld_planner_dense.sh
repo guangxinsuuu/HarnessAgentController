@@ -7,17 +7,25 @@ PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
 ALFWORLD_DATA="${ALFWORLD_DATA:-${PROJECT_ROOT}/data/alfworld}"
 SEED="${SEED:-0}"
 if [[ "${MODE}" == "smoke" ]]; then
-  TRAIN_EPISODES="${TRAIN_EPISODES:-2}"
-  EVAL_EPISODES="${EVAL_EPISODES:-3}"
+  TRAIN_EPISODES="${TRAIN_EPISODES:-1}"
+  EVAL_EPISODES="${EVAL_EPISODES:-1}"
   MAX_STEPS="${MAX_STEPS:-8}"
+elif [[ "${MODE}" == "pilot" ]]; then
+  TRAIN_EPISODES="${TRAIN_EPISODES:-50}"
+  EVAL_EPISODES="${EVAL_EPISODES:-20}"
+  MAX_STEPS="${MAX_STEPS:-40}"
 else
-  TRAIN_EPISODES="${TRAIN_EPISODES:-10}"
-  EVAL_EPISODES="${EVAL_EPISODES:-10}"
-  MAX_STEPS="${MAX_STEPS:-20}"
+  TRAIN_EPISODES="${TRAIN_EPISODES:-50}"
+  EVAL_EPISODES="${EVAL_EPISODES:-20}"
+  MAX_STEPS="${MAX_STEPS:-40}"
 fi
 EPOCHS="${EPOCHS:-10}"
 MAX_PAIRS_PER_STATE="${MAX_PAIRS_PER_STATE:-16}"
-MAX_FRONTIER_ACTIONS="${MAX_FRONTIER_ACTIONS:-6}"
+if [[ "${MODE}" == "smoke" ]]; then
+  MAX_FRONTIER_ACTIONS="${MAX_FRONTIER_ACTIONS:-4}"
+else
+  MAX_FRONTIER_ACTIONS="${MAX_FRONTIER_ACTIONS:-6}"
+fi
 COUNTERFACTUAL_ROLLOUT_STEPS="${COUNTERFACTUAL_ROLLOUT_STEPS:-30}"
 PLANNER_TIMEOUT_SECONDS="${PLANNER_TIMEOUT_SECONDS:-3}"
 EVAL_SPLIT="${EVAL_SPLIT:-eval_in_distribution}"
@@ -34,10 +42,11 @@ export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/run_alfworld_planner_dense.sh [audit|train|eval|smoke|all]
+  scripts/run_alfworld_planner_dense.sh [audit|train|eval|smoke|pilot|all]
 
 This script uses ALFWorld/TextWorld PDDL planner cost-to-go labels.
 It does not use an LLM or API key.
+`smoke` only checks that the pipeline runs; use `pilot` for performance.
 
 Common environment overrides:
   TRAIN_EPISODES=50 EVAL_EPISODES=20 MAX_STEPS=40 EPOCHS=20
@@ -114,6 +123,11 @@ case "${MODE}" in
     run_eval
     ;;
   smoke)
+    run_audit
+    run_train
+    run_eval
+    ;;
+  pilot)
     run_audit
     run_train
     run_eval

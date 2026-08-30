@@ -16,8 +16,10 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_expert_transfer,
     run_alfworld_transfer,
     _contract_filtered_admissible_commands,
+    _command_type,
     _label_frontier_by_planner_cost,
     _label_frontier_by_walkthrough_suffix,
+    _frontier_sample,
     _planner_training_rollout_command,
     _select_command,
     _walkthrough_training_rollout_command,
@@ -784,6 +786,30 @@ class AlfworldTransferTest(unittest.TestCase):
             )
         self.assertEqual(command, "go to table")
         self.assertTrue(used_walkthrough)
+
+    def test_frontier_sample_keeps_reference_and_diverse_goal_actions(self) -> None:
+        sampled = _frontier_sample(
+            [
+                "look",
+                "inventory",
+                "go to armchair 1",
+                "go to coffeetable 1",
+                "take remotecontrol 1 from coffeetable 1",
+                "put remotecontrol 1 on armchair 1",
+                "help",
+            ],
+            expert="go to coffeetable 1",
+            max_frontier_actions=4,
+            rng=random.Random(0),
+            observation="You see a coffeetable 1, an armchair 1, and a remotecontrol 1.",
+            objective="put some remotecontrol on armchair",
+            history=["obs:You see a coffeetable 1, an armchair 1, and a remotecontrol 1."],
+            max_steps=40,
+        )
+        self.assertEqual(sampled[0], "go to coffeetable 1")
+        self.assertIn("take remotecontrol 1 from coffeetable 1", sampled)
+        self.assertIn("put remotecontrol 1 on armchair 1", sampled)
+        self.assertGreaterEqual(len({_command_type(command) for command in sampled}), 2)
 
     def test_run_alfworld_dense_train_can_use_walkthrough_label_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

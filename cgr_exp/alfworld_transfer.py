@@ -731,13 +731,31 @@ def train_alfworld_dense_ranker(
                 break
             planner_next = None
             if label_source == ALFWORLD_DENSE_LABEL_PLANNER:
-                if label_env is None:
-                    raise RuntimeError("planner ALFWorld label source requires a PDDL planner environment")
-                planner_next = _planner_next_command(label_env, gamefile=gamefile, prefix=prefix, admissible=admissible)
-                planner_policy_steps += 1
-                planner_policy_misses += 0 if planner_next is not None else 1
+                if expert in admissible:
+                    planner_next = expert
+                else:
+                    if label_env is None:
+                        raise RuntimeError("planner ALFWorld label source requires a PDDL planner environment")
+                    try:
+                        planner_next = _run_with_timeout(
+                            planner_timeout_seconds,
+                            lambda: _planner_next_command(label_env, gamefile=gamefile, prefix=prefix, admissible=admissible),
+                        )
+                    except TimeoutError:
+                        planner_next = None
+                    planner_policy_steps += 1
+                    planner_policy_misses += 0 if planner_next is not None else 1
             frontier_reference = planner_next if planner_next is not None else expert
-            frontier = _frontier_sample(admissible, expert=frontier_reference, max_frontier_actions=max_frontier_actions, rng=rng)
+            frontier = _frontier_sample(
+                admissible,
+                expert=frontier_reference,
+                max_frontier_actions=max_frontier_actions,
+                rng=rng,
+                observation=observation,
+                objective=objective,
+                history=history,
+                max_steps=max_steps,
+            )
             if label_source == ALFWORLD_DENSE_LABEL_WALKTHROUGH:
                 labels = _label_frontier_by_walkthrough_suffix(
                     gamefile=gamefile,
@@ -843,6 +861,7 @@ def train_alfworld_dense_ranker(
                             step=step,
                             perturbation_prob=0.0,
                             warmup_random_steps=0,
+                            timeout_seconds=planner_timeout_seconds,
                         )
             else:
                 command = _training_rollout_command(
@@ -889,6 +908,7 @@ def train_alfworld_dense_ranker(
         "epochs": epochs,
         "max_pairs_per_state": max_pairs_per_state,
         "max_frontier_actions": max_frontier_actions,
+        "frontier_reference_priority": "expert_plan_then_planner_policy",
         "counterfactual_rollout_steps": counterfactual_rollout_steps,
         "planner_timeout_seconds": planner_timeout_seconds,
         "perturbation_prob": perturbation_prob,
@@ -1026,17 +1046,129 @@ def alfworld_action_features(
     )
 
 
-def _frontier_sample(admissible: Sequence[str], *, expert: str | None, max_frontier_actions: int, rng: random.Random) -> list[str]:
+def _frontier_sample(
+    admissible: Sequence[str],
+    *,
+    expert: str | None,
+    max_frontier_actions: int,
+    rng: random.Random,
+    observation: str = "",
+    objective: str = "",
+    history: Sequence[str] = (),
+    max_steps: int = 50,
+) -> list[str]:
     commands = list(dict.fromkeys(str(command) for command in admissible))
     if max_frontier_actions <= 0 or len(commands) <= max_frontier_actions:
         return commands
     selected: list[str] = []
     if expert in commands:
         selected.append(str(expert))
+
     rest = [command for command in commands if command not in selected]
-    rng.shuffle(rest)
-    selected.extend(rest[: max(0, max_frontier_actions - len(selected))])
+    scored = [
+        (
+            _frontier_sampling_score(
+                command,
+                observation=observation,
+                objective=objective,
+                history=history,
+                max_steps=max_steps,
+            ),
+            rng.random(),
+            command,
+        )
+        for command in rest
+    ]
+    scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+
+    # Labeling every ALFWorld action with a planner is expensive. Keep the
+    # planner/expert action, then preserve action-type diversity and high-value
+    # goal-related negatives so dense labels are informative rather than random.
+    for _score, _tie, command in scored:
+        if len(selected) >= max_frontier_actions:
+            break
+        if command in selected:
+            continue
+        if _frontier_priority_candidate(
+            command,
+            observation=observation,
+            objective=objective,
+            history=history,
+            max_steps=max_steps,
+        ):
+            selected.append(command)
+
+    selected_types = {_command_type(command) for command in selected}
+    for _score, _tie, command in scored:
+        if len(selected) >= max_frontier_actions:
+            break
+        command_type = _command_type(command)
+        if command_type not in selected_types:
+            selected.append(command)
+            selected_types.add(command_type)
+
+    for _score, _tie, command in scored:
+        if len(selected) >= max_frontier_actions:
+            break
+        if command not in selected:
+            selected.append(command)
     return selected
+
+
+def _frontier_priority_candidate(
+    command: str,
+    *,
+    observation: str,
+    objective: str,
+    history: Sequence[str],
+    max_steps: int,
+) -> bool:
+    action = alfworld_action_features(
+        command=command,
+        observation=observation,
+        objective=objective,
+        history=history,
+        max_steps=max_steps,
+    )
+    return any(
+        value > 0.0
+        for value in (
+            action.references_goal_object,
+            action.references_goal_receptacle,
+            action.matches_unsatisfied_transform,
+            action.declared_observation_gain,
+            action.declared_requirement_gain,
+            action.completes_goal_placement,
+        )
+    )
+
+
+def _frontier_sampling_score(
+    command: str,
+    *,
+    observation: str,
+    objective: str,
+    history: Sequence[str],
+    max_steps: int,
+) -> float:
+    action = alfworld_action_features(
+        command=command,
+        observation=observation,
+        objective=objective,
+        history=history,
+        max_steps=max_steps,
+    )
+    return (
+        _hand_score(command, observation, objective, history)
+        + 3.0 * action.declared_requirement_gain
+        + 2.0 * action.declared_observation_gain
+        + 1.5 * action.references_goal_object
+        + 1.2 * action.references_goal_receptacle
+        + 1.0 * action.completes_goal_placement
+        + 0.8 * action.precondition_satisfied
+        - 1.5 * action.duplicates_previous_action
+        - 0.8 * action.policy_risk
+    )
 
 
 def _label_frontier_by_expert_rollout(
@@ -1943,12 +2075,19 @@ def _planner_training_rollout_command(
     step: int,
     perturbation_prob: float,
     warmup_random_steps: int,
+    timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
 ) -> str:
     if not admissible:
         raise ValueError("cannot roll out ALFWorld state without admissible commands")
     if step < warmup_random_steps or rng.random() < perturbation_prob:
         return rng.choice(list(admissible))
-    planner_next = _planner_next_command(env, gamefile=gamefile, prefix=prefix, admissible=admissible)
+    try:
+        planner_next = _run_with_timeout(
+            timeout_seconds,
+            lambda: _planner_next_command(env, gamefile=gamefile, prefix=prefix, admissible=admissible),
+        )
+    except TimeoutError:
+        planner_next = None
     if planner_next is not None:
         return planner_next
     if expert in admissible:

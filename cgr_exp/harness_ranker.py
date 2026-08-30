@@ -10,6 +10,10 @@ from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 from cgr_exp.harness_contract import audit_canonical_contract_manifest, canonical_contract_manifest, canonical_feature_names
 from cgr_exp.workflow_oracle import collect_workflow_oracle_records, make_workflow_ranking_pairs, rank_actions_by_oracle
 from cgr_exp.workflow_source_generator import (
+    SOURCE_WORKFLOW_FAMILIES,
+    TARGET_WORKFLOW_FAMILIES,
+    WorkflowAction,
+    WorkflowState,
     WorkflowTask,
     generate_workflow_source_tasks,
     source_generator_manifest,
@@ -356,6 +360,224 @@ def run_workflow_source_validation(
         ],
     )
     return manifest
+
+
+def run_structured_workflow_transfer(
+    out_dir: Path,
+    train_count: int = 200,
+    validation_count: int = 50,
+    test_count: int = 100,
+    seed: int = 0,
+    epochs: int = 20,
+    node_budget: int = 80,
+    max_states_per_task: int = 200,
+    action_intent_training: bool = True,
+    source_families: Sequence[str] = SOURCE_WORKFLOW_FAMILIES,
+    target_families: Sequence[str] = TARGET_WORKFLOW_FAMILIES,
+) -> Dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    source_families = tuple(source_families)
+    target_families = tuple(target_families)
+    if set(source_families) & set(target_families):
+        raise ValueError("source and target workflow families must be disjoint for transfer evaluation")
+    train_tasks = generate_workflow_source_tasks(train_count, seed=seed, anonymize_tools=True, families=source_families)
+    validation_tasks = generate_workflow_source_tasks(validation_count, seed=seed + 10000, anonymize_tools=True, families=source_families)
+    target_tasks = generate_workflow_source_tasks(test_count, seed=seed + 20000, anonymize_tools=True, families=target_families)
+    ranker, train_pairs = train_generic_harness_ranker(train_tasks, epochs=epochs, seed=seed, action_intent_training=action_intent_training)
+    validation_metrics = evaluate_workflow_ranker(
+        validation_tasks,
+        ranker,
+        max_states_per_task=max_states_per_task,
+        action_intent_training=action_intent_training,
+    )
+    rows = []
+    per_instance_rows = []
+    for policy in ("Random", "Hand heuristic", "Source-trained controller", "Oracle"):
+        results = []
+        for idx, task in enumerate(target_tasks):
+            result = _run_workflow_policy(
+                task,
+                policy=policy,
+                ranker=ranker,
+                seed=seed * 100000 + idx,
+                node_budget=node_budget,
+                action_intent_training=action_intent_training,
+            )
+            results.append(result)
+            per_instance_rows.append({"policy": policy, **result})
+        rows.append(_aggregate_workflow_results(policy, results))
+    manifest = {
+        "benchmark": "structured_tool_workflow_transfer",
+        "seed": seed,
+        "train_count": train_count,
+        "validation_count": validation_count,
+        "test_count": test_count,
+        "epochs": epochs,
+        "node_budget": node_budget,
+        "max_states_per_task": max_states_per_task,
+        "action_intent_training": action_intent_training,
+        "source_families": list(source_families),
+        "target_families": list(target_families),
+        "source_target_family_overlap": sorted(set(source_families) & set(target_families)),
+        "train_pair_count": len(train_pairs),
+        "source_validation_top1_accuracy": validation_metrics["top1_accuracy"],
+        "source_validation_random_expected_top1": validation_metrics["random_expected_top1"],
+        "source_generator": source_generator_manifest(seed, train_count, families=source_families),
+        "target_generator": source_generator_manifest(seed + 20000, test_count, families=target_families),
+        "contract": canonical_contract_manifest(),
+        "controller_checkpoint_frozen": True,
+        "target_trajectory_training_used": False,
+        "oracle_labels_in_inference_features": False,
+        "tool_names_used_as_features": False,
+        "rows": rows,
+    }
+    (out_dir / "structured_workflow_ranker.json").write_text(ranker.to_json(), encoding="utf-8")
+    (out_dir / "structured_workflow_transfer.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    _write_csv(out_dir / "structured_workflow_transfer_table.csv", rows)
+    _write_csv(out_dir / "structured_workflow_transfer_per_instance.csv", per_instance_rows)
+    _write_csv(
+        out_dir / "structured_workflow_source_validation.csv",
+        [
+            {
+                "controller": "GenericHarnessRanker",
+                "train_pairs": len(train_pairs),
+                "top1_accuracy": validation_metrics["top1_accuracy"],
+                "random_expected_top1": validation_metrics["random_expected_top1"],
+                "decision_count": validation_metrics["decision_count"],
+            }
+        ],
+    )
+    return manifest
+
+
+def _run_workflow_policy(
+    task: WorkflowTask,
+    *,
+    policy: str,
+    ranker: GenericHarnessRanker,
+    seed: int,
+    node_budget: int,
+    action_intent_training: bool,
+) -> Dict[str, object]:
+    rng = random.Random(seed)
+    state = task.root_state()
+    nodes = 0
+    decisions = 0
+    opportunity = 0
+    while nodes < node_budget and task.candidate_actions(state):
+        actions = task.candidate_actions(state)
+        decisions += 1
+        opportunity += 1 if len(actions) >= 2 else 0
+        action = _select_workflow_action(task, state, actions, policy=policy, ranker=ranker, rng=rng, action_intent_training=action_intent_training)
+        state = task.apply(state, action)
+        nodes += 1
+        if state.terminal:
+            break
+    optimal_reward = _oracle_rollout_reward(task, node_budget=node_budget)
+    reward = task.reward(state)
+    return {
+        "task_id": task.task_id,
+        "family": task.family,
+        "success": 1 if task.success(state) else 0,
+        "reward": reward,
+        "optimal_reward": optimal_reward,
+        "gap": max(0.0, optimal_reward - reward) / max(1.0, abs(optimal_reward)),
+        "nodes": nodes,
+        "decisions": decisions,
+        "opportunity_rate": 0.0 if decisions == 0 else opportunity / decisions,
+        "violations": state.violations,
+        "completed_requirements": sum(1 for item in state.completed_requirements if item),
+        "requirement_count": task.requirement_count,
+        "terminal": 1 if state.terminal else 0,
+    }
+
+
+def _select_workflow_action(
+    task: WorkflowTask,
+    state: WorkflowState,
+    actions: Sequence[WorkflowAction],
+    *,
+    policy: str,
+    ranker: GenericHarnessRanker,
+    rng: random.Random,
+    action_intent_training: bool,
+) -> WorkflowAction:
+    if policy == "Random":
+        return rng.choice(list(actions))
+    if policy == "Oracle":
+        return rank_actions_by_oracle(task, state, actions)[0]
+    if policy == "Hand heuristic":
+        return max(actions, key=lambda action: (_hand_heuristic_workflow_score(task, state, action), -action.tool_index))
+    if policy == "Source-trained controller":
+        state_features = workflow_runtime_features(task, state)
+        scored = []
+        for action in actions:
+            action_features = workflow_action_intent_features(task, state, action) if action_intent_training else workflow_action_features(task, state, action)
+            vec = [*state_features.vector(), *action_features.vector(), *(s * a for s in state_features.vector() for a in action_features.vector())]
+            scored.append((ranker.score(vec), action))
+        return max(scored, key=lambda item: (item[0], -item[1].tool_index))[1]
+    raise ValueError(f"unknown workflow policy: {policy}")
+
+
+def _hand_heuristic_workflow_score(task: WorkflowTask, state: WorkflowState, action: WorkflowAction) -> float:
+    tool = task.tools[action.tool_index]
+    completed = all(state.completed_requirements)
+    if tool.action_type in ("respond", "terminate"):
+        return 10.0 if completed else -10.0
+    if tool.action_type == "read":
+        return 3.0 if tool.reveals_fact is not None and not state.observed_facts[tool.reveals_fact] else -2.0
+    if tool.action_type == "ask":
+        return 2.0 if any(not fact for fact in state.observed_facts) else -3.0
+    if tool.action_type == "write":
+        precondition_ok = tool.precondition_fact is None or state.observed_facts[tool.precondition_fact]
+        return 5.0 - tool.policy_risk if precondition_ok else -8.0
+    return 0.0
+
+
+def _oracle_rollout_reward(task: WorkflowTask, node_budget: int) -> float:
+    state = task.root_state()
+    nodes = 0
+    while nodes < node_budget and task.candidate_actions(state):
+        action = rank_actions_by_oracle(task, state, task.candidate_actions(state))[0]
+        state = task.apply(state, action)
+        nodes += 1
+        if state.terminal:
+            break
+    return task.reward(state)
+
+
+def _aggregate_workflow_results(policy: str, results: Sequence[Mapping[str, object]]) -> Dict[str, object]:
+    total = len(results)
+    family_stats: Dict[str, Dict[str, float]] = {}
+    for row in results:
+        family = str(row["family"])
+        stats = family_stats.setdefault(family, {"count": 0.0, "success": 0.0, "gap": 0.0})
+        stats["count"] += 1.0
+        stats["success"] += float(row["success"])
+        stats["gap"] += float(row["gap"])
+    return {
+        "policy": policy,
+        "success": 0.0 if total == 0 else sum(float(row["success"]) for row in results) / total,
+        "gap": 0.0 if total == 0 else sum(float(row["gap"]) for row in results) / total,
+        "reward": 0.0 if total == 0 else sum(float(row["reward"]) for row in results) / total,
+        "nodes": 0.0 if total == 0 else sum(float(row["nodes"]) for row in results) / total,
+        "violations": 0.0 if total == 0 else sum(float(row["violations"]) for row in results) / total,
+        "opportunity_rate": 0.0 if total == 0 else sum(float(row["opportunity_rate"]) for row in results) / total,
+        "tokens": 0,
+        "llm_calls": 0,
+        "test_count": total,
+        "by_family": json.dumps(
+            {
+                family: {
+                    "success": stats["success"] / stats["count"],
+                    "gap": stats["gap"] / stats["count"],
+                    "count": int(stats["count"]),
+                }
+                for family, stats in sorted(family_stats.items())
+            },
+            sort_keys=True,
+        ),
+    }
 
 
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:

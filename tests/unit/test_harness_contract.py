@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from cgr_exp.harness_contract import audit_canonical_contract_manifest, canonical_contract_manifest, canonical_feature_names
-from cgr_exp.harness_ranker import GenericHarnessRanker, run_workflow_source_validation
+from cgr_exp.harness_ranker import GenericHarnessRanker, run_structured_workflow_transfer, run_workflow_source_validation
 from cgr_exp.tau3_contract_adapter import tau3_adapter_manifest, tau3_candidate_to_canonical
 from cgr_exp.workflow_oracle import collect_workflow_oracle_records, make_workflow_ranking_pairs
 from cgr_exp.workflow_source_generator import generate_workflow_source_tasks, source_generator_manifest
@@ -91,6 +91,33 @@ class HarnessContractTest(unittest.TestCase):
             self.assertEqual(saved["source_action_abstraction"], "available_action_intent")
             self.assertGreater(saved["train_pair_count"], 0)
             self.assertTrue((out / "generic_harness_ranker.json").exists())
+
+    def test_structured_workflow_transfer_uses_disjoint_target_families(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            manifest = run_structured_workflow_transfer(
+                out,
+                train_count=8,
+                validation_count=4,
+                test_count=6,
+                seed=7,
+                epochs=2,
+                node_budget=30,
+                max_states_per_task=60,
+                source_families=("approval", "incident"),
+                target_families=("farm", "support"),
+            )
+            saved = json.loads((out / "structured_workflow_transfer.json").read_text(encoding="utf-8"))
+            rows = (out / "structured_workflow_transfer_table.csv").read_text(encoding="utf-8")
+            self.assertEqual(saved["benchmark"], "structured_tool_workflow_transfer")
+            self.assertEqual(saved["source_target_family_overlap"], [])
+            self.assertFalse(saved["target_trajectory_training_used"])
+            self.assertFalse(saved["oracle_labels_in_inference_features"])
+            self.assertFalse(saved["tool_names_used_as_features"])
+            self.assertEqual(len(saved["rows"]), 4)
+            self.assertIn("Source-trained controller", rows)
+            self.assertIn("Oracle", rows)
+            self.assertEqual(manifest["test_count"], 6)
 
     def test_generic_harness_ranker_rejects_bad_checkpoint_dimension(self) -> None:
         with self.assertRaisesRegex(ValueError, "weight dimension mismatch"):

@@ -17,6 +17,19 @@ WORKFLOW_FAMILIES = [
     "support",
 ]
 
+SOURCE_WORKFLOW_FAMILIES = [
+    "approval",
+    "incident",
+    "procurement",
+]
+
+TARGET_WORKFLOW_FAMILIES = [
+    "academic",
+    "banking",
+    "farm",
+    "support",
+]
+
 
 @dataclass(frozen=True)
 class WorkflowTool:
@@ -135,11 +148,19 @@ class WorkflowTask:
         return (100.0 if self.success(state) else 0.0) + 10.0 * progress - 8.0 * state.violations - terminal_penalty - len(state.used_actions)
 
 
-def generate_workflow_source_tasks(count: int, seed: int = 0, anonymize_tools: bool = True) -> List[WorkflowTask]:
+def generate_workflow_source_tasks(
+    count: int,
+    seed: int = 0,
+    anonymize_tools: bool = True,
+    families: Sequence[str] | None = None,
+) -> List[WorkflowTask]:
     rng = random.Random(seed)
+    family_list = list(families or WORKFLOW_FAMILIES)
+    if not family_list:
+        raise ValueError("at least one workflow family is required")
     tasks = []
     for idx in range(count):
-        family = WORKFLOW_FAMILIES[idx % len(WORKFLOW_FAMILIES)]
+        family = family_list[idx % len(family_list)]
         fact_count = rng.randint(2, 5)
         requirement_count = rng.randint(2, 5)
         turn_budget = requirement_count + fact_count + rng.randint(1, 4)
@@ -236,13 +257,14 @@ def workflow_action_intent_features(task: WorkflowTask, state: WorkflowState, ac
     )
 
 
-def source_generator_manifest(seed: int, count: int, anonymize_tools: bool = True) -> Dict[str, object]:
-    distribution = _source_generator_distribution(anonymize_tools)
+def source_generator_manifest(seed: int, count: int, anonymize_tools: bool = True, families: Sequence[str] | None = None) -> Dict[str, object]:
+    family_list = list(families or WORKFLOW_FAMILIES)
+    distribution = _source_generator_distribution(anonymize_tools, family_list)
     return {
         "source": "PolicyConstrainedWorkflowGeneratorV1",
         "seed": seed,
         "task_count": count,
-        "families": WORKFLOW_FAMILIES,
+        "families": family_list,
         "distribution_hash": hashlib.sha256(json.dumps(distribution, sort_keys=True).encode("utf-8")).hexdigest(),
         "anonymized_tool_names": anonymize_tools,
         "tau3_trajectories_used": False,
@@ -252,12 +274,13 @@ def source_generator_manifest(seed: int, count: int, anonymize_tools: bool = Tru
     }
 
 
-def _source_generator_distribution(anonymize_tools: bool) -> Dict[str, object]:
+def _source_generator_distribution(anonymize_tools: bool, families: Sequence[str] | None = None) -> Dict[str, object]:
+    family_list = list(families or WORKFLOW_FAMILIES)
     return {
         "fact_count": "uniform_int[2,5]",
         "requirement_count": "uniform_int[2,5]",
         "turn_budget": "requirements + facts + uniform_int[1,4]",
-        "families": {"schedule": "round_robin", "values": list(WORKFLOW_FAMILIES)},
+        "families": {"schedule": "round_robin", "values": family_list},
         "tool_names": "anonymous source_tool_{task}_{index}" if anonymize_tools else "family_action_{index}",
     }
 

@@ -12,7 +12,7 @@ from cgr_exp.experiment_status_report import build_current_experiment_status
 from cgr_exp.experiments import PRESETS, run_experiment
 from cgr_exp.game24_experiments import run_game24_offline_experiment
 from cgr_exp.game24_llm_pilot import ScriptedGame24Client, run_game24_llm_pilot, run_game24_llm_pilot_from_env
-from cgr_exp.harness_ranker import run_workflow_source_validation
+from cgr_exp.harness_ranker import run_structured_workflow_transfer, run_workflow_source_validation
 from cgr_exp.run_experiment import main as run_experiment_main
 from cgr_exp.scheduling_certification import run_scheduling_certification_experiment
 from cgr_exp.scheduling_diagnosis import run_scheduling_transfer_diagnosis
@@ -114,6 +114,7 @@ COMMANDS = [
     "audit-secret-safety",
     "build-current-experiment-status",
     "run-workflow-source-validation",
+    "run-structured-workflow-transfer",
 ]
 
 
@@ -257,6 +258,16 @@ def main() -> None:
             p.add_argument("--epochs", type=int, default=20)
             p.add_argument("--max-states-per-task", type=int, default=200)
             p.add_argument("--action-intent-training", action="store_true", default=False)
+        if name == "run-structured-workflow-transfer":
+            p.add_argument("--train-count", type=int, default=200)
+            p.add_argument("--validation-count", type=int, default=50)
+            p.add_argument("--test-count", type=int, default=100)
+            p.add_argument("--epochs", type=int, default=20)
+            p.add_argument("--node-budget", type=int, default=80)
+            p.add_argument("--max-states-per-task", type=int, default=200)
+            p.add_argument("--action-intent-training", action="store_true", default=True)
+            p.add_argument("--source-families", default="approval,incident,procurement")
+            p.add_argument("--target-families", default="academic,banking,farm,support")
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -1685,6 +1696,40 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'canonical_harness_source_validation.csv'}")
+            return
+        if args.command == "run-structured-workflow-transfer":
+            source_families = tuple(item.strip() for item in args.source_families.split(",") if item.strip())
+            target_families = tuple(item.strip() for item in args.target_families.split(",") if item.strip())
+            manifest = run_structured_workflow_transfer(
+                args.output_dir,
+                train_count=args.train_count,
+                validation_count=args.validation_count,
+                test_count=args.test_count,
+                seed=args.seed,
+                epochs=args.epochs,
+                node_budget=args.node_budget,
+                max_states_per_task=args.max_states_per_task,
+                action_intent_training=args.action_intent_training,
+                source_families=source_families,
+                target_families=target_families,
+            )
+            command_manifest = {
+                "command": args.command,
+                "seed": args.seed,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "benchmark": manifest["benchmark"],
+                "source_families": manifest["source_families"],
+                "target_families": manifest["target_families"],
+                "source_target_family_overlap": manifest["source_target_family_overlap"],
+                "target_trajectory_training_used": manifest["target_trajectory_training_used"],
+                "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
+                "tool_names_used_as_features": manifest["tool_names_used_as_features"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'structured_workflow_transfer_table.csv'}")
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

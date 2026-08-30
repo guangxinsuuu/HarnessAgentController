@@ -16,7 +16,9 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_expert_transfer,
     run_alfworld_transfer,
     _contract_filtered_admissible_commands,
+    _label_frontier_by_walkthrough_suffix,
     _select_command,
+    _walkthrough_training_rollout_command,
 )
 from cgr_exp.harness_contract import canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
@@ -594,6 +596,83 @@ class AlfworldTransferTest(unittest.TestCase):
             with (out / "alfworld_dense_action_labels.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
             self.assertGreater(len(rows), 0)
+
+    def test_walkthrough_suffix_labels_rank_future_plan_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gamefile = Path(tmp) / "game.tw-pddl"
+            gamefile.write_text(
+                '{"walkthrough": ["go to table", "take apple from table", "go to sink", "clean apple with sink", "go to counter"]}',
+                encoding="utf-8",
+            )
+            labels = _label_frontier_by_walkthrough_suffix(
+                gamefile=str(gamefile),
+                prefix=["go to table"],
+                commands=["go to sink", "take apple from table", "open cabinet"],
+                max_rollout_steps=5,
+                walkthrough_cache={},
+            )
+        by_command = {label.command: label for label in labels}
+        self.assertEqual(by_command["take apple from table"].reachable, 1)
+        self.assertEqual(by_command["go to sink"].reachable, 1)
+        self.assertLess(by_command["take apple from table"].cost_to_success, by_command["go to sink"].cost_to_success)
+        self.assertEqual(by_command["open cabinet"].reachable, 0)
+        self.assertEqual(by_command["take apple from table"].label_source, "walkthrough_suffix_cost_proxy")
+
+    def test_walkthrough_training_rollout_prefers_walkthrough_over_env_expert(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gamefile = Path(tmp) / "game.tw-pddl"
+            gamefile.write_text('{"walkthrough": ["go to table", "take apple from table"]}', encoding="utf-8")
+            command, used_walkthrough = _walkthrough_training_rollout_command(
+                gamefile=str(gamefile),
+                prefix=[],
+                expert="look",
+                admissible=["look", "go to table"],
+                rng=random.Random(0),
+                step=0,
+                perturbation_prob=0.0,
+                warmup_random_steps=0,
+                walkthrough_cache={},
+            )
+        self.assertEqual(command, "go to table")
+        self.assertTrue(used_walkthrough)
+
+    def test_run_alfworld_dense_train_can_use_walkthrough_label_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-train"
+            gamefile = Path(tmp) / "fake-game.tw-pddl"
+            gamefile.write_text(
+                '{"walkthrough": ["go to kitchen", "take apple", "put apple on table"]}',
+                encoding="utf-8",
+            )
+
+            class WalkthroughDenseEnv(FakeDenseAlfworldEnv):
+                def reset(self):
+                    obs, info = super().reset()
+                    info["extra.gamefile"] = [str(gamefile)]
+                    return obs, info
+
+                def step(self, commands):
+                    obs, score, done, info = super().step(commands)
+                    info["extra.gamefile"] = [str(gamefile)]
+                    return obs, score, done, info
+
+            manifest = run_alfworld_dense_train(
+                out,
+                train_episodes=1,
+                max_steps=4,
+                epochs=1,
+                max_pairs_per_state=8,
+                max_frontier_actions=3,
+                counterfactual_rollout_steps=4,
+                label_source="walkthrough",
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                env_factory=lambda **_kwargs: WalkthroughDenseEnv(),
+            )
+        self.assertEqual(manifest["training_source"], "alfworld_train_walkthrough_suffix_frontier_labels")
+        self.assertEqual(manifest["train"]["label_source"], "walkthrough_suffix_cost_proxy")
+        self.assertTrue(manifest["train"]["walkthrough_suffix_cost_proxy"])
+        self.assertLess(manifest["train"]["walkthrough_policy_miss_rate"], 1.0)
 
     def test_audit_alfworld_dense_labels_reports_cost_variation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

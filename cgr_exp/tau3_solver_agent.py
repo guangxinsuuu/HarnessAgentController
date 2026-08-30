@@ -268,11 +268,7 @@ class Tau3SolverControllerAgent(LLMAgent):
 
     @staticmethod
     def _ask_ready_from_progress(progress) -> bool:
-        return bool(
-            not progress.target_entity_resolved
-            or not progress.required_read_completed
-            or not progress.user_confirmation_obtained
-        )
+        return bool(progress.target_entity_resolved and progress.required_read_completed and not progress.user_confirmation_obtained)
 
     @staticmethod
     def _terminal_ready_from_progress(progress) -> bool:

@@ -44,6 +44,7 @@ class WorkflowState:
     remaining_turns: int
     remaining_tool_budget: int
     violations: int = 0
+    terminal: bool = False
 
     def key(self) -> Tuple[object, ...]:
         return (
@@ -54,6 +55,7 @@ class WorkflowState:
             self.remaining_turns,
             self.remaining_tool_budget,
             self.violations,
+            self.terminal,
         )
 
 
@@ -78,7 +80,7 @@ class WorkflowTask:
         )
 
     def candidate_actions(self, state: WorkflowState) -> List[WorkflowAction]:
-        if state.remaining_turns <= 0 or state.remaining_tool_budget <= 0:
+        if state.terminal or state.remaining_turns <= 0 or state.remaining_tool_budget <= 0:
             return []
         used = set(state.used_actions)
         return [WorkflowAction(idx) for idx in range(len(self.tools)) if idx not in used]
@@ -90,12 +92,25 @@ class WorkflowTask:
         failed = list(state.failed_actions)
         used = [*state.used_actions, action.tool_index]
         violations = state.violations
-        precondition_ok = tool.precondition_fact is None or state.observed_facts[tool.precondition_fact]
+        terminal = False
+        all_requirements_done = all(state.completed_requirements)
+        if tool.action_type in ("respond", "terminate"):
+            terminal = True
+            precondition_ok = all_requirements_done
+        elif tool.action_type == "ask":
+            precondition_ok = any(not fact for fact in state.observed_facts)
+        else:
+            precondition_ok = tool.precondition_fact is None or state.observed_facts[tool.precondition_fact]
         if not precondition_ok:
             failed.append(action.tool_index)
             violations += 1
         else:
-            if tool.reveals_fact is not None:
+            if tool.action_type == "ask" and tool.reveals_fact is None:
+                for idx, value in enumerate(observed):
+                    if not value:
+                        observed[idx] = True
+                        break
+            elif tool.reveals_fact is not None:
                 observed[tool.reveals_fact] = True
             if tool.completes_requirement is not None:
                 completed[tool.completes_requirement] = True
@@ -107,15 +122,17 @@ class WorkflowTask:
             remaining_turns=max(0, state.remaining_turns - 1),
             remaining_tool_budget=max(0, state.remaining_tool_budget - tool.cost),
             violations=violations,
+            terminal=terminal,
         )
 
     def success(self, state: WorkflowState) -> bool:
-        return all(state.completed_requirements) and state.violations == 0
+        return state.terminal and all(state.completed_requirements) and state.violations == 0
 
     def reward(self, state: WorkflowState) -> float:
         completed = sum(1 for item in state.completed_requirements if item)
         progress = completed / max(1, self.requirement_count)
-        return (100.0 if self.success(state) else 0.0) + 10.0 * progress - 8.0 * state.violations - len(state.used_actions)
+        terminal_penalty = 20.0 if state.terminal and not self.success(state) else 0.0
+        return (100.0 if self.success(state) else 0.0) + 10.0 * progress - 8.0 * state.violations - terminal_penalty - len(state.used_actions)
 
 
 def generate_workflow_source_tasks(count: int, seed: int = 0, anonymize_tools: bool = True) -> List[WorkflowTask]:
@@ -171,10 +188,10 @@ def workflow_runtime_features(task: WorkflowTask, state: WorkflowState) -> Runti
 
 def workflow_action_features(task: WorkflowTask, state: WorkflowState, action: WorkflowAction) -> ActionFeatures:
     tool = task.tools[action.tool_index]
-    precondition_ok = tool.precondition_fact is None or state.observed_facts[tool.precondition_fact]
+    precondition_ok = _action_precondition_ok(task, state, tool)
     duplicates = action.tool_index in state.used_actions
     references_observed = tool.precondition_fact is not None and state.observed_facts[tool.precondition_fact]
-    references_unverified = tool.precondition_fact is not None and not state.observed_facts[tool.precondition_fact]
+    references_unverified = _references_unverified(state, tool)
     return ActionFeatures(
         action_is_read=1.0 if tool.action_type == "read" else 0.0,
         action_is_write=1.0 if tool.action_type == "write" else 0.0,
@@ -194,10 +211,11 @@ def workflow_action_features(task: WorkflowTask, state: WorkflowState, action: W
 
 def workflow_action_intent_features(task: WorkflowTask, state: WorkflowState, action: WorkflowAction) -> ActionFeatures:
     tool = task.tools[action.tool_index]
-    precondition_ok = tool.precondition_fact is None or state.observed_facts[tool.precondition_fact]
+    precondition_ok = _action_precondition_ok(task, state, tool)
     duplicates = action.tool_index in state.used_actions
     references_observed = tool.precondition_fact is not None and state.observed_facts[tool.precondition_fact]
-    references_unverified = tool.precondition_fact is not None and not state.observed_facts[tool.precondition_fact]
+    references_unverified = _references_unverified(state, tool)
+    premature_final = tool.action_type in ("respond", "terminate") and not all(state.completed_requirements)
     return ActionFeatures(
         action_is_read=1.0 if tool.action_type == "read" else 0.0,
         action_is_write=1.0 if tool.action_type == "write" else 0.0,
@@ -210,7 +228,10 @@ def workflow_action_intent_features(task: WorkflowTask, state: WorkflowState, ac
         expected_tool_cost_frac=tool.cost / max(1, task.tool_budget),
         action_irreversible=1.0 if tool.irreversible else 0.0,
         precondition_satisfied=1.0 if precondition_ok else 0.0,
-        policy_risk=tool.policy_risk + (0.5 if tool.action_type == "write" and not precondition_ok else 0.0),
+        policy_risk=tool.policy_risk
+        + (0.5 if tool.action_type == "write" and not precondition_ok else 0.0)
+        + (0.8 if premature_final else 0.0)
+        + (0.3 if tool.action_type == "ask" and not precondition_ok else 0.0),
         duplicates_previous_action=1.0 if duplicates else 0.0,
     )
 
@@ -272,6 +293,7 @@ def _make_tools(
             )
         )
     tools.append(WorkflowTool(name=_tool_name(task_idx, len(tools), family, "ask", anonymize), action_type="ask"))
+    tools.append(WorkflowTool(name=_tool_name(task_idx, len(tools), family, "respond", anonymize), action_type="respond"))
     tools.append(WorkflowTool(name=_tool_name(task_idx, len(tools), family, "terminate", anonymize), action_type="terminate"))
     return tools
 
@@ -289,3 +311,21 @@ def _stagnation_frac(task: WorkflowTask, state: WorkflowState) -> float:
     progress_tools = {idx for idx, tool in enumerate(task.tools) if tool.reveals_fact is not None or tool.completes_requirement is not None}
     stagnant = sum(1 for idx in last_actions if idx not in progress_tools)
     return stagnant / len(last_actions)
+
+
+def _action_precondition_ok(task: WorkflowTask, state: WorkflowState, tool: WorkflowTool) -> bool:
+    if tool.action_type in ("respond", "terminate"):
+        return all(state.completed_requirements)
+    if tool.action_type == "ask":
+        return any(not fact for fact in state.observed_facts)
+    return tool.precondition_fact is None or state.observed_facts[tool.precondition_fact]
+
+
+def _references_unverified(state: WorkflowState, tool: WorkflowTool) -> bool:
+    if tool.precondition_fact is not None:
+        return not state.observed_facts[tool.precondition_fact]
+    if tool.action_type == "ask":
+        return any(not fact for fact in state.observed_facts)
+    if tool.action_type in ("respond", "terminate"):
+        return False
+    return False

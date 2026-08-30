@@ -117,6 +117,7 @@ class Tau3SolverControllerAgent(LLMAgent):
             active_candidates = candidates
         for candidate in active_candidates:
             score, coverage = self._score_candidate(candidate.synthetic_message, history)
+            score = self._calibrate_action_space_score(candidate, score, history)
             scored_candidates.append((candidate.index, score, coverage))
         selected_index = max(scored_candidates, key=lambda item: (item[1], -item[0]))[0] if scored_candidates else 0
         selected_candidate = next(candidate for candidate in candidates if candidate.index == selected_index)
@@ -169,11 +170,29 @@ class Tau3SolverControllerAgent(LLMAgent):
                     tool=tool,
                 )
             )
+        terminal_ready = self._terminal_ready_from_progress(progress)
+        ask_ready = self._ask_ready_from_progress(progress)
         for intent, action_type in (("ask", "ask"), ("respond", "respond"), ("terminate", "terminate")):
+            if action_type == "ask":
+                precondition_satisfied = 1.0 if ask_ready else 0.0
+                references_unverified = 1.0 if ask_ready else 0.0
+                policy_risk = 0.1 if ask_ready else 0.6
+            else:
+                precondition_satisfied = 1.0 if terminal_ready else 0.0
+                references_unverified = 0.0
+                policy_risk = 0.05 if terminal_ready else 0.9
             synthetic = AssistantMessage(
                 role="assistant",
                 content=f"CGR meta action: {intent}",
-                raw_data={"cgr_action_intent": intent, "cgr_action_type": action_type},
+                raw_data={
+                    "cgr_action_intent": intent,
+                    "cgr_action_type": action_type,
+                    "cgr_argument_completeness": 0.0,
+                    "cgr_references_observed_entity": 0.0,
+                    "cgr_references_unverified_entity": references_unverified,
+                    "cgr_precondition_satisfied": precondition_satisfied,
+                    "cgr_policy_risk": policy_risk,
+                },
             )
             candidates.append(
                 _ActionSpaceCandidate(
@@ -230,6 +249,34 @@ class Tau3SolverControllerAgent(LLMAgent):
         if len(pruned) == len(candidates):
             return {}
         return pruned
+
+    def _calibrate_action_space_score(self, candidate: _ActionSpaceCandidate, score: float, history: List[APICompatibleMessage]) -> float:
+        progress = tau3_progress_predicates(message_history=history)
+        if candidate.intent in ("respond", "terminate"):
+            return score + 10.0 if self._terminal_ready_from_progress(progress) else score - 12.0
+        if candidate.intent == "ask":
+            return score + 3.0 if self._ask_ready_from_progress(progress) else score - 2.0
+        if progress.write_action_completed:
+            return score - 6.0
+        if candidate.action_type == "write" and not self._write_ready_from_progress(progress):
+            return score - 8.0
+        return score
+
+    @staticmethod
+    def _write_ready_from_progress(progress) -> bool:
+        return bool(progress.target_entity_resolved and progress.required_read_completed and progress.user_confirmation_obtained)
+
+    @staticmethod
+    def _ask_ready_from_progress(progress) -> bool:
+        return bool(
+            not progress.target_entity_resolved
+            or not progress.required_read_completed
+            or not progress.user_confirmation_obtained
+        )
+
+    @staticmethod
+    def _terminal_ready_from_progress(progress) -> bool:
+        return bool(progress.write_action_completed and progress.target_entity_resolved and progress.required_read_completed)
 
     def _select_candidate(self, candidates: List[AssistantMessage], history: List[APICompatibleMessage]) -> AssistantMessage:
         greedy = candidates[0]

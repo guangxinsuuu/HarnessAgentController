@@ -243,6 +243,28 @@ class FakePlannerAlfworldEnv:
         }, 0.0, False
 
 
+class FakeBadSuffixPlannerAlfworldEnv(FakePlannerAlfworldEnv):
+    def step(self, command):
+        if isinstance(command, list):
+            command = command[0]
+        if self.state == "root" and command == "go to kitchen":
+            self.state = "kitchen"
+            return {
+                "feedback": "You see an apple and a table.",
+                "admissible_commands": ["look around"],
+                "policy_commands": ["look around"],
+                "won": False,
+            }, 0.0, False
+        if self.state == "kitchen" and command == "look around":
+            return {
+                "feedback": "Still no path to the goal.",
+                "admissible_commands": ["look around"],
+                "policy_commands": [],
+                "won": False,
+            }, 0.0, False
+        return super().step(command)
+
+
 class FakeCopyablePlannerAlfworldEnv(FakePlannerAlfworldEnv):
     def copy(self):
         copied = FakeCopyablePlannerAlfworldEnv()
@@ -325,6 +347,17 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(by_command["go to kitchen"].label_source, "textworld_pddl_replan_cost_to_go")
         self.assertEqual(by_command["go to kitchen"].label_status, "planner_replanned")
         self.assertEqual(by_command["open cabinet"].label_status, "planner_no_plan")
+
+    def test_planner_labels_require_suffix_rollout_success(self) -> None:
+        labels = _label_frontier_by_planner_cost(
+            FakeBadSuffixPlannerAlfworldEnv(),
+            gamefile="fake-game",
+            prefix=[],
+            commands=["go to kitchen"],
+            max_rollout_steps=5,
+        )
+        self.assertEqual(labels[0].reachable, 0)
+        self.assertEqual(labels[0].label_status, "planner_no_plan")
 
     def test_planner_labels_use_snapshot_fast_path_when_available(self) -> None:
         env = FakeCopyablePlannerAlfworldEnv()

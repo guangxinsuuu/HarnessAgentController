@@ -1613,9 +1613,14 @@ def _planner_cost_for_candidate_from_state(
     if next_done and score > 0:
         return 1, True, score, True, 1, "candidate_solves_snapshot"
     remaining_plan = _planner_policy_commands_from_info(next_info)
-    reachable = bool(remaining_plan)
-    cost = 1 + len(remaining_plan) if reachable else unreachable_cost
-    return cost, reachable, score, next_done, cost if reachable else 0, "planner_replanned_snapshot" if reachable else "planner_no_plan_snapshot"
+    suffix_steps, suffix_reachable, suffix_score, suffix_done = _rollout_planner_suffix_to_success(
+        env,
+        remaining_plan,
+        max_suffix_steps=max(0, unreachable_cost - 1),
+    )
+    reachable = bool(suffix_reachable)
+    cost = 1 + suffix_steps if reachable else unreachable_cost
+    return cost, reachable, suffix_score if reachable else score, suffix_done, cost if reachable else 0, "planner_replanned_snapshot" if reachable else "planner_no_plan_snapshot"
 
 
 def _alfworld_planner_label_cache_key(
@@ -1626,7 +1631,7 @@ def _alfworld_planner_label_cache_key(
     max_rollout_steps: int,
 ) -> str:
     payload = {
-        "version": "alfworld-planner-label-v1",
+        "version": "alfworld-planner-label-v2",
         "gamefile": str(gamefile or ""),
         "prefix": [_normalize_command(item) for item in prefix],
         "command": _normalize_command(command),
@@ -1688,9 +1693,33 @@ def _planner_cost_for_candidate(
     if next_done and score > 0:
         return 1, True, score, True, 1, "candidate_solves"
     remaining_plan = _planner_policy_commands_from_info(next_info)
-    reachable = bool(remaining_plan)
-    cost = 1 + len(remaining_plan) if reachable else unreachable_cost
-    return cost, reachable, score, next_done, cost if reachable else 0, "planner_replanned" if reachable else "planner_no_plan"
+    suffix_steps, suffix_reachable, suffix_score, suffix_done = _rollout_planner_suffix_to_success(
+        target,
+        remaining_plan,
+        max_suffix_steps=max(0, unreachable_cost - 1),
+    )
+    reachable = bool(suffix_reachable)
+    cost = 1 + suffix_steps if reachable else unreachable_cost
+    return cost, reachable, suffix_score if reachable else score, suffix_done, cost if reachable else 0, "planner_replanned" if reachable else "planner_no_plan"
+
+
+def _rollout_planner_suffix_to_success(
+    env: Any,
+    commands: Sequence[str],
+    *,
+    max_suffix_steps: int,
+) -> tuple[int, bool, float, bool]:
+    steps = 0
+    score = 0.0
+    done = False
+    for command in commands[:max_suffix_steps]:
+        _observation, score, done, info = _step_any(env, command)
+        steps += 1
+        if done and score > 0:
+            return steps, True, score, done
+        if done:
+            return steps, False, score, done
+    return steps, False, score, done
 
 
 def _label_frontier_by_walkthrough_suffix(

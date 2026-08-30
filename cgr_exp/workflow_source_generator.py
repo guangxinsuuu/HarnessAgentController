@@ -213,7 +213,7 @@ def _source_generator_distribution(anonymize_tools: bool) -> Dict[str, object]:
         "fact_count": "uniform_int[2,5]",
         "requirement_count": "uniform_int[2,5]",
         "turn_budget": "requirements + facts + uniform_int[1,4]",
-        "families": "round_robin over approval/incident/procurement/reproducibility/support",
+        "families": {"schedule": "round_robin", "values": list(WORKFLOW_FAMILIES)},
         "tool_names": "anonymous source_tool_{task}_{index}" if anonymize_tools else "family_action_{index}",
     }
 

@@ -582,6 +582,20 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("LLM call accounting missing", blockers)
             self.assertIn("token accounting missing", blockers)
 
+    def test_table10_readiness_rejects_failed_tau2_row(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            row_dir = root / "solver_retail"
+            row_dir.mkdir()
+            _write_row(row_dir, "retail", method="Solver-derived controller", task_count=0, status="tau2_failed:7")
+            readiness = audit_table10_tau3_readiness(root / "audit", [row_dir], expected_test_count=2)
+            self.assertFalse(readiness["all_rows_result_ready"])
+            self.assertEqual(readiness["pending_or_partial_rows"], ["retail: Solver-derived controller"])
+            row = readiness["audit_rows"][0]
+            self.assertFalse(row["result_ready"])
+            self.assertIn("tau2_failed:7", row["result_blockers"])
+            self.assertIn("partial: 0/2", row["result_blockers"])
+
     def test_audits_table10_tau3_readiness_rejects_missing_canonical_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

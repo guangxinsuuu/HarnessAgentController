@@ -199,7 +199,7 @@ def run_alfworld_dense_transfer(
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
     ranker_checkpoint: Path | None = None,
-    policies: Sequence[str] = ("Random", "Hand heuristic", "ALFWorld dense-ranker"),
+    policies: Sequence[str] = ("Random", "Hand heuristic", "ALFWorld dense-ranker", "ALFWorld planner diagnostic"),
     env_factory: Callable[..., Any] | None = None,
 ) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1752,7 +1752,11 @@ def _make_alfworld_planner_env(*, env_factory: Callable[..., Any] | None = None)
 
 
 def _alfworld_env_method_for_policy(policy: str) -> str:
-    return "dagger" if policy == "ALFWorld expert-plan diagnostic" else "dqn"
+    return "dagger" if _is_alfworld_planner_diagnostic(policy) else "dqn"
+
+
+def _is_alfworld_planner_diagnostic(policy: str) -> bool:
+    return policy in {"ALFWorld expert-plan diagnostic", "ALFWorld planner diagnostic"}
 
 
 def _default_alfworld_textworld_config(*, training_method: str = "dqn") -> dict[str, Any]:
@@ -1807,7 +1811,10 @@ def _run_episode(
     obs, info = env.reset()
     observation = _first(obs)
     objective = _objective_from_info(info, observation)
+    gamefile = _gamefile_from_info(info)
     history: list[str] = [f"obs:{observation}"]
+    prefix: list[str] = []
+    walkthrough_cache: dict[str, list[str]] = {}
     final_score = 0.0
     invalid_actions = 0
     admissible_counts = []
@@ -1826,8 +1833,24 @@ def _run_episode(
             break
         admissible_counts.append(len(admissible))
         opportunities += 1 if len(admissible) >= 2 else 0
-        expert = _expert_action_from_info(info)
-        command, selection = _select_command_with_trace(policy, observation, objective, history, admissible, ranker, rng, max_steps, expert=expert)
+        diagnostic_action = _alfworld_diagnostic_action_from_info(
+            info,
+            gamefile=gamefile,
+            prefix=prefix,
+            admissible=admissible,
+            walkthrough_cache=walkthrough_cache,
+        )
+        command, selection = _select_command_with_trace(
+            policy,
+            observation,
+            objective,
+            history,
+            admissible,
+            ranker,
+            rng,
+            max_steps,
+            expert=diagnostic_action,
+        )
         if command not in admissible:
             invalid_actions += 1
         next_obs, scores, dones, info = env.step([command])
@@ -1850,6 +1873,8 @@ def _run_episode(
                 )
             )
         observation = str(_first(next_obs, ""))
+        gamefile = _gamefile_from_info(info) or gamefile
+        prefix.append(command)
         history.extend([f"act:{command}", f"obs:{observation}"])
         steps = step + 1
         if done:
@@ -1895,7 +1920,7 @@ def _select_command_with_trace(
     if policy == "Random":
         command = rng.choice(list(admissible))
         return command, {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 0, "top_ranked_commands": "", "candidate_score_summary": ""}
-    if policy == "ALFWorld expert-plan diagnostic":
+    if _is_alfworld_planner_diagnostic(policy):
         if expert in admissible:
             return str(expert), {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 1, "top_ranked_commands": "", "candidate_score_summary": ""}
         return rng.choice(list(admissible)), {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 0, "top_ranked_commands": "", "candidate_score_summary": ""}
@@ -2082,6 +2107,38 @@ def _expert_action_from_info(info: Mapping[str, Any]) -> str | None:
             action = _first(plan, plan)
             if action:
                 return str(action)
+    return None
+
+
+def _alfworld_diagnostic_action_from_info(
+    info: Mapping[str, Any],
+    *,
+    gamefile: str | None,
+    prefix: Sequence[str],
+    admissible: Sequence[str],
+    walkthrough_cache: dict[str, list[str]],
+) -> str | None:
+    expert = _expert_action_from_info(info)
+    matched = _match_admissible_command(expert, admissible)
+    if matched is not None:
+        return matched
+    for command in _planner_policy_commands_from_info(info):
+        matched = _match_admissible_command(command, admissible)
+        if matched is not None:
+            return matched
+    walkthrough_next = _walkthrough_next_command(gamefile=gamefile, prefix=prefix, walkthrough_cache=walkthrough_cache)
+    return _match_admissible_command(walkthrough_next, admissible)
+
+
+def _match_admissible_command(command: str | None, admissible: Sequence[str]) -> str | None:
+    if command is None:
+        return None
+    if command in admissible:
+        return str(command)
+    target = _normalize_command(command)
+    for candidate in admissible:
+        if _normalize_command(candidate) == target:
+            return str(candidate)
     return None
 
 
@@ -2592,7 +2649,10 @@ def _gamefile_from_info(info: Mapping[str, Any]) -> str | None:
     value = info.get("extra.gamefile")
     if not value:
         return None
-    return str(_first(value, value))
+    gamefile = str(_first(value, value)).strip()
+    if not gamefile or gamefile.lower() in {"none", "null"}:
+        return None
+    return gamefile
 
 
 def _objective_from_info(info: Mapping[str, Any], observation: str) -> str:

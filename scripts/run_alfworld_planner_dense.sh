@@ -34,7 +34,7 @@ TRAIN_DIR="${TRAIN_DIR:-${OUT_ROOT}_train}"
 AUDIT_DIR="${AUDIT_DIR:-${OUT_ROOT}_audit}"
 EVAL_DIR="${EVAL_DIR:-${OUT_ROOT}_eval}"
 RANKER_CHECKPOINT="${RANKER_CHECKPOINT:-${TRAIN_DIR}/alfworld_dense_ranker.json}"
-POLICIES="${POLICIES:-Random,Hand heuristic,ALFWorld dense-ranker}"
+POLICIES="${POLICIES:-Random,Hand heuristic,ALFWorld dense-ranker,ALFWorld planner diagnostic}"
 RESUME="${RESUME:-0}"
 
 export ALFWORLD_DATA

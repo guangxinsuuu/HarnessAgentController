@@ -17,9 +17,12 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_transfer,
     _contract_filtered_admissible_commands,
     _command_type,
+    _alfworld_env_method_for_policy,
+    _alfworld_diagnostic_action_from_info,
     _label_frontier_by_planner_cost,
     _label_frontier_by_walkthrough_suffix,
     _frontier_sample,
+    _gamefile_from_info,
     _planner_training_rollout_command,
     _select_command,
     _walkthrough_training_rollout_command,
@@ -810,6 +813,39 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertIn("take remotecontrol 1 from coffeetable 1", sampled)
         self.assertIn("put remotecontrol 1 on armchair 1", sampled)
         self.assertGreaterEqual(len({_command_type(command) for command in sampled}), 2)
+
+    def test_alfworld_planner_diagnostic_uses_expert_plan_path(self) -> None:
+        ranker = GenericHarnessRanker([0.0 for _name in canonical_feature_names()])
+        command = _select_command(
+            "ALFWorld planner diagnostic",
+            "You are in a kitchen.",
+            "put apple on table",
+            ["obs:You are in a kitchen."],
+            ["look", "take apple"],
+            ranker,
+            random.Random(0),
+            10,
+            expert="take apple",
+        )
+        self.assertEqual(command, "take apple")
+        self.assertEqual(_alfworld_env_method_for_policy("ALFWorld planner diagnostic"), "dagger")
+
+    def test_alfworld_planner_diagnostic_can_use_walkthrough_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gamefile = Path(tmp) / "game.tw-pddl"
+            gamefile.write_text('{"walkthrough": ["go to table", "take apple from table"]}', encoding="utf-8")
+            command = _alfworld_diagnostic_action_from_info(
+                {},
+                gamefile=str(gamefile),
+                prefix=["go to table"],
+                admissible=["look", "take apple from table"],
+                walkthrough_cache={},
+            )
+        self.assertEqual(command, "take apple from table")
+
+    def test_gamefile_from_info_ignores_none_string_values(self) -> None:
+        self.assertIsNone(_gamefile_from_info({"extra.gamefile": [None]}))
+        self.assertIsNone(_gamefile_from_info({"extra.gamefile": ["None"]}))
 
     def test_run_alfworld_dense_train_can_use_walkthrough_label_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

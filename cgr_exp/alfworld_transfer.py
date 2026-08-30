@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from cgr_exp.harness_contract import ActionFeatures, CanonicalCandidate, RuntimeFeatures, canonical_contract_manifest
+from cgr_exp.harness_contract import ActionFeatures, CanonicalCandidate, RuntimeFeatures, canonical_contract_manifest, canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker, train_generic_harness_ranker
 from cgr_exp.workflow_source_generator import SOURCE_WORKFLOW_FAMILIES, generate_workflow_source_tasks, source_generator_manifest
 
@@ -100,6 +100,169 @@ def run_alfworld_transfer(
     _write_csv(out_dir / "alfworld_transfer_per_episode.csv", [row.__dict__ for row in all_results])
     (out_dir / "alfworld_transfer.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
+
+
+def run_alfworld_expert_transfer(
+    out_dir: Path,
+    *,
+    seed: int = 0,
+    eval_split: str = "eval_out_of_distribution",
+    config_path: Path | None = None,
+    train_episodes: int = 200,
+    eval_episodes: int = 20,
+    max_steps: int = 50,
+    epochs: int = 20,
+    max_pairs_per_state: int = 24,
+    perturbation_prob: float = 0.15,
+    warmup_random_steps: int = 5,
+    policies: Sequence[str] = ("Random", "Hand heuristic", "ALFWorld expert-ranker"),
+    env_factory: Callable[..., Any] | None = None,
+) -> dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if env_factory is None:
+        _assert_alfworld_available()
+    ranker, train_manifest, train_rows = train_alfworld_expert_ranker(
+        seed=seed,
+        config_path=config_path,
+        train_episodes=train_episodes,
+        max_steps=max_steps,
+        epochs=epochs,
+        max_pairs_per_state=max_pairs_per_state,
+        perturbation_prob=perturbation_prob,
+        warmup_random_steps=warmup_random_steps,
+        env_factory=env_factory,
+    )
+    all_results: list[AlfworldEpisodeResult] = []
+    for policy in policies:
+        env = _make_alfworld_env(split=eval_split, config_path=config_path, env_factory=env_factory)
+        for episode in range(eval_episodes):
+            all_results.append(
+                _run_episode(
+                    env,
+                    policy=policy,
+                    ranker=ranker,
+                    seed=seed * 100000 + episode,
+                    episode=episode,
+                    max_steps=max_steps,
+                )
+            )
+    rows = [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies]
+    manifest = {
+        "benchmark": "alfworld_expert_frontier_transfer",
+        "seed": seed,
+        "train_split": "train",
+        "eval_split": eval_split,
+        "train_episodes": train_episodes,
+        "eval_episodes": eval_episodes,
+        "max_steps": max_steps,
+        "policies": list(policies),
+        "uses_admissible_commands": True,
+        "training_source": "alfworld_train_expert_plan_frontier_labels",
+        "llm_rollout_trajectories_used": False,
+        "target_eval_trajectories_used_for_training": False,
+        "oracle_labels_in_inference_features": False,
+        "command_string_used_as_learned_feature": False,
+        "controller_checkpoint_frozen_before_eval": True,
+        "contract": canonical_contract_manifest(),
+        "train": train_manifest,
+        "rows": rows,
+    }
+    (out_dir / "alfworld_expert_ranker.json").write_text(ranker.to_json(), encoding="utf-8")
+    _write_csv(out_dir / "alfworld_expert_transfer_table.csv", rows)
+    _write_csv(out_dir / "alfworld_expert_transfer_per_episode.csv", [row.__dict__ for row in all_results])
+    _write_csv(out_dir / "alfworld_expert_training_trace.csv", train_rows)
+    (out_dir / "alfworld_expert_transfer.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
+def train_alfworld_expert_ranker(
+    *,
+    seed: int = 0,
+    config_path: Path | None = None,
+    train_episodes: int = 200,
+    max_steps: int = 50,
+    epochs: int = 20,
+    max_pairs_per_state: int = 24,
+    perturbation_prob: float = 0.15,
+    warmup_random_steps: int = 5,
+    env_factory: Callable[..., Any] | None = None,
+) -> tuple[GenericHarnessRanker, dict[str, object], list[dict[str, object]]]:
+    rng = random.Random(seed)
+    env = _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
+    pairs = []
+    trace_rows: list[dict[str, object]] = []
+    expert_labeled_states = 0
+    skipped_states = 0
+    for episode in range(train_episodes):
+        obs, info = env.reset()
+        observation = _first(obs)
+        objective = _objective_from_info(info, observation)
+        history: list[str] = [f"obs:{observation}"]
+        episode_pairs = 0
+        final_score = 0.0
+        for step in range(max_steps):
+            admissible = _admissible_from_info(info)
+            expert = _expert_action_from_info(info)
+            if not admissible:
+                break
+            if expert in admissible and len(admissible) >= 2:
+                positives = [
+                    alfworld_candidate_to_canonical(
+                        candidate_id=f"alfworld-train:{episode}:{step}:expert",
+                        observation=observation,
+                        objective=objective,
+                        history=history,
+                        admissible_commands=admissible,
+                        command=expert,
+                        max_steps=max_steps,
+                    ).feature_vector()
+                ]
+                negatives = [command for command in admissible if command != expert]
+                rng.shuffle(negatives)
+                for command in negatives[:max_pairs_per_state]:
+                    negative = alfworld_candidate_to_canonical(
+                        candidate_id=f"alfworld-train:{episode}:{step}:neg",
+                        observation=observation,
+                        objective=objective,
+                        history=history,
+                        admissible_commands=admissible,
+                        command=command,
+                        max_steps=max_steps,
+                    ).feature_vector()
+                    pairs.append((positives[0], negative))
+                    episode_pairs += 1
+                expert_labeled_states += 1
+            else:
+                skipped_states += 1
+            command = _training_rollout_command(
+                expert=expert,
+                admissible=admissible,
+                rng=rng,
+                step=step,
+                perturbation_prob=perturbation_prob,
+                warmup_random_steps=warmup_random_steps,
+            )
+            next_obs, scores, dones, info = env.step([command])
+            final_score = float(_first(scores, 0.0))
+            observation = str(_first(next_obs, ""))
+            history.extend([f"act:{command}", f"obs:{observation}"])
+            if bool(_first(dones, False)):
+                break
+        trace_rows.append({"episode": episode, "pairs": episode_pairs, "steps": _action_count(history), "final_score": final_score})
+    ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
+    ranker.train(pairs, epochs=epochs, lr=0.03, seed=seed)
+    manifest = {
+        "train_pair_count": len(pairs),
+        "expert_labeled_states": expert_labeled_states,
+        "skipped_states": skipped_states,
+        "epochs": epochs,
+        "max_pairs_per_state": max_pairs_per_state,
+        "perturbation_prob": perturbation_prob,
+        "warmup_random_steps": warmup_random_steps,
+        "expert_source": "ALFWorld train split extra.expert_plan",
+        "counterfactual_planner_cost_to_go": False,
+    }
+    return ranker, manifest, trace_rows
 
 
 def alfworld_candidate_to_canonical(
@@ -232,7 +395,7 @@ def _load_or_train_ranker(
     }
 
 
-def _make_alfworld_env(*, split: str, config_path: Path | None, env_factory: Callable[..., Any] | None) -> Any:
+def _make_alfworld_env(*, split: str, config_path: Path | None, env_factory: Callable[..., Any] | None, training_method: str = "dqn") -> Any:
     if env_factory is not None:
         return env_factory(split=split, config_path=config_path)
     try:
@@ -249,7 +412,7 @@ def _make_alfworld_env(*, split: str, config_path: Path | None, env_factory: Cal
         with config_path.open(encoding="utf-8") as reader:
             config = yaml.safe_load(reader)
     else:
-        config = _default_alfworld_textworld_config()
+        config = _default_alfworld_textworld_config(training_method=training_method)
     env_type = config.get("env", {}).get("type", "AlfredTWEnv")
     try:
         env_cls = environment.get_environment(env_type)
@@ -258,13 +421,13 @@ def _make_alfworld_env(*, split: str, config_path: Path | None, env_factory: Cal
     return env_cls(config, train_eval=split).init_env(batch_size=1)
 
 
-def _default_alfworld_textworld_config() -> dict[str, Any]:
+def _default_alfworld_textworld_config(*, training_method: str = "dqn") -> dict[str, Any]:
     data_root = os.environ.get("ALFWORLD_DATA")
     if not data_root:
         data_root = str(Path("data/alfworld").resolve())
     root = Path(data_root)
     return {
-        "general": {"training_method": "dqn"},
+        "general": {"training_method": training_method},
         "env": {
             "type": "AlfredTWEnv",
             "goal_desc_human_anns_prob": 0.0,
@@ -352,7 +515,7 @@ def _select_command(
         return rng.choice(list(admissible))
     if policy == "Hand heuristic":
         return max(admissible, key=lambda command: (_hand_score(command, observation, objective, history), -admissible.index(command)))
-    if policy == "Source-trained controller":
+    if policy in {"Source-trained controller", "ALFWorld expert-ranker"}:
         scored = []
         for idx, command in enumerate(admissible):
             candidate = alfworld_candidate_to_canonical(
@@ -367,6 +530,41 @@ def _select_command(
             scored.append((ranker.score(candidate.feature_vector()), -idx, command))
         return max(scored)[2]
     raise ValueError(f"unknown ALFWorld policy: {policy}")
+
+
+def _expert_action_from_info(info: Mapping[str, Any]) -> str | None:
+    for key in ("extra.expert_plan", "expert_plan"):
+        value = info.get(key)
+        if value:
+            plan = _first(value, value)
+            action = _first(plan, plan)
+            if action:
+                return str(action)
+    extras = info.get("extras")
+    if isinstance(extras, Mapping):
+        value = extras.get("expert_plan")
+        if value:
+            plan = _first(value, value)
+            action = _first(plan, plan)
+            if action:
+                return str(action)
+    return None
+
+
+def _training_rollout_command(
+    *,
+    expert: str | None,
+    admissible: Sequence[str],
+    rng: random.Random,
+    step: int,
+    perturbation_prob: float,
+    warmup_random_steps: int,
+) -> str:
+    if not admissible:
+        raise ValueError("cannot roll out ALFWorld state without admissible commands")
+    if step < warmup_random_steps or rng.random() < perturbation_prob or expert not in admissible:
+        return rng.choice(list(admissible))
+    return str(expert)
 
 
 def _hand_score(command: str, observation: str, objective: str, history: Sequence[str]) -> float:
@@ -457,7 +655,21 @@ def _objective_from_info(info: Mapping[str, Any], observation: str) -> str:
         value = info.get(key)
         if value:
             return str(_first(value, value))
-    return observation
+    parsed = _task_text_from_observation(observation)
+    return parsed or observation
+
+
+def _task_text_from_observation(observation: str) -> str:
+    marker = "your task is to:"
+    lowered = observation.lower()
+    idx = lowered.find(marker)
+    if idx < 0:
+        return ""
+    task = observation[idx + len(marker) :].strip()
+    for stop in ("\n\n", "\n"):
+        if stop in task:
+            task = task.split(stop, 1)[0].strip()
+    return task.strip(" .")
 
 
 def _first(value: Any, default: Any = None) -> Any:

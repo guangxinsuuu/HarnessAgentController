@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cgr_exp.alfworld_transfer import alfworld_candidate_to_canonical, run_alfworld_transfer
+from cgr_exp.alfworld_transfer import alfworld_candidate_to_canonical, run_alfworld_expert_transfer, run_alfworld_transfer
 from cgr_exp.harness_contract import canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
 
@@ -39,6 +39,25 @@ class FakeAlfworldEnv:
         return ["Nothing happens."], [0.0], [False], {"admissible_commands": [["look"]], "objective": ["put apple on table"]}
 
 
+class FakeExpertAlfworldEnv(FakeAlfworldEnv):
+    def reset(self):
+        obs, info = super().reset()
+        info["extra.expert_plan"] = [["look"]]
+        return obs, info
+
+    def step(self, commands):
+        obs, score, done, info = super().step(commands)
+        admissible = info.get("admissible_commands", [[]])[0]
+        if "take apple" in admissible:
+            expert = "take apple"
+        elif "put apple on table" in admissible:
+            expert = "put apple on table"
+        else:
+            expert = admissible[0] if admissible else "look"
+        info["extra.expert_plan"] = [[expert]]
+        return obs, score, done, info
+
+
 class AlfworldTransferTest(unittest.TestCase):
     def test_adapter_uses_canonical_features_without_command_string_feature(self) -> None:
         candidate = alfworld_candidate_to_canonical(
@@ -53,6 +72,28 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(len(candidate.feature_vector()), len(canonical_feature_names()))
         self.assertEqual(candidate.action.action_is_write, 1.0)
         self.assertEqual(candidate.action.declared_requirement_gain, 1.0)
+
+    def test_adapter_extracts_task_text_from_full_alfworld_observation(self) -> None:
+        candidate = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You see a cabinet and a fridge. Your task is to: put a cool tomato in fridge.",
+            objective="put a cool tomato in fridge",
+            history=["obs:You see a cabinet and a fridge. Your task is to: put a cool tomato in fridge."],
+            admissible_commands=["go to cabinet", "go to fridge"],
+            command="go to fridge",
+            max_steps=10,
+        )
+        other = alfworld_candidate_to_canonical(
+            candidate_id="c1",
+            observation="You see a cabinet and a fridge. Your task is to: put a cool tomato in fridge.",
+            objective="put a cool tomato in fridge",
+            history=["obs:You see a cabinet and a fridge. Your task is to: put a cool tomato in fridge."],
+            admissible_commands=["go to cabinet", "go to fridge"],
+            command="go to cabinet",
+            max_steps=10,
+        )
+        self.assertEqual(candidate.action.references_observed_entity, 1.0)
+        self.assertEqual(other.action.declared_requirement_gain, 0.0)
 
     def test_run_alfworld_transfer_with_fake_env_and_frozen_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -79,6 +120,30 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertFalse(manifest["oracle_labels_in_inference_features"])
         self.assertFalse(manifest["command_string_used_as_learned_feature"])
         self.assertEqual({row["policy"] for row in rows}, {"Random", "Source-trained controller"})
+
+    def test_run_alfworld_expert_transfer_trains_from_frontier_expert_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            manifest = run_alfworld_expert_transfer(
+                out,
+                train_episodes=4,
+                eval_episodes=2,
+                max_steps=5,
+                epochs=3,
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                policies=("Random", "ALFWorld expert-ranker"),
+                env_factory=lambda **_kwargs: FakeExpertAlfworldEnv(),
+            )
+            with (out / "alfworld_expert_transfer_table.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertTrue((out / "alfworld_expert_ranker.json").exists())
+        self.assertEqual(manifest["benchmark"], "alfworld_expert_frontier_transfer")
+        self.assertEqual(manifest["training_source"], "alfworld_train_expert_plan_frontier_labels")
+        self.assertFalse(manifest["llm_rollout_trajectories_used"])
+        self.assertFalse(manifest["target_eval_trajectories_used_for_training"])
+        self.assertGreater(manifest["train"]["train_pair_count"], 0)
+        self.assertEqual({row["policy"] for row in rows}, {"Random", "ALFWorld expert-ranker"})
 
 
 if __name__ == "__main__":

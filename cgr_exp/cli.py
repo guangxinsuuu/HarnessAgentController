@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from dataclasses import replace
 
-from cgr_exp.alfworld_transfer import run_alfworld_transfer
+from cgr_exp.alfworld_transfer import run_alfworld_expert_transfer, run_alfworld_transfer
 from cgr_exp.analysis.statistics import write_seed_aggregate
 from cgr_exp.certification_authority_audit import audit_certification_authority_source
 from cgr_exp.certification_table_readiness import audit_certification_tables
@@ -117,6 +117,7 @@ COMMANDS = [
     "run-workflow-source-validation",
     "run-structured-workflow-transfer",
     "run-alfworld-transfer",
+    "run-alfworld-expert-transfer",
 ]
 
 
@@ -283,6 +284,17 @@ def main() -> None:
             p.add_argument("--source-difficulty", choices=("v1", "v2"), default="v2")
             p.add_argument("--ranker-checkpoint", type=Path, default=None)
             p.add_argument("--policies", default="Random,Hand heuristic,Source-trained controller")
+        if name == "run-alfworld-expert-transfer":
+            p.add_argument("--eval-split", default="eval_out_of_distribution")
+            p.add_argument("--config-path", type=Path, default=None)
+            p.add_argument("--train-episodes", type=int, default=200)
+            p.add_argument("--eval-episodes", type=int, default=20)
+            p.add_argument("--max-steps", type=int, default=50)
+            p.add_argument("--epochs", type=int, default=20)
+            p.add_argument("--max-pairs-per-state", type=int, default=24)
+            p.add_argument("--perturbation-prob", type=float, default=0.15)
+            p.add_argument("--warmup-random-steps", type=int, default=5)
+            p.add_argument("--policies", default="Random,Hand heuristic,ALFWorld expert-ranker")
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -1784,6 +1796,44 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'alfworld_transfer_table.csv'}")
+            return
+        if args.command == "run-alfworld-expert-transfer":
+            policies = tuple(item.strip() for item in args.policies.split(",") if item.strip())
+            manifest = run_alfworld_expert_transfer(
+                args.output_dir,
+                seed=args.seed,
+                eval_split=args.eval_split,
+                config_path=args.config_path,
+                train_episodes=args.train_episodes,
+                eval_episodes=args.eval_episodes,
+                max_steps=args.max_steps,
+                epochs=args.epochs,
+                max_pairs_per_state=args.max_pairs_per_state,
+                perturbation_prob=args.perturbation_prob,
+                warmup_random_steps=args.warmup_random_steps,
+                policies=policies,
+            )
+            command_manifest = {
+                "command": args.command,
+                "seed": args.seed,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "benchmark": manifest["benchmark"],
+                "train_split": manifest["train_split"],
+                "eval_split": manifest["eval_split"],
+                "train_episodes": manifest["train_episodes"],
+                "eval_episodes": manifest["eval_episodes"],
+                "uses_admissible_commands": manifest["uses_admissible_commands"],
+                "training_source": manifest["training_source"],
+                "llm_rollout_trajectories_used": manifest["llm_rollout_trajectories_used"],
+                "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],
+                "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
+                "command_string_used_as_learned_feature": manifest["command_string_used_as_learned_feature"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'alfworld_expert_transfer_table.csv'}")
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

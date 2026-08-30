@@ -838,8 +838,15 @@ class Tau3NativeTest(unittest.TestCase):
             manifest = audit_table10_tau3_smoke_gate(root / "gate", row_dirs, expected_smoke_count=2)
             self.assertTrue(manifest["all_smoke_rows_ready"])
             self.assertEqual(manifest["pending_or_failed_rows"], [])
+            self.assertIn("greedy_content_passthrough_events", manifest["rows"][0])
+            self.assertIn("fallback_greedy_events", manifest["rows"][0])
+            self.assertIn("candidate_sample_failures", manifest["rows"][0])
             self.assertTrue((root / "gate" / "table10_tau3_smoke_gate.csv").exists())
             self.assertTrue((root / "gate" / "readiness" / "table10_tau3_readiness.csv").exists())
+            gate_csv = (root / "gate" / "table10_tau3_smoke_gate.csv").read_text(encoding="utf-8")
+            self.assertIn("greedy_content_passthrough_events", gate_csv.splitlines()[0])
+            self.assertIn("fallback_greedy_events", gate_csv.splitlines()[0])
+            self.assertIn("candidate_sample_failures", gate_csv.splitlines()[0])
 
     def test_audits_table10_tau3_smoke_gate_rejects_incomplete_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

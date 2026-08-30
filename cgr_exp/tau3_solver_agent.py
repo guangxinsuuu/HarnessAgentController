@@ -41,14 +41,20 @@ class Tau3SolverControllerAgent(LLMAgent):
         candidate_workers: int = 1,
         candidate_retries: int = 2,
         candidate_retry_backoff: float = 0.5,
+        adaptive_search: bool = False,
+        min_candidate_count: int = 1,
     ):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self.candidate_count = max(1, int(candidate_count))
+        self.min_candidate_count = max(1, min(int(min_candidate_count), self.candidate_count))
+        self.adaptive_search = bool(adaptive_search)
         self.candidate_workers = max(1, int(candidate_workers))
         self.candidate_retries = max(0, int(candidate_retries))
         self.candidate_retry_backoff = max(0.0, float(candidate_retry_backoff))
         self._last_sample_failures = 0
         self._last_sample_failure_types: list[str] = []
+        self._last_search_budget = self.candidate_count
+        self._last_search_reason = "fixed_candidate_count"
         self.max_turns = max(1, int(max_turns))
         self.max_tool_budget = max(1, int(max_tool_budget))
         self.ranker_checkpoint = ranker_checkpoint
@@ -109,9 +115,12 @@ class Tau3SolverControllerAgent(LLMAgent):
         messages = state.system_messages + state.messages
         self._last_sample_failures = 0
         self._last_sample_failure_types = []
-        if self.candidate_workers <= 1 or self.candidate_count == 1:
+        search_budget, reason = self._search_budget_for_state(state)
+        self._last_search_budget = search_budget
+        self._last_search_reason = reason
+        if self.candidate_workers <= 1 or search_budget == 1:
             indexed = []
-            for idx in range(self.candidate_count):
+            for idx in range(search_budget):
                 try:
                     indexed.append((idx, self._sample_candidate_with_retry(idx, messages)))
                 except Exception as exc:
@@ -121,9 +130,9 @@ class Tau3SolverControllerAgent(LLMAgent):
                 failures = ", ".join(self._last_sample_failure_types) or "unknown"
                 raise RuntimeError(f"all tau3 controller candidate samples failed after retries: {failures}")
             return [candidate for _idx, candidate in sorted(indexed, key=lambda item: item[0])]
-        workers = min(self.candidate_workers, self.candidate_count)
+        workers = min(self.candidate_workers, search_budget)
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(self._sample_candidate_with_retry, idx, messages): idx for idx in range(self.candidate_count)}
+            futures = {executor.submit(self._sample_candidate_with_retry, idx, messages): idx for idx in range(search_budget)}
             indexed = []
             for future in as_completed(futures):
                 idx = futures[future]
@@ -136,6 +145,35 @@ class Tau3SolverControllerAgent(LLMAgent):
                 failures = ", ".join(self._last_sample_failure_types) or "unknown"
                 raise RuntimeError(f"all tau3 controller candidate samples failed after retries: {failures}")
             return [candidate for _idx, candidate in sorted(indexed, key=lambda item: item[0])]
+
+    def _search_budget_for_state(self, state: LLMAgentState) -> tuple[int, str]:
+        if not self.adaptive_search:
+            return self.candidate_count, "fixed_candidate_count"
+        used_tool_calls = sum(len(getattr(item, "tool_calls", None) or []) for item in state.messages)
+        runtime = tau3_candidate_to_canonical(
+            candidate_id="tau3-search-budget-state",
+            message_history=state.messages,
+            tools=self.tools,
+            candidate=AssistantMessage(role="assistant", content=""),
+            remaining_turns=max(0, self.max_turns - len(state.messages)),
+            max_turns=self.max_turns,
+            remaining_tool_budget=max(0, self.max_tool_budget - used_tool_calls),
+            max_tool_budget=self.max_tool_budget,
+        ).state
+        reasons = []
+        if runtime.previous_failure_rate > 0.0:
+            reasons.append("previous_failure")
+        if runtime.stagnation_steps_frac >= 0.5:
+            reasons.append("stagnation")
+        if runtime.uncertainty_score >= 0.8:
+            reasons.append("high_uncertainty")
+        if runtime.irreversible_action_used > 0.0:
+            reasons.append("post_write_state")
+        if runtime.remaining_turn_budget_frac <= 0.25 or runtime.remaining_tool_budget_frac <= 0.25:
+            reasons.append("low_budget")
+        if reasons:
+            return self.candidate_count, "adaptive_high_risk:" + ",".join(reasons)
+        return self.min_candidate_count, "adaptive_low_risk"
 
     def _sample_candidate_with_retry(self, idx: int, messages: List[APICompatibleMessage]) -> AssistantMessage:
         last_exc: Optional[Exception] = None
@@ -290,6 +328,10 @@ class Tau3SolverControllerAgent(LLMAgent):
             "canonical_mean_known_mask_ratio": mean_known_mask_ratio,
             "canonical_per_feature_availability": per_feature_availability,
             "candidate_count": len(candidates),
+            "configured_candidate_count": self.candidate_count,
+            "search_budget": self._last_search_budget,
+            "adaptive_search_enabled": self.adaptive_search,
+            "search_budget_reason": self._last_search_reason,
             "candidate_sample_failures": self._last_sample_failures,
             "candidate_sample_failure_types": sorted(set(self._last_sample_failure_types)),
             "candidate_retries": self.candidate_retries,
@@ -358,6 +400,8 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
     candidate_workers = int(llm_args.pop("cgr_candidate_workers", 1))
     candidate_retries = int(llm_args.pop("cgr_candidate_retries", 2))
     candidate_retry_backoff = float(llm_args.pop("cgr_candidate_retry_backoff", 0.5))
+    adaptive_search = bool(llm_args.pop("cgr_adaptive_search", False))
+    min_candidate_count = int(llm_args.pop("cgr_min_candidate_count", 1))
     ranker_checkpoint = llm_args.pop("cgr_ranker_checkpoint", None)
     max_turns = int(llm_args.pop("cgr_max_turns", 200))
     max_tool_budget = int(llm_args.pop("cgr_max_tool_budget", max_turns))
@@ -372,6 +416,8 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
         candidate_workers=candidate_workers,
         candidate_retries=candidate_retries,
         candidate_retry_backoff=candidate_retry_backoff,
+        adaptive_search=adaptive_search,
+        min_candidate_count=min_candidate_count,
         ranker_checkpoint=ranker_checkpoint,
         max_turns=max_turns,
         max_tool_budget=max_tool_budget,

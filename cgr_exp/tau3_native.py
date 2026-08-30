@@ -38,6 +38,10 @@ TRACE_AUDIT_COLUMNS = [
     "certified_prune_rate",
     "mean_candidate_count",
     "mean_scored_candidate_count",
+    "controller_opportunity_rate",
+    "adaptive_search_enabled_events",
+    "mean_search_budget",
+    "search_budget_reasons",
     "oracle_visible_to_controller",
     "oracle_used_for_candidate_generation",
     "oracle_used_for_filtering",
@@ -83,6 +87,8 @@ class Tau3RunConfig:
     candidate_workers: int = 1
     candidate_retries: int = 2
     candidate_retry_backoff: float = 0.5
+    adaptive_search: bool = False
+    min_candidate_count: int = 1
 
 
 def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
@@ -119,6 +125,8 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         "candidate_workers": config.candidate_workers,
         "candidate_retries": config.candidate_retries,
         "candidate_retry_backoff": config.candidate_retry_backoff,
+        "adaptive_search": config.adaptive_search,
+        "min_candidate_count": config.min_candidate_count,
         "source_controller_protocol": _source_controller_protocol(config.solver_ranker_checkpoint),
         "tau3_adapter_protocol": tau3_adapter_manifest() if config.method == "solver" else {},
         "enable_certified_filter": config.enable_certified_filter,
@@ -190,6 +198,9 @@ def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subpr
         llm_args.setdefault("cgr_candidate_workers", config.candidate_workers)
         llm_args.setdefault("cgr_candidate_retries", config.candidate_retries)
         llm_args.setdefault("cgr_candidate_retry_backoff", config.candidate_retry_backoff)
+        if config.adaptive_search:
+            llm_args["cgr_adaptive_search"] = True
+            llm_args["cgr_min_candidate_count"] = config.min_candidate_count
         if config.solver_ranker_checkpoint is not None:
             llm_args["cgr_ranker_checkpoint"] = str(config.solver_ranker_checkpoint)
         if config.enable_certified_filter:
@@ -1102,6 +1113,11 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
     candidate_sample_failures = 0
     candidate_count = 0
     scored_candidate_count = 0
+    opportunity_events = 0
+    adaptive_events = 0
+    search_budget_sum = 0.0
+    search_budget_count = 0
+    search_budget_reasons: set[str] = set()
     oracle_visible = False
     oracle_generation = False
     oracle_filtering = False
@@ -1137,7 +1153,17 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
             candidate_scores = row.get("candidate_scores")
             if isinstance(candidate_scores, list):
                 candidate_count += len(candidate_scores)
-                scored_candidate_count += sum(1 for item in candidate_scores if isinstance(item, Mapping) and item.get("score") is not None)
+                event_scored = sum(1 for item in candidate_scores if isinstance(item, Mapping) and item.get("score") is not None)
+                scored_candidate_count += event_scored
+                opportunity_events += 1 if event_scored >= 2 else 0
+            adaptive_events += 1 if row.get("adaptive_search_enabled") else 0
+            search_budget = _as_float(row.get("search_budget"))
+            if not math.isnan(search_budget):
+                search_budget_sum += search_budget
+                search_budget_count += 1
+            search_budget_reason = str(row.get("search_budget_reason", "")).strip()
+            if search_budget_reason:
+                search_budget_reasons.add(search_budget_reason)
             oracle_visible = oracle_visible or bool(row.get("oracle_visible_to_controller"))
             oracle_generation = oracle_generation or bool(row.get("oracle_used_for_candidate_generation"))
             oracle_filtering = oracle_filtering or bool(row.get("oracle_used_for_filtering"))
@@ -1182,6 +1208,10 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
         "certified_prune_rate": 0.0 if candidate_count == 0 else certified_pruned_candidates / candidate_count,
         "mean_candidate_count": 0.0 if event_count == 0 else candidate_count / event_count,
         "mean_scored_candidate_count": 0.0 if event_count == 0 else scored_candidate_count / event_count,
+        "controller_opportunity_rate": 0.0 if event_count == 0 else opportunity_events / event_count,
+        "adaptive_search_enabled_events": adaptive_events,
+        "mean_search_budget": 0.0 if search_budget_count == 0 else search_budget_sum / search_budget_count,
+        "search_budget_reasons": ";".join(sorted(search_budget_reasons)),
         "oracle_visible_to_controller": oracle_visible,
         "oracle_used_for_candidate_generation": oracle_generation,
         "oracle_used_for_filtering": oracle_filtering,
@@ -1335,6 +1365,10 @@ def _table10_audit_row(
         "canonical_feature_count_match": trace_summary.get("canonical_feature_count_match", ""),
         "canonical_mean_known_mask_ratio": trace_summary.get("canonical_mean_known_mask_ratio", ""),
         "canonical_per_feature_availability": trace_summary.get("canonical_per_feature_availability", ""),
+        "controller_opportunity_rate": trace_summary.get("controller_opportunity_rate", ""),
+        "adaptive_search_enabled_events": trace_summary.get("adaptive_search_enabled_events", ""),
+        "mean_search_budget": trace_summary.get("mean_search_budget", ""),
+        "search_budget_reasons": trace_summary.get("search_budget_reasons", ""),
         "candidate_sample_failures": trace_summary.get("candidate_sample_failures", ""),
         "certified_prune_rate": trace_summary.get("certified_prune_rate", ""),
         "notes": notes,
@@ -1361,6 +1395,10 @@ def _table10_evidence_notes(source_protocol: Mapping[str, object], trace_summary
         notes.append(f"canonical ranker events={trace_summary.get('canonical_ranker_events')}")
     if trace_summary.get("canonical_mean_known_mask_ratio") != "":
         notes.append(f"target canonical known-mask ratio={trace_summary.get('canonical_mean_known_mask_ratio')}")
+    if trace_summary.get("controller_opportunity_rate") != "":
+        notes.append(f"controller opportunity rate={trace_summary.get('controller_opportunity_rate')}")
+    if trace_summary.get("adaptive_search_enabled_events"):
+        notes.append(f"adaptive search events={trace_summary.get('adaptive_search_enabled_events')}")
     if trace_summary.get("greedy_content_passthrough_events"):
         notes.append(f"greedy content passthrough events={trace_summary.get('greedy_content_passthrough_events')}")
     if trace_summary.get("fallback_greedy_events"):

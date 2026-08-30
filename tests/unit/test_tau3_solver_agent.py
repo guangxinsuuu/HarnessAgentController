@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
-from tau2.data_model.message import AssistantMessage, ToolCall, UserMessage
+from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
 from tau2.environment.tool import as_tool
 
 from cgr_exp.tau3_solver_agent import Tau3SolverControllerAgent
@@ -202,6 +202,81 @@ class Tau3SolverAgentTest(unittest.TestCase):
             candidates = agent._sample_candidates(state)
         self.assertEqual([candidate.tool_calls[0].arguments["order_id"] for candidate in candidates], ["7", "8", "9"])
         self.assertEqual(sorted(seen), [(7, 0), (8, 0.2), (9, 0.2)])
+
+    def test_adaptive_search_uses_min_candidates_for_low_risk_state(self) -> None:
+        seen: list[int] = []
+
+        def fake_generate(**kwargs):
+            seen.append(kwargs["seed"])
+            return AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": str(kwargs["seed"])})],
+                cost=0.01,
+                usage={"prompt_tokens": 1, "completion_tokens": 1},
+            )
+
+        agent = Tau3SolverControllerAgent(
+            [as_tool(_get_order)],
+            "policy",
+            "mock",
+            {"temperature": 0, "seed": 7},
+            candidate_count=4,
+            candidate_workers=4,
+            adaptive_search=True,
+            min_candidate_count=1,
+        )
+        state = agent.get_init_state(
+            [
+                ToolMessage(role="tool", id="call_1", content="ORD123 C456 SKU789 ZIP100 INV200"),
+                ToolMessage(role="tool", id="call_2", content="SHIP300 PAY400 ITEM500 CARD600"),
+                ToolMessage(role="tool", id="call_3", content="CASE700 NOTE800"),
+            ]
+        )
+        with patch("cgr_exp.tau3_solver_agent.generate", side_effect=fake_generate):
+            candidates = agent._sample_candidates(state)
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(seen, [7])
+        self.assertEqual(agent._last_search_budget, 1)
+        self.assertEqual(agent._last_search_reason, "adaptive_low_risk")
+
+    def test_adaptive_search_uses_full_candidates_after_failure_and_logs_reason(self) -> None:
+        def fake_generate(**kwargs):
+            return AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": str(kwargs["seed"])})],
+                cost=0.01,
+                usage={"prompt_tokens": 1, "completion_tokens": 1},
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trace = Path(tmp) / "trace.jsonl"
+            agent = Tau3SolverControllerAgent(
+                [as_tool(_get_order)],
+                "policy",
+                "mock",
+                {"temperature": 0, "seed": 7},
+                candidate_count=4,
+                candidate_workers=4,
+                adaptive_search=True,
+                min_candidate_count=1,
+                controller_trace_path=str(trace),
+            )
+            state = agent.get_init_state(
+                [
+                    UserMessage(role="user", content="order ORD123"),
+                    ToolMessage(role="tool", id="call_1", content="ERROR not found", error=True),
+                ]
+            )
+            with patch("cgr_exp.tau3_solver_agent.generate", side_effect=fake_generate):
+                selected, _state = agent.generate_next_message(UserMessage(role="user", content="try again"), state)
+            trace_row = json.loads(trace.read_text(encoding="utf-8"))
+        self.assertEqual(selected.tool_calls[0].name, "get_order")
+        self.assertEqual(trace_row["candidate_count"], 4)
+        self.assertEqual(trace_row["search_budget"], 4)
+        self.assertTrue(trace_row["adaptive_search_enabled"])
+        self.assertIn("adaptive_high_risk", trace_row["search_budget_reason"])
 
     def test_candidate_sampling_retries_transient_failure(self) -> None:
         attempts: dict[int, int] = {}

@@ -401,6 +401,8 @@ class Tau3NativeTest(unittest.TestCase):
                 candidate_workers=5,
                 candidate_retries=3,
                 candidate_retry_backoff=0.25,
+                adaptive_search=True,
+                min_candidate_count=2,
                 max_steps=123,
             )
             with patch("tau2.runner.run_domain", side_effect=fake_run_domain):
@@ -414,6 +416,8 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertEqual(args["cgr_candidate_workers"], 5)
         self.assertEqual(args["cgr_candidate_retries"], 3)
         self.assertEqual(args["cgr_candidate_retry_backoff"], 0.25)
+        self.assertTrue(args["cgr_adaptive_search"])
+        self.assertEqual(args["cgr_min_candidate_count"], 2)
         self.assertEqual(args["cgr_max_turns"], 123)
         self.assertEqual(args["cgr_max_tool_budget"], 123)
         self.assertTrue(str(args["cgr_controller_trace_path"]).endswith("tau3_controller_trace.jsonl"))
@@ -482,6 +486,9 @@ class Tau3NativeTest(unittest.TestCase):
                         "certified_filter_enabled": True,
                         "certified_pruned_count": 1,
                         "candidate_sample_failures": 1,
+                        "search_budget": 4,
+                        "adaptive_search_enabled": True,
+                        "search_budget_reason": "adaptive_high_risk:previous_failure",
                         "oracle_visible_to_controller": False,
                         "oracle_used_for_candidate_generation": False,
                         "oracle_used_for_filtering": False,
@@ -530,6 +537,10 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(manifest["certified_pruned_candidates"], 1)
             self.assertEqual(manifest["candidate_sample_failures"], 1)
             self.assertAlmostEqual(manifest["certified_prune_rate"], 0.25)
+            self.assertAlmostEqual(manifest["controller_opportunity_rate"], 1 / 3)
+            self.assertEqual(manifest["adaptive_search_enabled_events"], 1)
+            self.assertAlmostEqual(manifest["mean_search_budget"], 4.0)
+            self.assertIn("adaptive_high_risk", manifest["search_budget_reasons"])
             self.assertFalse(manifest["oracle_visible_to_controller"])
             self.assertFalse(manifest["tool_names_used_as_features"])
             self.assertEqual(manifest["tool_name_use_policy"], "coarse_action_type_normalization_only")
@@ -547,6 +558,7 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("greedy_content_passthrough_events", csv_text.splitlines()[0])
             self.assertIn("fallback_greedy_events", csv_text.splitlines()[0])
             self.assertIn("canonical_mean_known_mask_ratio", csv_text.splitlines()[0])
+            self.assertIn("controller_opportunity_rate", csv_text.splitlines()[0])
             self.assertIn(",1,", csv_text)
 
     def test_audits_table10_tau3_readiness_with_canonical_trace(self) -> None:

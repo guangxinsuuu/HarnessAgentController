@@ -18,6 +18,8 @@ WORKERS="${WORKERS:-0}"
 CANDIDATE_WORKERS="${CANDIDATE_WORKERS:-4}"
 CANDIDATE_RETRIES="${CANDIDATE_RETRIES:-2}"
 CANDIDATE_RETRY_BACKOFF="${CANDIDATE_RETRY_BACKOFF:-0.5}"
+ADAPTIVE_SEARCH="${ADAPTIVE_SEARCH:-0}"
+MIN_CANDIDATE_COUNT="${MIN_CANDIDATE_COUNT:-1}"
 TIMEOUT="${TIMEOUT:-300}"
 PARALLEL_DOMAINS="${PARALLEL_DOMAINS:-1}"
 PARALLEL_METHOD_GROUPS="${PARALLEL_METHOD_GROUPS:-0}"
@@ -47,6 +49,8 @@ Environment overrides:
   CANDIDATE_WORKERS=4
   CANDIDATE_RETRIES=2
   CANDIDATE_RETRY_BACKOFF=0.5
+  ADAPTIVE_SEARCH=0
+  MIN_CANDIDATE_COUNT=1
   PARALLEL_DOMAINS=1
   PARALLEL_METHOD_GROUPS=0
   WORKERS=0
@@ -139,6 +143,9 @@ run_native_domain() {
   fi
   if [[ "${certified}" == "1" ]]; then
     extra_args+=(--enable-certified-filter)
+  fi
+  if [[ "${ADAPTIVE_SEARCH}" == "1" ]]; then
+    extra_args+=(--enable-adaptive-search --min-candidate-count "${MIN_CANDIDATE_COUNT}")
   fi
   "${PYTHON_BIN}" -m cgr_exp.cli run-tau3-native \
     --output-dir "${BASE_DIR}/${suffix}_${domain}" \

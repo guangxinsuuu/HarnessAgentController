@@ -22,6 +22,7 @@ from cgr_exp.alfworld_transfer import (
     _alfworld_env_method_for_policy,
     _alfworld_ranker_weight_diagnostics,
     _alfworld_diagnostic_action_from_info,
+    _annotate_alfworld_dense_label_ranks,
     _dense_labels_to_pairs,
     _label_frontier_by_planner_cost,
     _label_frontier_by_walkthrough_suffix,
@@ -380,6 +381,23 @@ class AlfworldTransferTest(unittest.TestCase):
             step=0,
         )
         self.assertEqual(len(pairs), 1)
+
+    def test_dense_label_rank_annotation_records_ties_and_censored_labels(self) -> None:
+        labels = _annotate_alfworld_dense_label_ranks(
+            [
+                AlfworldDenseActionLabel(0, 0, "take apple", 2, 1, 0.0, 2, "textworld_pddl_replan_cost_to_go", "planner_replanned"),
+                AlfworldDenseActionLabel(0, 0, "go to table", 2, 1, 0.0, 2, "textworld_pddl_replan_cost_to_go", "planner_replanned"),
+                AlfworldDenseActionLabel(0, 0, "open fridge", 5, 1, 0.0, 5, "textworld_pddl_replan_cost_to_go", "planner_replanned"),
+                AlfworldDenseActionLabel(0, 0, "go to sink", 99, 0, 0.0, 0, "textworld_pddl_replan_cost_to_go", "planner_timeout"),
+            ]
+        )
+        by_command = {label.command: label for label in labels}
+        self.assertEqual(by_command["take apple"].oracle_rank, 1)
+        self.assertEqual(by_command["go to table"].oracle_rank, 1)
+        self.assertEqual(by_command["open fridge"].oracle_rank, 2)
+        self.assertEqual(by_command["open fridge"].cost_gap_to_best, 3)
+        self.assertEqual(by_command["go to sink"].pairwise_usable, 0)
+        self.assertEqual(by_command["go to sink"].oracle_rank, 0)
 
     def test_planner_labels_use_snapshot_fast_path_when_available(self) -> None:
         env = FakeCopyablePlannerAlfworldEnv()
@@ -1183,6 +1201,13 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("selected_rollout_command", rows[0])
             self.assertIn("selected_rollout_source", rows[0])
             self.assertTrue(all(label["episode"] == rows[0]["episode"] for label in rows[0]["labels"]))
+            self.assertTrue(all("oracle_rank" in label for label in rows[0]["labels"]))
+            self.assertTrue(all("cost_gap_to_best" in label for label in rows[0]["labels"]))
+            action_rows = list(csv.DictReader((out / "alfworld_dense_action_labels.csv").open()))
+            self.assertTrue(all("oracle_rank" in row for row in action_rows))
+            self.assertTrue(any(int(row["oracle_rank"]) == 1 for row in action_rows))
+            self.assertIn("oracle_top_usable_action_labels", manifest["train"])
+            self.assertIn("usable_mean_cost_gap_to_best", manifest["train"])
 
     def test_dense_training_cache_rebuilds_pairs_from_state_labels_when_feature_cache_incompatible(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

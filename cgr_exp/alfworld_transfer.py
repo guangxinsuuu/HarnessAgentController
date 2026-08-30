@@ -97,6 +97,10 @@ class AlfworldDenseActionLabel:
     rollout_steps: int
     label_source: str
     label_status: str = "ok"
+    pairwise_usable: int = 1
+    oracle_rank: int = 0
+    best_cost_to_success: int = 0
+    cost_gap_to_best: int = 0
 
 
 @dataclass(frozen=True)
@@ -881,6 +885,7 @@ def train_alfworld_dense_ranker(
                     commands=frontier,
                     max_rollout_steps=counterfactual_rollout_steps,
                 )
+            labels = _annotate_alfworld_dense_label_ranks(labels)
             labels_by_command = {label.command: label for label in labels}
             monotone_reference = frontier_reference
             if monotone_reference in labels_by_command and labels_by_command[monotone_reference].reachable:
@@ -958,6 +963,10 @@ def train_alfworld_dense_ranker(
                     rollout_steps=label.rollout_steps,
                     label_source=label.label_source,
                     label_status=label.label_status,
+                    pairwise_usable=label.pairwise_usable,
+                    oracle_rank=label.oracle_rank,
+                    best_cost_to_success=label.best_cost_to_success,
+                    cost_gap_to_best=label.cost_gap_to_best,
                 )
                 action_label_rows.append(action_label.__dict__)
                 row_labels.append(label)
@@ -1140,6 +1149,16 @@ def train_alfworld_dense_ranker(
             total_label_status_counts[status] = total_label_status_counts.get(status, 0) + 1
     pairwise_usable_action_labels = sum(1 for row in action_label_rows if _alfworld_dense_label_row_pairwise_usable(row))
     censored_action_labels = len(action_label_rows) - pairwise_usable_action_labels
+    oracle_top_usable_action_labels = sum(
+        1
+        for row in action_label_rows
+        if _alfworld_dense_label_row_pairwise_usable(row) and int(row.get("oracle_rank", 0)) == 1
+    )
+    usable_cost_gaps = [
+        int(row.get("cost_gap_to_best", 0))
+        for row in action_label_rows
+        if _alfworld_dense_label_row_pairwise_usable(row)
+    ]
     final_dense_state_label_cache_rows = (
         len(_load_alfworld_dense_state_label_cache(cache_dir / "alfworld_dense_state_label_cache.jsonl")) if cache_dir is not None else 0
     )
@@ -1155,6 +1174,12 @@ def train_alfworld_dense_ranker(
         "pairwise_usable_action_labels": pairwise_usable_action_labels,
         "censored_action_labels": censored_action_labels,
         "censored_action_label_rate": 0.0 if not action_label_rows else censored_action_labels / len(action_label_rows),
+        "oracle_top_usable_action_labels": oracle_top_usable_action_labels,
+        "oracle_top_usable_action_frac": 0.0
+        if pairwise_usable_action_labels == 0
+        else oracle_top_usable_action_labels / pairwise_usable_action_labels,
+        "usable_mean_cost_gap_to_best": 0.0 if not usable_cost_gaps else sum(usable_cost_gaps) / len(usable_cost_gaps),
+        "usable_max_cost_gap_to_best": "" if not usable_cost_gaps else max(usable_cost_gaps),
         "epochs": epochs,
         "max_pairs_per_state": max_pairs_per_state,
         "max_frontier_actions": max_frontier_actions,
@@ -1711,6 +1736,10 @@ def _load_alfworld_planner_label_cache(path: Path | None) -> dict[str, AlfworldD
                     rollout_steps=int(label_row["rollout_steps"]),
                     label_source=str(label_row["label_source"]),
                     label_status=str(label_row.get("label_status", "ok")),
+                    pairwise_usable=int(label_row.get("pairwise_usable", 1)),
+                    oracle_rank=int(label_row.get("oracle_rank", 0)),
+                    best_cost_to_success=int(label_row.get("best_cost_to_success", 0)),
+                    cost_gap_to_best=int(label_row.get("cost_gap_to_best", 0)),
                 )
             except Exception:
                 continue
@@ -1977,6 +2006,52 @@ def _dense_labels_to_pairs(
     return raw_pairs
 
 
+def _annotate_alfworld_dense_label_ranks(labels: Sequence[AlfworldDenseActionLabel]) -> list[AlfworldDenseActionLabel]:
+    usable = [label for label in labels if _alfworld_dense_label_pairwise_usable(label)]
+    if not usable:
+        return [
+            AlfworldDenseActionLabel(
+                episode=label.episode,
+                step=label.step,
+                command=label.command,
+                cost_to_success=label.cost_to_success,
+                reachable=label.reachable,
+                final_score=label.final_score,
+                rollout_steps=label.rollout_steps,
+                label_source=label.label_source,
+                label_status=label.label_status,
+                pairwise_usable=0,
+                oracle_rank=0,
+                best_cost_to_success=0,
+                cost_gap_to_best=0,
+            )
+            for label in labels
+        ]
+    best_cost = min(label.cost_to_success for label in usable)
+    cost_ranks = {cost: idx + 1 for idx, cost in enumerate(sorted({label.cost_to_success for label in usable}))}
+    annotated = []
+    for label in labels:
+        pairwise_usable = 1 if _alfworld_dense_label_pairwise_usable(label) else 0
+        annotated.append(
+            AlfworldDenseActionLabel(
+                episode=label.episode,
+                step=label.step,
+                command=label.command,
+                cost_to_success=label.cost_to_success,
+                reachable=label.reachable,
+                final_score=label.final_score,
+                rollout_steps=label.rollout_steps,
+                label_source=label.label_source,
+                label_status=label.label_status,
+                pairwise_usable=pairwise_usable,
+                oracle_rank=cost_ranks.get(label.cost_to_success, 0) if pairwise_usable else 0,
+                best_cost_to_success=best_cost,
+                cost_gap_to_best=max(0, int(label.cost_to_success) - int(best_cost)) if pairwise_usable else 0,
+            )
+        )
+    return annotated
+
+
 def _alfworld_dense_label_pairwise_usable(label: AlfworldDenseActionLabel) -> bool:
     status = str(label.label_status or "").strip().lower()
     if not status:
@@ -1987,6 +2062,46 @@ def _alfworld_dense_label_pairwise_usable(label: AlfworldDenseActionLabel) -> bo
         "candidate_not_admissible_after_replay",
     )
     return not any(marker in status for marker in censored_markers)
+
+
+def _annotate_alfworld_dense_label_row_groups(action_label_rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    grouped: dict[tuple[int, int], list[Mapping[str, object]]] = {}
+    group_order: list[tuple[int, int]] = []
+    for row in action_label_rows:
+        key = (int(row.get("episode", -1)), int(row.get("step", -1)))
+        if key not in grouped:
+            group_order.append(key)
+        grouped.setdefault(key, []).append(row)
+
+    annotated_rows: list[dict[str, object]] = []
+    for key in group_order:
+        labels = [
+            AlfworldDenseActionLabel(
+                episode=int(row.get("episode", -1)),
+                step=int(row.get("step", -1)),
+                command=str(row.get("command", "")),
+                cost_to_success=int(row.get("cost_to_success", 0)),
+                reachable=int(row.get("reachable", 0)),
+                final_score=float(row.get("final_score", 0.0)),
+                rollout_steps=int(row.get("rollout_steps", 0)),
+                label_source=str(row.get("label_source", "")),
+                label_status=str(row.get("label_status", "")),
+                pairwise_usable=int(row.get("pairwise_usable", 1)),
+                oracle_rank=int(row.get("oracle_rank", 0)),
+                best_cost_to_success=int(row.get("best_cost_to_success", 0)),
+                cost_gap_to_best=int(row.get("cost_gap_to_best", 0)),
+            )
+            for row in grouped[key]
+        ]
+        annotated = _annotate_alfworld_dense_label_ranks(labels)
+        for row, label in zip(grouped[key], annotated):
+            merged = dict(row)
+            merged["pairwise_usable"] = label.pairwise_usable
+            merged["oracle_rank"] = label.oracle_rank
+            merged["best_cost_to_success"] = label.best_cost_to_success
+            merged["cost_gap_to_best"] = label.cost_gap_to_best
+            annotated_rows.append(merged)
+    return annotated_rows
 
 
 def _alfworld_dense_label_row_pairwise_usable(row: Mapping[str, object]) -> bool:
@@ -2001,6 +2116,10 @@ def _alfworld_dense_label_row_pairwise_usable(row: Mapping[str, object]) -> bool
             rollout_steps=int(row.get("rollout_steps", 0)),
             label_source=str(row.get("label_source", "")),
             label_status=str(row.get("label_status", "")),
+            pairwise_usable=int(row.get("pairwise_usable", 1)),
+            oracle_rank=int(row.get("oracle_rank", 0)),
+            best_cost_to_success=int(row.get("best_cost_to_success", 0)),
+            cost_gap_to_best=int(row.get("cost_gap_to_best", 0)),
         )
     )
 
@@ -2053,6 +2172,8 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
     infinite = 0
     pairwise_usable = 0
     costs: list[int] = []
+    usable_cost_gaps: list[int] = []
+    oracle_top_usable_labels = 0
     for row in action_label_rows:
         key = (int(row["episode"]), int(row["step"]))
         cost = int(row["cost_to_success"])
@@ -2064,12 +2185,16 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
         if _alfworld_dense_label_row_pairwise_usable(row):
             pairwise_usable += 1
             usable_by_state.setdefault(key, []).append(cost)
+            usable_cost_gaps.append(int(row.get("cost_gap_to_best", max(0, cost - min(by_state[key])))))
+            if int(row.get("oracle_rank", 0)) == 1:
+                oracle_top_usable_labels += 1
         if reachable:
             finite += 1
         else:
             infinite += 1
     varied_states = sum(1 for values in by_state.values() if len(set(values)) >= 2)
     usable_varied_states = sum(1 for values in usable_by_state.values() if len(set(values)) >= 2)
+    usable_top_tie_states = sum(1 for key, values in usable_by_state.items() if sum(1 for row in action_label_rows if (int(row["episode"]), int(row["step"])) == key and _alfworld_dense_label_row_pairwise_usable(row) and int(row.get("oracle_rank", 0)) == 1) > 1)
     comparable_states = len(by_state)
     usable_comparable_states = len(usable_by_state)
     summary = {
@@ -2081,10 +2206,15 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
         "pairwise_usable_action_labels": pairwise_usable,
         "censored_action_labels": len(action_label_rows) - pairwise_usable,
         "censored_action_label_rate": 0.0 if not action_label_rows else (len(action_label_rows) - pairwise_usable) / len(action_label_rows),
+        "oracle_top_usable_action_labels": oracle_top_usable_labels,
+        "oracle_top_usable_action_frac": 0.0 if pairwise_usable == 0 else oracle_top_usable_labels / pairwise_usable,
+        "usable_mean_cost_gap_to_best": 0.0 if not usable_cost_gaps else sum(usable_cost_gaps) / len(usable_cost_gaps),
+        "usable_max_cost_gap_to_best": "" if not usable_cost_gaps else max(usable_cost_gaps),
         "states_with_cost_variation": varied_states,
         "cost_variation_rate": 0.0 if comparable_states == 0 else varied_states / comparable_states,
         "usable_states": usable_comparable_states,
         "usable_states_with_cost_variation": usable_varied_states,
+        "usable_states_with_oracle_top_tie": usable_top_tie_states,
         "usable_cost_variation_rate": 0.0 if usable_comparable_states == 0 else usable_varied_states / usable_comparable_states,
         "unique_cost_values": len(set(costs)),
         "min_cost": "" if not costs else min(costs),
@@ -3414,6 +3544,7 @@ def _load_alfworld_dense_training_cache(
         skipped_incompatible_pairs = sum(1 for line in pair_path.read_text(encoding="utf-8").splitlines() if line.strip())
     trace_rows = _read_csv_rows(cache_dir / "alfworld_dense_training_trace.csv")
     action_label_rows = _read_csv_rows(cache_dir / "alfworld_dense_action_labels.csv")
+    action_label_rows = _annotate_alfworld_dense_label_row_groups(action_label_rows)
     state_label_rows = _load_alfworld_dense_state_label_cache(cache_dir / "alfworld_dense_state_label_cache.jsonl")
     rebuilt_feature_pairs_from_state_cache = 0
     if (
@@ -3577,9 +3708,13 @@ def _state_cache_row_to_labels(row: Mapping[str, object]) -> list[AlfworldDenseA
                 rollout_steps=int(raw.get("rollout_steps", 0)),
                 label_source=str(raw.get("label_source", row.get("label_source", ""))),
                 label_status=str(raw.get("label_status", "ok")),
+                pairwise_usable=int(raw.get("pairwise_usable", 1)),
+                oracle_rank=int(raw.get("oracle_rank", 0)),
+                best_cost_to_success=int(raw.get("best_cost_to_success", 0)),
+                cost_gap_to_best=int(raw.get("cost_gap_to_best", 0)),
             )
         )
-    return labels
+    return _annotate_alfworld_dense_label_ranks(labels)
 
 
 def _rebuild_alfworld_dense_pairs_from_state_cache(

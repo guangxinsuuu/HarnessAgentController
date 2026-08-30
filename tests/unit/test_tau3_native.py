@@ -461,6 +461,9 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(manifest["canonical_feature_schema_match"])
             self.assertTrue(manifest["canonical_feature_count_match"])
             self.assertTrue((root / "audit" / "tau3_controller_trace_audit.csv").exists())
+            csv_text = (root / "audit" / "tau3_controller_trace_audit.csv").read_text(encoding="utf-8")
+            self.assertIn("candidate_sample_failures", csv_text.splitlines()[0])
+            self.assertIn(",1,", csv_text)
 
     def test_audits_table10_tau3_readiness_with_canonical_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

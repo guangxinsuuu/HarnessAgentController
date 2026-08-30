@@ -32,6 +32,7 @@ TRACE_AUDIT_COLUMNS = [
     "ranker_checkpoint_loaded_events",
     "certified_filter_enabled_events",
     "certified_pruned_candidates",
+    "candidate_sample_failures",
     "certified_prune_rate",
     "mean_candidate_count",
     "mean_scored_candidate_count",

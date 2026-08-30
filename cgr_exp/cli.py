@@ -293,6 +293,7 @@ def main() -> None:
             p.add_argument("--max-frontier-actions", type=int, default=16)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
             p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
+            p.add_argument("--max-episode-label-seconds", type=float, default=0.0)
             p.add_argument("--label-source", default="replay-prefix")
             p.add_argument("--perturbation-prob", type=float, default=0.0)
             p.add_argument("--warmup-random-steps", type=int, default=0)
@@ -336,6 +337,7 @@ def main() -> None:
             p.add_argument("--max-frontier-actions", type=int, default=16)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
             p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
+            p.add_argument("--max-episode-label-seconds", type=float, default=0.0)
             p.add_argument("--label-source", default="replay-prefix")
             p.add_argument("--perturbation-prob", type=float, default=0.15)
             p.add_argument("--warmup-random-steps", type=int, default=5)
@@ -351,6 +353,7 @@ def main() -> None:
             p.add_argument("--max-frontier-actions", type=int, default=16)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
             p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
+            p.add_argument("--max-episode-label-seconds", type=float, default=0.0)
             p.add_argument("--label-source", default="replay-prefix")
             p.add_argument("--perturbation-prob", type=float, default=0.15)
             p.add_argument("--warmup-random-steps", type=int, default=5)
@@ -1835,6 +1838,7 @@ def main() -> None:
                 max_frontier_actions=args.max_frontier_actions,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
                 planner_timeout_seconds=args.planner_timeout_seconds,
+                max_episode_label_seconds=args.max_episode_label_seconds,
                 label_source=args.label_source,
                 perturbation_prob=args.perturbation_prob,
                 warmup_random_steps=args.warmup_random_steps,
@@ -1999,6 +2003,7 @@ def main() -> None:
                 max_frontier_actions=args.max_frontier_actions,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
                 planner_timeout_seconds=args.planner_timeout_seconds,
+                max_episode_label_seconds=args.max_episode_label_seconds,
                 label_source=args.label_source,
                 perturbation_prob=args.perturbation_prob,
                 warmup_random_steps=args.warmup_random_steps,
@@ -2046,6 +2051,7 @@ def main() -> None:
                 max_frontier_actions=args.max_frontier_actions,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
                 planner_timeout_seconds=args.planner_timeout_seconds,
+                max_episode_label_seconds=args.max_episode_label_seconds,
                 label_source=args.label_source,
                 perturbation_prob=args.perturbation_prob,
                 warmup_random_steps=args.warmup_random_steps,

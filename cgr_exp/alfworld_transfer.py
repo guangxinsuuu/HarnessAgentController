@@ -202,6 +202,7 @@ def run_alfworld_dense_transfer(
     max_frontier_actions: int = 16,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
+    max_episode_label_seconds: float = 0.0,
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
@@ -233,6 +234,7 @@ def run_alfworld_dense_transfer(
             max_frontier_actions=max_frontier_actions,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
+            max_episode_label_seconds=max_episode_label_seconds,
             label_source=label_source,
             perturbation_prob=perturbation_prob,
             warmup_random_steps=warmup_random_steps,
@@ -312,6 +314,7 @@ def audit_alfworld_dense_labels(
     max_frontier_actions: int = 16,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
+    max_episode_label_seconds: float = 0.0,
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.0,
     warmup_random_steps: int = 0,
@@ -328,6 +331,7 @@ def audit_alfworld_dense_labels(
             fallback_max_frontier_actions=max_frontier_actions,
             fallback_counterfactual_rollout_steps=counterfactual_rollout_steps,
             fallback_planner_timeout_seconds=planner_timeout_seconds,
+            fallback_max_episode_label_seconds=max_episode_label_seconds,
             fallback_perturbation_prob=perturbation_prob,
             fallback_warmup_random_steps=warmup_random_steps,
         )
@@ -342,6 +346,7 @@ def audit_alfworld_dense_labels(
             max_frontier_actions=max_frontier_actions,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
+            max_episode_label_seconds=max_episode_label_seconds,
             label_source=label_source,
             perturbation_prob=perturbation_prob,
             warmup_random_steps=warmup_random_steps,
@@ -392,6 +397,7 @@ def run_alfworld_dense_train(
     max_frontier_actions: int = 16,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
+    max_episode_label_seconds: float = 0.0,
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
@@ -419,6 +425,7 @@ def run_alfworld_dense_train(
         max_frontier_actions=max_frontier_actions,
         counterfactual_rollout_steps=counterfactual_rollout_steps,
         planner_timeout_seconds=planner_timeout_seconds,
+        max_episode_label_seconds=max_episode_label_seconds,
         label_source=label_source,
         perturbation_prob=perturbation_prob,
         warmup_random_steps=warmup_random_steps,
@@ -720,6 +727,7 @@ def train_alfworld_dense_ranker(
     max_frontier_actions: int = 16,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
+    max_episode_label_seconds: float = 0.0,
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
@@ -760,6 +768,7 @@ def train_alfworld_dense_ranker(
     walkthrough_policy_misses = 0
     planner_policy_steps = 0
     planner_policy_misses = 0
+    episode_label_timeouts = 0
     for episode in range(train_episodes):
         if episode in completed_episodes:
             if train_env is not None:
@@ -777,7 +786,13 @@ def train_alfworld_dense_ranker(
         episode_pair_rows: list[dict[str, object]] = []
         episode_labels = 0
         final_score = 0.0
+        episode_start = time.perf_counter()
+        skip_reason = ""
         for step in range(max_steps):
+            if max_episode_label_seconds > 0.0 and (time.perf_counter() - episode_start) >= max_episode_label_seconds:
+                skip_reason = "episode_label_timeout"
+                episode_label_timeouts += 1
+                break
             admissible = _contract_filtered_admissible_commands(
                 _admissible_from_info(info),
                 observation=observation,
@@ -923,6 +938,7 @@ def train_alfworld_dense_ranker(
             history.extend([f"act:{command}", f"obs:{observation}"])
             if bool(_first(dones, False)):
                 break
+        label_seconds = time.perf_counter() - episode_start
         trace_rows.append(
             {
                 "episode": episode,
@@ -930,6 +946,8 @@ def train_alfworld_dense_ranker(
                 "action_labels": episode_labels,
                 "steps": _action_count(history),
                 "final_score": final_score,
+                "label_seconds": label_seconds,
+                "skip_reason": skip_reason,
             }
         )
         if cache_dir is not None:
@@ -982,6 +1000,7 @@ def train_alfworld_dense_ranker(
         "dense_pair_cache": str(cache_dir / "alfworld_dense_pair_cache.jsonl") if cache_dir is not None else "",
         "counterfactual_rollout_steps": counterfactual_rollout_steps,
         "planner_timeout_seconds": planner_timeout_seconds,
+        "max_episode_label_seconds": max_episode_label_seconds,
         "perturbation_prob": perturbation_prob,
         "warmup_random_steps": warmup_random_steps,
         "label_source": _alfworld_dense_label_source_name(label_source),
@@ -993,6 +1012,7 @@ def train_alfworld_dense_ranker(
         "planner_policy_steps": planner_policy_steps,
         "planner_policy_misses": planner_policy_misses,
         "planner_policy_miss_rate": 0.0 if planner_policy_steps == 0 else planner_policy_misses / planner_policy_steps,
+        "episode_label_timeouts": episode_label_timeouts,
         "new_label_status_counts": dict(sorted(label_status_counts.items())),
         "label_status_counts": dict(sorted(total_label_status_counts.items())),
         "expert_monotone_checks": expert_monotone_checks,
@@ -2870,6 +2890,7 @@ def _load_alfworld_dense_audit_cache(
     fallback_max_frontier_actions: int,
     fallback_counterfactual_rollout_steps: int,
     fallback_planner_timeout_seconds: float,
+    fallback_max_episode_label_seconds: float,
     fallback_perturbation_prob: float,
     fallback_warmup_random_steps: int,
 ) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
@@ -2896,6 +2917,7 @@ def _load_alfworld_dense_audit_cache(
     train_manifest.setdefault("max_frontier_actions", fallback_max_frontier_actions)
     train_manifest.setdefault("counterfactual_rollout_steps", fallback_counterfactual_rollout_steps)
     train_manifest.setdefault("planner_timeout_seconds", fallback_planner_timeout_seconds)
+    train_manifest.setdefault("max_episode_label_seconds", fallback_max_episode_label_seconds)
     train_manifest.setdefault("perturbation_prob", fallback_perturbation_prob)
     train_manifest.setdefault("warmup_random_steps", fallback_warmup_random_steps)
     train_manifest.setdefault("label_source", label_source)

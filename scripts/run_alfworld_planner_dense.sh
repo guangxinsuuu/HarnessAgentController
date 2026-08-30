@@ -28,6 +28,7 @@ else
 fi
 COUNTERFACTUAL_ROLLOUT_STEPS="${COUNTERFACTUAL_ROLLOUT_STEPS:-30}"
 PLANNER_TIMEOUT_SECONDS="${PLANNER_TIMEOUT_SECONDS:-3}"
+MAX_EPISODE_LABEL_SECONDS="${MAX_EPISODE_LABEL_SECONDS:-60}"
 EVAL_SPLIT="${EVAL_SPLIT:-eval_in_distribution}"
 OUT_ROOT="${OUT_ROOT:-runs/alfworld_planner_dense_seed${SEED}}"
 TRAIN_DIR="${TRAIN_DIR:-${OUT_ROOT}_train}"
@@ -52,6 +53,7 @@ It does not use an LLM or API key.
 Common environment overrides:
   TRAIN_EPISODES=50 EVAL_EPISODES=20 MAX_STEPS=40 EPOCHS=20
   MAX_FRONTIER_ACTIONS=6 PLANNER_TIMEOUT_SECONDS=3
+  MAX_EPISODE_LABEL_SECONDS=60
   RESUME=1       # default; reuses existing dense label cache if present
   RESUME=0       # clears an existing training cache and starts over
   EVAL_SPLIT=eval_in_distribution
@@ -73,6 +75,7 @@ run_audit() {
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
+    --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
     --label-source planner \
     --warmup-random-steps 0 \
     --perturbation-prob 0.0 \
@@ -94,6 +97,7 @@ run_train() {
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
+    --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
     --label-source planner \
     --warmup-random-steps 0 \
     --perturbation-prob 0.0 \
@@ -118,6 +122,7 @@ run_eval() {
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
+    --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
     --label-source planner \
     --ranker-checkpoint "${RANKER_CHECKPOINT}" \
     --policies "${POLICIES}" \

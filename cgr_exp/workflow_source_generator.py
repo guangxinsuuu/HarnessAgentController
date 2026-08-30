@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 import random
 from typing import Dict, List, Sequence, Tuple
 
@@ -191,22 +193,28 @@ def workflow_action_features(task: WorkflowTask, state: WorkflowState, action: W
 
 
 def source_generator_manifest(seed: int, count: int, anonymize_tools: bool = True) -> Dict[str, object]:
+    distribution = _source_generator_distribution(anonymize_tools)
     return {
         "source": "PolicyConstrainedWorkflowGeneratorV1",
         "seed": seed,
         "task_count": count,
         "families": WORKFLOW_FAMILIES,
+        "distribution_hash": hashlib.sha256(json.dumps(distribution, sort_keys=True).encode("utf-8")).hexdigest(),
         "anonymized_tool_names": anonymize_tools,
         "tau3_trajectories_used": False,
         "tau3_heldout_test_seen_before_freeze": False,
         "source_generator_distribution_fixed_before_target_test_evaluation": True,
-        "parameter_distribution": {
-            "fact_count": "uniform_int[2,5]",
-            "requirement_count": "uniform_int[2,5]",
-            "turn_budget": "requirements + facts + uniform_int[1,4]",
-            "families": "round_robin over approval/incident/procurement/reproducibility/support",
-            "tool_names": "anonymous source_tool_{task}_{index}" if anonymize_tools else "family_action_{index}",
-        },
+        "parameter_distribution": distribution,
+    }
+
+
+def _source_generator_distribution(anonymize_tools: bool) -> Dict[str, object]:
+    return {
+        "fact_count": "uniform_int[2,5]",
+        "requirement_count": "uniform_int[2,5]",
+        "turn_budget": "requirements + facts + uniform_int[1,4]",
+        "families": "round_robin over approval/incident/procurement/reproducibility/support",
+        "tool_names": "anonymous source_tool_{task}_{index}" if anonymize_tools else "family_action_{index}",
     }
 
 

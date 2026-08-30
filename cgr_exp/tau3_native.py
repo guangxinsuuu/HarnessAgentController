@@ -507,6 +507,7 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
             "source_generator_distribution_fixed_before_target_test_evaluation": _as_bool(
                 source_generator.get("source_generator_distribution_fixed_before_target_test_evaluation")
             ),
+            "source_generator_distribution_hash": source_generator.get("distribution_hash", ""),
             "tau3_heldout_test_seen_before_freeze": _as_bool(source_generator.get("tau3_heldout_test_seen_before_freeze")),
             "source_generator_uses_tau3_trajectories": _as_bool(source_generator.get("tau3_trajectories_used")),
             "source_generator_anonymized_tool_names": _as_bool(source_generator.get("anonymized_tool_names")),
@@ -1269,6 +1270,7 @@ def _table10_audit_row(
         "task_count": task_count,
         "expected_test_count": expected_test_count,
         "source_generator_freeze_ready": source_protocol.get("source_generator_distribution_fixed_before_target_test_evaluation", ""),
+        "source_generator_distribution_hash": source_protocol.get("source_generator_distribution_hash", ""),
         "source_checkpoint_loadable": source_protocol.get("checkpoint_loadable", ""),
         "source_checkpoint_feature_count": source_protocol.get("checkpoint_feature_count", ""),
         "source_checkpoint_feature_count_match": source_protocol.get("checkpoint_feature_count_match", ""),
@@ -1306,6 +1308,8 @@ def _table10_evidence_notes(source_protocol: Mapping[str, object], trace_summary
     notes = []
     if source_protocol.get("source_generator_distribution_fixed_before_target_test_evaluation"):
         notes.append("source generator frozen before target test")
+    if source_protocol.get("source_generator_distribution_hash"):
+        notes.append(f"source generator hash={source_protocol.get('source_generator_distribution_hash')}")
     if source_protocol.get("source_generator_anonymized_tool_names"):
         notes.append("source tools anonymized")
     if source_protocol.get("tool_identity_generalization_ready"):

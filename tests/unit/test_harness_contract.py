@@ -28,9 +28,12 @@ class HarnessContractTest(unittest.TestCase):
         self.assertGreaterEqual(len({task.family for task in tasks}), 5)
         self.assertTrue(all(tool.name.startswith("source_tool_") for task in tasks for tool in task.tools))
         anonymous_manifest = source_generator_manifest(seed=3, count=6, anonymize_tools=True)
+        anonymous_manifest_other_seed = source_generator_manifest(seed=99, count=20, anonymize_tools=True)
         named_manifest = source_generator_manifest(seed=3, count=6, anonymize_tools=False)
         self.assertTrue(anonymous_manifest["anonymized_tool_names"])
         self.assertFalse(named_manifest["anonymized_tool_names"])
+        self.assertEqual(anonymous_manifest["distribution_hash"], anonymous_manifest_other_seed["distribution_hash"])
+        self.assertNotEqual(anonymous_manifest["distribution_hash"], named_manifest["distribution_hash"])
         self.assertIn("anonymous", anonymous_manifest["parameter_distribution"]["tool_names"])
         self.assertIn("family_action", named_manifest["parameter_distribution"]["tool_names"])
         records = []

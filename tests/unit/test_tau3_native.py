@@ -567,6 +567,7 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(rows["Solver-derived canonical controller"]["source_policy"], "official tau3 maintained protocol")
             canonical_row = rows["Solver-derived canonical controller"]
             self.assertTrue(canonical_row["source_generator_freeze_ready"])
+            self.assertEqual(canonical_row["source_generator_distribution_hash"], "source-hash")
             self.assertTrue(canonical_row["source_checkpoint_loadable"])
             self.assertEqual(canonical_row["source_checkpoint_feature_count"], len(canonical_feature_names()))
             self.assertTrue(canonical_row["source_checkpoint_feature_count_match"])
@@ -586,6 +587,7 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(canonical_row["canonical_feature_count_match"])
             self.assertEqual(canonical_row["candidate_sample_failures"], 2)
             self.assertIn("source generator frozen before target test", canonical_row["notes"])
+            self.assertIn("source generator hash=source-hash", canonical_row["notes"])
             self.assertIn("tool-identity stress delta=0.0", canonical_row["notes"])
             self.assertIn("candidate sample failures after retries=2", canonical_row["notes"])
             self.assertIn("contract coverage black-box delta=0.0", canonical_row["notes"])
@@ -1284,6 +1286,7 @@ def _write_source_manifest(path: Path, *, tau3_train_trajectories_used: bool) ->
                 "contract": canonical_contract_manifest(),
                 "contract_audit": {"ready": True, "blockers": []},
                 "source_generator": {
+                    "distribution_hash": "source-hash",
                     "tau3_trajectories_used": False,
                     "tau3_heldout_test_seen_before_freeze": False,
                     "source_generator_distribution_fixed_before_target_test_evaluation": True,
@@ -1319,6 +1322,7 @@ def _source_protocol_fields() -> dict:
         "oracle_labels_in_inference_features": False,
         "tool_names_used_as_features": False,
         "source_generator_distribution_fixed_before_target_test_evaluation": True,
+        "source_generator_distribution_hash": "source-hash",
         "tau3_heldout_test_seen_before_freeze": False,
         "source_generator_uses_tau3_trajectories": False,
         "source_generator_anonymized_tool_names": True,

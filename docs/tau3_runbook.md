@@ -298,6 +298,13 @@ BEST_OF_N=4 \
 scripts/run_table10_tau3.sh build
 ```
 
+The builder runs the Table10 readiness audit before producing
+`table10_tau3_results.csv` and `.tex`. Rows that have `q4_tau_row.json` metrics
+but fail readiness are emitted with `Status=blocked_by_readiness`, and their
+reported metric cells are replaced with `--`. This prevents a complete tau2 row
+from being promoted when canonical trace, source-contract, leakage, or compute
+evidence is missing.
+
 For the paper-wide readiness audit, run:
 
 ```bash

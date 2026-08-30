@@ -23,6 +23,7 @@ from cgr_exp.alfworld_transfer import (
     _alfworld_diagnostic_action_from_info,
     _label_frontier_by_planner_cost,
     _label_frontier_by_walkthrough_suffix,
+    _load_alfworld_planner_label_cache,
     _frontier_sample,
     _gamefile_from_info,
     _planner_training_rollout_command,
@@ -339,6 +340,36 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(by_command["open cabinet"].reachable, 0)
         self.assertEqual(by_command["go to kitchen"].label_status, "planner_replanned_snapshot")
         self.assertEqual(by_command["open cabinet"].label_status, "planner_no_plan_snapshot")
+
+    def test_planner_labels_reuse_persistent_candidate_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "planner-labels.jsonl"
+            cache: dict[str, object] = {}
+            first_env = FakePlannerAlfworldEnv()
+            first = _label_frontier_by_planner_cost(
+                first_env,
+                gamefile="fake-game",
+                prefix=[],
+                commands=["go to kitchen", "open cabinet"],
+                max_rollout_steps=5,
+                label_cache=cache,
+                cache_path=cache_path,
+            )
+            loaded_cache = _load_alfworld_planner_label_cache(cache_path)
+            second_env = FakePlannerAlfworldEnv()
+            second = _label_frontier_by_planner_cost(
+                second_env,
+                gamefile="fake-game",
+                prefix=[],
+                commands=["go to kitchen", "open cabinet"],
+                max_rollout_steps=5,
+                label_cache=loaded_cache,
+                cache_path=cache_path,
+            )
+        self.assertGreater(first_env.reset_count, 0)
+        self.assertEqual(second_env.reset_count, 0)
+        self.assertEqual([label.cost_to_success for label in second], [label.cost_to_success for label in first])
+        self.assertTrue(all(label.label_status.endswith("_cache_hit") for label in second))
 
     def test_planner_training_rollout_prefers_planner_next_command(self) -> None:
         command = _planner_training_rollout_command(
@@ -1057,6 +1088,8 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertTrue((out / "alfworld_dense_pair_cache.jsonl").exists())
             self.assertEqual(resumed["train"]["resumed_completed_episodes"], 1)
             self.assertGreaterEqual(resumed["train"]["train_pair_count"], first["train"]["train_pair_count"])
+            self.assertIn("planner_label_cache_loaded_entries", resumed["train"])
+            self.assertIn("new_planner_label_cache_hits", resumed["train"])
             self.assertTrue(resumed["resume"])
 
     def test_audit_alfworld_dense_labels_reports_cost_variation(self) -> None:
@@ -1129,6 +1162,8 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(manifest["label_summary"]["cost_variation_rate"], 1.0)
             self.assertIn("ranker_contract_sign_violation_count", manifest["label_summary"])
             self.assertIn("ranker_contract_sign_tolerance", manifest["label_summary"])
+            self.assertIn("planner_label_cache_loaded_entries", manifest["label_summary"])
+            self.assertIn("new_planner_label_cache_hits", manifest["label_summary"])
 
     def test_run_alfworld_dense_transfer_can_load_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

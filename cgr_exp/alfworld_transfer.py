@@ -743,12 +743,21 @@ def train_alfworld_dense_ranker(
     trace_rows: list[dict[str, object]] = []
     action_label_rows: list[dict[str, object]] = []
     completed_episodes: set[int] = set()
+    planner_label_cache: dict[str, AlfworldDenseActionLabel] = {}
+    planner_label_cache_path: Path | None = None
+    planner_label_cache_loaded_entries = 0
+    planner_label_cache_hits = 0
+    planner_label_cache_misses = 0
     if cache_dir is not None and resume:
         cached = _load_alfworld_dense_training_cache(cache_dir)
         pairs.extend(cached["pairs"])
         trace_rows.extend(cached["trace_rows"])
         action_label_rows.extend(cached["action_label_rows"])
         completed_episodes.update(cached["completed_episodes"])
+    if cache_dir is not None and label_source == ALFWORLD_DENSE_LABEL_PLANNER:
+        planner_label_cache_path = cache_dir / "alfworld_dense_planner_label_cache.jsonl"
+        planner_label_cache = _load_alfworld_planner_label_cache(planner_label_cache_path)
+        planner_label_cache_loaded_entries = len(planner_label_cache)
     train_env = None
     label_env = None
     needs_collection = any(episode not in completed_episodes for episode in range(train_episodes))
@@ -837,7 +846,11 @@ def train_alfworld_dense_ranker(
                     commands=frontier,
                     max_rollout_steps=counterfactual_rollout_steps,
                     timeout_seconds=planner_timeout_seconds,
+                    label_cache=planner_label_cache,
+                    cache_path=planner_label_cache_path,
                 )
+                planner_label_cache_hits += sum(1 for label in labels if label.label_status.endswith("_cache_hit"))
+                planner_label_cache_misses += sum(1 for label in labels if not label.label_status.endswith("_cache_hit"))
             else:
                 if label_env is None:
                     raise RuntimeError("replay-prefix ALFWorld label source requires a label environment")
@@ -1003,6 +1016,13 @@ def train_alfworld_dense_ranker(
         "counterfactual_rollout_steps": counterfactual_rollout_steps,
         "planner_timeout_seconds": planner_timeout_seconds,
         "max_episode_label_seconds": max_episode_label_seconds,
+        "planner_label_cache": str(planner_label_cache_path or ""),
+        "planner_label_cache_loaded_entries": planner_label_cache_loaded_entries,
+        "planner_label_cache_entries": len(planner_label_cache),
+        "new_planner_label_cache_hits": planner_label_cache_hits,
+        "new_planner_label_cache_misses": planner_label_cache_misses,
+        "planner_label_cache_hits": planner_label_cache_hits,
+        "planner_label_cache_misses": planner_label_cache_misses,
         "perturbation_prob": perturbation_prob,
         "warmup_random_steps": warmup_random_steps,
         "label_source": _alfworld_dense_label_source_name(label_source),
@@ -1330,9 +1350,35 @@ def _label_frontier_by_planner_cost(
     commands: Sequence[str],
     max_rollout_steps: int,
     timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
+    label_cache: dict[str, AlfworldDenseActionLabel] | None = None,
+    cache_path: Path | None = None,
 ) -> list[AlfworldDenseActionLabel]:
     labels = []
     unreachable_cost = max_rollout_steps + len(prefix) + len(commands) + 2
+    cache_keys = [
+        _alfworld_planner_label_cache_key(
+            gamefile=gamefile,
+            prefix=prefix,
+            command=command,
+            max_rollout_steps=max_rollout_steps,
+        )
+        for command in commands
+    ]
+    if label_cache is not None and commands and all(key in label_cache for key in cache_keys):
+        return [
+            AlfworldDenseActionLabel(
+                episode=-1,
+                step=-1,
+                command=label_cache[key].command,
+                cost_to_success=label_cache[key].cost_to_success,
+                reachable=label_cache[key].reachable,
+                final_score=label_cache[key].final_score,
+                rollout_steps=label_cache[key].rollout_steps,
+                label_source=label_cache[key].label_source,
+                label_status=f"{label_cache[key].label_status}_cache_hit",
+            )
+            for key in cache_keys
+        ]
     replayed_state: Any | None = None
     replayed_admissible: list[str] | None = None
     replayed_done = False
@@ -1342,7 +1388,23 @@ def _label_frontier_by_planner_cost(
     except Exception:
         replayed_state = None
         replayed_admissible = None
-    for command in commands:
+    for command, cache_key in zip(commands, cache_keys):
+        if label_cache is not None and cache_key in label_cache:
+            cached = label_cache[cache_key]
+            labels.append(
+                AlfworldDenseActionLabel(
+                    episode=-1,
+                    step=-1,
+                    command=cached.command,
+                    cost_to_success=cached.cost_to_success,
+                    reachable=cached.reachable,
+                    final_score=cached.final_score,
+                    rollout_steps=cached.rollout_steps,
+                    label_source=cached.label_source,
+                    label_status=f"{cached.label_status}_cache_hit",
+                )
+            )
+            continue
         try:
             state_copy = _copy_env_state(replayed_state)
             if state_copy is not None and replayed_admissible is not None:
@@ -1367,61 +1429,58 @@ def _label_frontier_by_planner_cost(
                         unreachable_cost=unreachable_cost,
                     ),
                 )
-            labels.append(
-                AlfworldDenseActionLabel(
-                    episode=-1,
-                    step=-1,
-                    command=command,
-                    cost_to_success=max(1, int(cost)),
-                    reachable=1 if reachable else 0,
-                    final_score=1.0 if next_done and score > 0 else 0.0,
-                    rollout_steps=int(rollout_steps),
-                    label_source="textworld_pddl_replan_cost_to_go",
-                    label_status=label_status,
-                )
+            label = AlfworldDenseActionLabel(
+                episode=-1,
+                step=-1,
+                command=command,
+                cost_to_success=max(1, int(cost)),
+                reachable=1 if reachable else 0,
+                final_score=1.0 if next_done and score > 0 else 0.0,
+                rollout_steps=int(rollout_steps),
+                label_source="textworld_pddl_replan_cost_to_go",
+                label_status=label_status,
             )
         except TimeoutError:
-            labels.append(
-                AlfworldDenseActionLabel(
-                    episode=-1,
-                    step=-1,
-                    command=command,
-                    cost_to_success=unreachable_cost,
-                    reachable=0,
-                    final_score=0.0,
-                    rollout_steps=0,
-                    label_source="textworld_pddl_replan_cost_to_go",
-                    label_status="planner_timeout",
-                )
+            label = AlfworldDenseActionLabel(
+                episode=-1,
+                step=-1,
+                command=command,
+                cost_to_success=unreachable_cost,
+                reachable=0,
+                final_score=0.0,
+                rollout_steps=0,
+                label_source="textworld_pddl_replan_cost_to_go",
+                label_status="planner_timeout",
             )
         except ValueError:
-            labels.append(
-                AlfworldDenseActionLabel(
-                    episode=-1,
-                    step=-1,
-                    command=command,
-                    cost_to_success=unreachable_cost,
-                    reachable=0,
-                    final_score=0.0,
-                    rollout_steps=0,
-                    label_source="textworld_pddl_replan_cost_to_go",
-                    label_status="candidate_not_admissible_after_replay",
-                )
+            label = AlfworldDenseActionLabel(
+                episode=-1,
+                step=-1,
+                command=command,
+                cost_to_success=unreachable_cost,
+                reachable=0,
+                final_score=0.0,
+                rollout_steps=0,
+                label_source="textworld_pddl_replan_cost_to_go",
+                label_status="candidate_not_admissible_after_replay",
             )
         except Exception:
-            labels.append(
-                AlfworldDenseActionLabel(
-                    episode=-1,
-                    step=-1,
-                    command=command,
-                    cost_to_success=unreachable_cost,
-                    reachable=0,
-                    final_score=0.0,
-                    rollout_steps=0,
-                    label_source="textworld_pddl_replan_cost_to_go",
-                    label_status="planner_error",
-                )
+            label = AlfworldDenseActionLabel(
+                episode=-1,
+                step=-1,
+                command=command,
+                cost_to_success=unreachable_cost,
+                reachable=0,
+                final_score=0.0,
+                rollout_steps=0,
+                label_source="textworld_pddl_replan_cost_to_go",
+                label_status="planner_error",
             )
+        labels.append(label)
+        if label_cache is not None:
+            label_cache[cache_key] = label
+        if cache_path is not None:
+            _append_alfworld_planner_label_cache(cache_path, cache_key, label)
     return labels
 
 
@@ -1444,6 +1503,58 @@ def _planner_cost_for_candidate_from_state(
     reachable = bool(remaining_plan)
     cost = 1 + len(remaining_plan) if reachable else unreachable_cost
     return cost, reachable, score, next_done, cost if reachable else 0, "planner_replanned_snapshot" if reachable else "planner_no_plan_snapshot"
+
+
+def _alfworld_planner_label_cache_key(
+    *,
+    gamefile: str | None,
+    prefix: Sequence[str],
+    command: str,
+    max_rollout_steps: int,
+) -> str:
+    payload = {
+        "version": "alfworld-planner-label-v1",
+        "gamefile": str(gamefile or ""),
+        "prefix": [_normalize_command(item) for item in prefix],
+        "command": _normalize_command(command),
+        "max_rollout_steps": int(max_rollout_steps),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _load_alfworld_planner_label_cache(path: Path | None) -> dict[str, AlfworldDenseActionLabel]:
+    if path is None or not path.exists():
+        return {}
+    cache: dict[str, AlfworldDenseActionLabel] = {}
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+                label_row = row["label"]
+                cache[str(row["key"])] = AlfworldDenseActionLabel(
+                    episode=-1,
+                    step=-1,
+                    command=str(label_row["command"]),
+                    cost_to_success=int(label_row["cost_to_success"]),
+                    reachable=int(label_row["reachable"]),
+                    final_score=float(label_row["final_score"]),
+                    rollout_steps=int(label_row["rollout_steps"]),
+                    label_source=str(label_row["label_source"]),
+                    label_status=str(label_row.get("label_status", "ok")),
+                )
+            except Exception:
+                continue
+    return cache
+
+
+def _append_alfworld_planner_label_cache(path: Path, key: str, label: AlfworldDenseActionLabel) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row = {"key": key, "label": label.__dict__}
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
 def _planner_cost_for_candidate(
@@ -1752,6 +1863,12 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
         "expert_monotone_failure_rate": float(train_manifest.get("expert_monotone_failure_rate", 0.0)),
         "label_source": str(train_manifest.get("label_source", "")),
         "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
+        "planner_label_cache_loaded_entries": int(train_manifest.get("planner_label_cache_loaded_entries", 0)),
+        "planner_label_cache_entries": int(train_manifest.get("planner_label_cache_entries", 0)),
+        "new_planner_label_cache_hits": int(train_manifest.get("new_planner_label_cache_hits", 0)),
+        "new_planner_label_cache_misses": int(train_manifest.get("new_planner_label_cache_misses", 0)),
+        "planner_label_cache_hits": int(train_manifest.get("planner_label_cache_hits", 0)),
+        "planner_label_cache_misses": int(train_manifest.get("planner_label_cache_misses", 0)),
         "ranker_contract_sign_violation_count": int(train_manifest.get("ranker_contract_sign_violation_count", 0)),
         "ranker_contract_sign_violations": "|".join(str(item) for item in train_manifest.get("ranker_contract_sign_violations", [])),
         "ranker_contract_sign_tolerance": float(train_manifest.get("ranker_contract_sign_tolerance", 0.0)),
@@ -3055,6 +3172,14 @@ def _load_alfworld_dense_audit_cache(
     train_manifest.setdefault("counterfactual_rollout_steps", fallback_counterfactual_rollout_steps)
     train_manifest.setdefault("planner_timeout_seconds", fallback_planner_timeout_seconds)
     train_manifest.setdefault("max_episode_label_seconds", fallback_max_episode_label_seconds)
+    train_manifest.setdefault("planner_label_cache", str(cache_dir / "alfworld_dense_planner_label_cache.jsonl"))
+    planner_label_cache_entries = len(_load_alfworld_planner_label_cache(cache_dir / "alfworld_dense_planner_label_cache.jsonl"))
+    train_manifest.setdefault("planner_label_cache_loaded_entries", planner_label_cache_entries)
+    train_manifest.setdefault("planner_label_cache_entries", planner_label_cache_entries)
+    train_manifest.setdefault("new_planner_label_cache_hits", 0)
+    train_manifest.setdefault("new_planner_label_cache_misses", 0)
+    train_manifest.setdefault("planner_label_cache_hits", 0)
+    train_manifest.setdefault("planner_label_cache_misses", 0)
     train_manifest.setdefault("perturbation_prob", fallback_perturbation_prob)
     train_manifest.setdefault("warmup_random_steps", fallback_warmup_random_steps)
     train_manifest.setdefault("label_source", label_source)

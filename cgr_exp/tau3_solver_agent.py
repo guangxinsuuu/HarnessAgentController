@@ -56,7 +56,10 @@ class Tau3SolverControllerAgent(LLMAgent):
         self.enable_certified_filter = enable_certified_filter
         self.ranker: Optional[GenericHarnessRanker] = None
         if ranker_checkpoint:
-            self.ranker = GenericHarnessRanker.from_json(Path(ranker_checkpoint).read_text(encoding="utf-8"))
+            try:
+                self.ranker = GenericHarnessRanker.from_json(Path(ranker_checkpoint).read_text(encoding="utf-8"))
+            except Exception as exc:
+                raise RuntimeError(f"failed to load tau3 solver ranker checkpoint {ranker_checkpoint}: {exc}") from exc
 
     def get_init_state(self, message_history: Optional[list[Message]] = None) -> LLMAgentState:
         if message_history is None:

@@ -112,6 +112,19 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertNotIn("get_order", trace_text)
         self.assertNotIn("update_order", trace_text)
 
+    def test_bad_checkpoint_error_names_checkpoint_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "bad_ranker.json"
+            checkpoint.write_text(json.dumps({"weights": [0.0], "bias": 0.0}), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "bad_ranker.json"):
+                Tau3SolverControllerAgent(
+                    [as_tool(_get_order)],
+                    "policy",
+                    "mock",
+                    {"temperature": 0},
+                    ranker_checkpoint=str(checkpoint),
+                )
+
     def test_parallel_candidate_sampling_preserves_index_order_and_args(self) -> None:
         seen: list[tuple[int, float]] = []
 

@@ -140,6 +140,10 @@ For canonical smoke to be valid, the trace audit should show
 `canonical_feature_schema_match=True`, `canonical_feature_count_match=True`,
 `ranker_checkpoint_loaded_events>0`, and all oracle visibility/use flags
 `False`.
+It should also report
+`tool_name_use_policy=coarse_action_type_normalization_only`; raw tau3 tool
+names may be normalized into read/write/respond action classes, but tool
+identity must not be an inference feature.
 Use `canonical_ranker_events`, `greedy_content_passthrough_events`, and
 `fallback_greedy_events` to separate decisions actually ranked by the frozen
 controller from content passthrough and fallback decisions. Inspect
@@ -317,9 +321,11 @@ Canonical rows must show evidence for:
 - no tau3 trajectory training
 - no oracle label inference leakage
 - anonymous source tools
+- source contract audit passed
 - tool-identity stress passed
 - contract-coverage stress passed
 - canonical ranker trace events
+- tool-name policy limited to coarse action-type normalization
 - complete tool call, LLM call, token, and wall-clock accounting
 
 Routine status generation should write to `runs/current_experiment_status`,

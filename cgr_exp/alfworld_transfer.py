@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import csv
 import importlib.util
 import json
+import multiprocessing as mp
 import os
 import random
 import re
@@ -791,18 +792,6 @@ def train_alfworld_dense_ranker(
             if label_source == ALFWORLD_DENSE_LABEL_PLANNER:
                 if expert in admissible:
                     planner_next = expert
-                else:
-                    if label_env is None:
-                        raise RuntimeError("planner ALFWorld label source requires a PDDL planner environment")
-                    try:
-                        planner_next = _run_with_timeout(
-                            planner_timeout_seconds,
-                            lambda: _planner_next_command(label_env, gamefile=gamefile, prefix=prefix, admissible=admissible),
-                        )
-                    except TimeoutError:
-                        planner_next = None
-                    planner_policy_steps += 1
-                    planner_policy_misses += 0 if planner_next is not None else 1
             frontier_reference = planner_next if planner_next is not None else expert
             frontier = _frontier_sample(
                 admissible,
@@ -917,18 +906,7 @@ def train_alfworld_dense_ranker(
                 else:
                     command = _best_reachable_label_command(row_labels, admissible=admissible)
                     if command is None:
-                        command = _planner_training_rollout_command(
-                            label_env,
-                            gamefile=gamefile,
-                            prefix=prefix,
-                            expert=expert,
-                            admissible=admissible,
-                            rng=rng,
-                            step=step,
-                            perturbation_prob=0.0,
-                            warmup_random_steps=0,
-                            timeout_seconds=planner_timeout_seconds,
-                        )
+                        command = str(expert) if expert in admissible else rng.choice(list(admissible))
             else:
                 command = _training_rollout_command(
                     expert=expert,
@@ -998,7 +976,7 @@ def train_alfworld_dense_ranker(
         "epochs": epochs,
         "max_pairs_per_state": max_pairs_per_state,
         "max_frontier_actions": max_frontier_actions,
-        "frontier_reference_priority": "expert_plan_then_planner_policy",
+        "frontier_reference_priority": "expert_plan_if_available_then_frontier_sampling_score",
         "resume_requested": resume,
         "resumed_completed_episodes": len(completed_episodes),
         "dense_pair_cache": str(cache_dir / "alfworld_dense_pair_cache.jsonl") if cache_dir is not None else "",
@@ -1521,7 +1499,40 @@ def _copy_env_state(env: Any | None) -> Any | None:
 
 
 def _run_with_timeout(timeout_seconds: float, fn: Callable[[], Any]) -> Any:
-    if timeout_seconds <= 0 or not hasattr(signal, "SIGALRM"):
+    if timeout_seconds <= 0:
+        return fn()
+    if "fork" in mp.get_all_start_methods():
+        ctx = mp.get_context("fork")
+        parent, child = ctx.Pipe(duplex=False)
+        process = ctx.Process(target=_run_timeout_child, args=(child, fn))
+        process.start()
+        child.close()
+        process.join(timeout_seconds)
+        if process.is_alive():
+            process.terminate()
+            process.join(1.0)
+            if process.is_alive() and hasattr(process, "kill"):
+                process.kill()
+                process.join(1.0)
+            parent.close()
+            raise TimeoutError(f"ALFWorld planner candidate exceeded {timeout_seconds:.3f}s")
+        if parent.poll():
+            status, payload = parent.recv()
+            parent.close()
+            if status == "ok":
+                return payload
+            exc_type, message = payload
+            if exc_type == "ValueError":
+                raise ValueError(message)
+            if exc_type == "TimeoutError":
+                raise TimeoutError(message)
+            raise RuntimeError(f"{exc_type}: {message}")
+        parent.close()
+        if process.exitcode == 0:
+            return None
+        raise RuntimeError(f"ALFWorld planner candidate worker exited with code {process.exitcode}")
+
+    if not hasattr(signal, "SIGALRM"):
         return fn()
 
     def _raise_timeout(_signum: int, _frame: Any) -> None:
@@ -1535,6 +1546,15 @@ def _run_with_timeout(timeout_seconds: float, fn: Callable[[], Any]) -> Any:
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0.0)
         signal.signal(signal.SIGALRM, old_handler)
+
+
+def _run_timeout_child(conn: Any, fn: Callable[[], Any]) -> None:
+    try:
+        conn.send(("ok", fn()))
+    except BaseException as exc:
+        conn.send(("err", (exc.__class__.__name__, str(exc))))
+    finally:
+        conn.close()
 
 
 def _dense_labels_to_pairs(

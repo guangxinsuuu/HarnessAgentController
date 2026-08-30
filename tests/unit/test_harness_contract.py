@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from cgr_exp.harness_contract import audit_canonical_contract_manifest, canonical_contract_manifest, canonical_feature_names
-from cgr_exp.harness_ranker import run_workflow_source_validation
+from cgr_exp.harness_ranker import GenericHarnessRanker, run_workflow_source_validation
 from cgr_exp.tau3_contract_adapter import tau3_adapter_manifest, tau3_candidate_to_canonical
 from cgr_exp.workflow_oracle import collect_workflow_oracle_records, make_workflow_ranking_pairs
 from cgr_exp.workflow_source_generator import generate_workflow_source_tasks, source_generator_manifest
@@ -61,6 +61,10 @@ class HarnessContractTest(unittest.TestCase):
             self.assertTrue(saved["contract_coverage_stress"]["ready"])
             self.assertIn("black_box_contract_top1_accuracy", saved["contract_coverage_stress"])
             self.assertGreater(saved["train_pair_count"], 0)
+
+    def test_generic_harness_ranker_rejects_bad_checkpoint_dimension(self) -> None:
+        with self.assertRaisesRegex(ValueError, "weight dimension mismatch"):
+            GenericHarnessRanker.from_json(json.dumps({"weights": [0.0], "bias": 0.0, "feature_names": canonical_feature_names()}))
 
     def test_tau3_adapter_outputs_canonical_features_without_oracle_or_tool_identity(self) -> None:
         class Tool:

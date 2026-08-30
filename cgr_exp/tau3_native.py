@@ -449,9 +449,33 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
     manifest_path = checkpoint.parent / "canonical_harness_source_validation.json"
     protocol: Dict[str, object] = {
         "checkpoint": str(checkpoint),
+        "checkpoint_found": checkpoint.exists() and checkpoint.is_file(),
+        "checkpoint_loadable": False,
+        "checkpoint_feature_count": "",
+        "checkpoint_feature_count_match": False,
+        "checkpoint_schema_match": False,
+        "checkpoint_error": "",
         "manifest": str(manifest_path),
         "manifest_found": manifest_path.exists() and manifest_path.is_file(),
     }
+    if protocol["checkpoint_found"]:
+        try:
+            checkpoint_data = _read_json_or_empty(checkpoint)
+            weights = checkpoint_data.get("weights")
+            if not isinstance(weights, list):
+                raise ValueError("weights missing or not a list")
+            feature_names = checkpoint_data.get("feature_names")
+            feature_names_match = feature_names is None or list(feature_names) == canonical_feature_names()
+            protocol.update(
+                {
+                    "checkpoint_loadable": True,
+                    "checkpoint_feature_count": len(weights),
+                    "checkpoint_feature_count_match": len(weights) == len(canonical_feature_names()),
+                    "checkpoint_schema_match": feature_names_match,
+                }
+            )
+        except Exception as exc:
+            protocol["checkpoint_error"] = f"{type(exc).__name__}: {exc}"
     if not protocol["manifest_found"]:
         return protocol
     data = _read_json_or_empty(manifest_path)
@@ -591,6 +615,12 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
             source_protocol = _source_controller_protocol_from_manifest(command_manifest)
             if not source_protocol.get("manifest_found"):
                 blockers.append("source controller manifest missing")
+            if source_protocol.get("checkpoint_found") and not source_protocol.get("checkpoint_loadable"):
+                blockers.append("source controller checkpoint not loadable")
+            if source_protocol.get("checkpoint_found") and source_protocol.get("checkpoint_loadable") and not source_protocol.get("checkpoint_feature_count_match"):
+                blockers.append("source controller checkpoint feature dimension mismatch")
+            if source_protocol.get("checkpoint_found") and source_protocol.get("checkpoint_loadable") and not source_protocol.get("checkpoint_schema_match"):
+                blockers.append("source controller checkpoint feature schema mismatch")
             if source_protocol.get("tau3_train_trajectories_used"):
                 blockers.append("source controller used tau3 train trajectories")
             if source_protocol.get("oracle_labels_in_inference_features"):
@@ -1210,6 +1240,10 @@ def _table10_audit_row(
         "task_count": task_count,
         "expected_test_count": expected_test_count,
         "source_generator_freeze_ready": source_protocol.get("source_generator_distribution_fixed_before_target_test_evaluation", ""),
+        "source_checkpoint_loadable": source_protocol.get("checkpoint_loadable", ""),
+        "source_checkpoint_feature_count": source_protocol.get("checkpoint_feature_count", ""),
+        "source_checkpoint_feature_count_match": source_protocol.get("checkpoint_feature_count_match", ""),
+        "source_checkpoint_schema_match": source_protocol.get("checkpoint_schema_match", ""),
         "source_generator_anonymized_tools": source_protocol.get("source_generator_anonymized_tool_names", ""),
         "tool_identity_generalization_ready": source_protocol.get("tool_identity_generalization_ready", ""),
         "tool_identity_generalization_top1_delta": source_protocol.get("tool_identity_generalization_top1_delta", ""),
@@ -1388,6 +1422,12 @@ def _table10_source_controller_preflight_row(base_dir: Path, *, seed: int = 0) -
     blockers = []
     if not checkpoint.exists():
         blockers.append("generic_harness_ranker.json missing")
+    if protocol.get("checkpoint_found") and not protocol.get("checkpoint_loadable"):
+        blockers.append("generic_harness_ranker.json not loadable")
+    if protocol.get("checkpoint_found") and protocol.get("checkpoint_loadable") and not protocol.get("checkpoint_feature_count_match"):
+        blockers.append("source controller checkpoint feature dimension mismatch")
+    if protocol.get("checkpoint_found") and protocol.get("checkpoint_loadable") and not protocol.get("checkpoint_schema_match"):
+        blockers.append("source controller checkpoint feature schema mismatch")
     if not protocol.get("manifest_found"):
         blockers.append("canonical_harness_source_validation.json missing")
     if protocol.get("tau3_train_trajectories_used"):

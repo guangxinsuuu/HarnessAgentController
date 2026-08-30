@@ -501,21 +501,7 @@ class Tau3NativeTest(unittest.TestCase):
                     {
                         "solver_ranker_checkpoint": str(source / "generic_harness_ranker.json"),
                         "tau3_adapter_protocol": tau3_adapter_manifest(),
-                        "source_controller_protocol": {
-                            "manifest_found": True,
-                            "controller_checkpoint_frozen": True,
-                            "tau3_train_trajectories_used": False,
-                            "oracle_labels_in_inference_features": False,
-                            "tool_names_used_as_features": False,
-                            "source_generator_distribution_fixed_before_target_test_evaluation": True,
-                            "tau3_heldout_test_seen_before_freeze": False,
-                            "source_generator_uses_tau3_trajectories": False,
-                            "source_generator_anonymized_tool_names": True,
-                            "tool_identity_generalization_ready": True,
-                            "tool_identity_generalization_top1_delta": 0.0,
-                            "contract_coverage_stress_ready": True,
-                            "contract_coverage_black_box_top1_delta_from_full": 0.0,
-                        },
+                        "source_controller_protocol": _source_protocol_fields(),
                     }
                 ),
                 encoding="utf-8",
@@ -550,6 +536,10 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(rows["Solver-derived canonical controller"]["source_policy"], "official tau3 maintained protocol")
             canonical_row = rows["Solver-derived canonical controller"]
             self.assertTrue(canonical_row["source_generator_freeze_ready"])
+            self.assertTrue(canonical_row["source_checkpoint_loadable"])
+            self.assertEqual(canonical_row["source_checkpoint_feature_count"], len(canonical_feature_names()))
+            self.assertTrue(canonical_row["source_checkpoint_feature_count_match"])
+            self.assertTrue(canonical_row["source_checkpoint_schema_match"])
             self.assertTrue(canonical_row["source_generator_anonymized_tools"])
             self.assertTrue(canonical_row["tool_identity_generalization_ready"])
             self.assertTrue(canonical_row["contract_coverage_stress_ready"])
@@ -625,19 +615,7 @@ class Tau3NativeTest(unittest.TestCase):
                     {
                         "solver_ranker_checkpoint": str(source / "generic_harness_ranker.json"),
                         "tau3_adapter_protocol": tau3_adapter_manifest(),
-                        "source_controller_protocol": {
-                            "manifest_found": True,
-                            "controller_checkpoint_frozen": True,
-                            "tau3_train_trajectories_used": False,
-                            "oracle_labels_in_inference_features": False,
-                            "tool_names_used_as_features": False,
-                            "source_generator_distribution_fixed_before_target_test_evaluation": True,
-                            "tau3_heldout_test_seen_before_freeze": False,
-                            "source_generator_uses_tau3_trajectories": False,
-                            "source_generator_anonymized_tool_names": True,
-                            "tool_identity_generalization_ready": True,
-                            "contract_coverage_stress_ready": True,
-                        },
+                        "source_controller_protocol": _source_protocol_fields(),
                     }
                 ),
                 encoding="utf-8",
@@ -806,19 +784,7 @@ class Tau3NativeTest(unittest.TestCase):
                         {
                             "solver_ranker_checkpoint": str(source / "generic_harness_ranker.json"),
                             "tau3_adapter_protocol": tau3_adapter_manifest(),
-                            "source_controller_protocol": {
-                                "manifest_found": True,
-                                "controller_checkpoint_frozen": True,
-                                "tau3_train_trajectories_used": False,
-                                "oracle_labels_in_inference_features": False,
-                                "tool_names_used_as_features": False,
-                                "source_generator_distribution_fixed_before_target_test_evaluation": True,
-                                "tau3_heldout_test_seen_before_freeze": False,
-                                "source_generator_uses_tau3_trajectories": False,
-                                "source_generator_anonymized_tool_names": True,
-                                "tool_identity_generalization_ready": True,
-                                "contract_coverage_stress_ready": True,
-                            },
+                            "source_controller_protocol": _source_protocol_fields(),
                         }
                     ),
                     encoding="utf-8",
@@ -989,6 +955,20 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("Warning: recommended next run needs one of `OPENAI_API_KEY, CGR_LLM_API_KEY`", text)
             self.assertIn("Resume policy:", text)
             self.assertIn("`--force` is the opt-in switch", text)
+
+    def test_table10_preflight_rejects_bad_source_checkpoint_dimension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            source = base / "source_controller_seed0"
+            source.mkdir(parents=True)
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
+            (source / "generic_harness_ranker.json").write_text(json.dumps({"weights": [0.0], "bias": 0.0}), encoding="utf-8")
+            manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
+            groups = {row["run_group"]: row for row in manifest["rows"]}
+            self.assertFalse(groups["source_controller"]["ready"])
+            self.assertIn("source controller checkpoint feature dimension mismatch", groups["source_controller"]["blockers"])
+            self.assertEqual(manifest["recommended_next_run_group"], "source_controller")
 
     def test_table10_preflight_recommends_certified_smoke_after_canonical_smoke_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1224,7 +1204,10 @@ def _write_row(path: Path, domain: str, method: str = "Native tool-calling rerun
 
 
 def _write_source_manifest(path: Path, *, tau3_train_trajectories_used: bool) -> None:
-    (path / "generic_harness_ranker.json").write_text(json.dumps({"weights": [0.0], "bias": 0.0}), encoding="utf-8")
+    (path / "generic_harness_ranker.json").write_text(
+        json.dumps({"weights": [0.0] * len(canonical_feature_names()), "bias": 0.0, "feature_names": canonical_feature_names()}),
+        encoding="utf-8",
+    )
     (path / "canonical_harness_source_validation.json").write_text(
         json.dumps(
             {
@@ -1258,6 +1241,29 @@ def _write_source_manifest(path: Path, *, tau3_train_trajectories_used: bool) ->
     )
 
 
+def _source_protocol_fields() -> dict:
+    return {
+        "manifest_found": True,
+        "checkpoint_found": True,
+        "checkpoint_loadable": True,
+        "checkpoint_feature_count": len(canonical_feature_names()),
+        "checkpoint_feature_count_match": True,
+        "checkpoint_schema_match": True,
+        "controller_checkpoint_frozen": True,
+        "tau3_train_trajectories_used": False,
+        "oracle_labels_in_inference_features": False,
+        "tool_names_used_as_features": False,
+        "source_generator_distribution_fixed_before_target_test_evaluation": True,
+        "tau3_heldout_test_seen_before_freeze": False,
+        "source_generator_uses_tau3_trajectories": False,
+        "source_generator_anonymized_tool_names": True,
+        "tool_identity_generalization_ready": True,
+        "tool_identity_generalization_top1_delta": 0.0,
+        "contract_coverage_stress_ready": True,
+        "contract_coverage_black_box_top1_delta_from_full": 0.0,
+    }
+
+
 def _write_canonical_solver_row(
     row_dir: Path,
     domain: str,
@@ -1273,19 +1279,7 @@ def _write_canonical_solver_row(
             {
                 "solver_ranker_checkpoint": str(source_dir / "generic_harness_ranker.json"),
                 "tau3_adapter_protocol": tau3_adapter_manifest(),
-                "source_controller_protocol": {
-                    "manifest_found": True,
-                    "controller_checkpoint_frozen": True,
-                    "tau3_train_trajectories_used": False,
-                    "oracle_labels_in_inference_features": False,
-                    "tool_names_used_as_features": False,
-                    "source_generator_distribution_fixed_before_target_test_evaluation": True,
-                    "tau3_heldout_test_seen_before_freeze": False,
-                    "source_generator_uses_tau3_trajectories": False,
-                    "source_generator_anonymized_tool_names": True,
-                    "tool_identity_generalization_ready": True,
-                    "contract_coverage_stress_ready": True,
-                },
+                "source_controller_protocol": _source_protocol_fields(),
             }
         ),
         encoding="utf-8",

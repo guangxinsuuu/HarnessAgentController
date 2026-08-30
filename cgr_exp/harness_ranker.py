@@ -58,7 +58,14 @@ class GenericHarnessRanker:
     @classmethod
     def from_json(cls, text: str) -> "GenericHarnessRanker":
         data = json.loads(text)
-        return cls([float(value) for value in data["weights"]], float(data.get("bias", 0.0)))
+        weights = [float(value) for value in data["weights"]]
+        expected_dim = len(canonical_feature_names())
+        if len(weights) != expected_dim:
+            raise ValueError(f"ranker weight dimension mismatch: {len(weights)} != {expected_dim}")
+        feature_names = data.get("feature_names")
+        if feature_names is not None and list(feature_names) != canonical_feature_names():
+            raise ValueError("ranker feature schema mismatch")
+        return cls(weights, float(data.get("bias", 0.0)))
 
 
 def train_generic_harness_ranker(tasks: Sequence[WorkflowTask], epochs: int = 20, seed: int = 0) -> tuple[GenericHarnessRanker, List[Pair]]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -13,9 +14,18 @@ from cgr_exp.tau3_contract_adapter import tau3_candidate_to_canonical, tau3_prog
 
 from tau2.agent.base_agent import ValidAgentInputMessage
 from tau2.agent.llm_agent import LLMAgent, LLMAgentState
-from tau2.data_model.message import APICompatibleMessage, AssistantMessage, Message, MultiToolMessage, SystemMessage, ToolMessage, UserMessage
+from tau2.data_model.message import APICompatibleMessage, AssistantMessage, Message, MultiToolMessage, SystemMessage, ToolCall, ToolMessage, UserMessage
 from tau2.environment.tool import Tool
 from tau2.utils.llm_utils import generate
+
+
+@dataclass(frozen=True)
+class _ActionSpaceCandidate:
+    index: int
+    intent: str
+    action_type: str
+    synthetic_message: AssistantMessage
+    tool: Optional[Tool] = None
 
 
 class Tau3SolverControllerAgent(LLMAgent):
@@ -44,12 +54,14 @@ class Tau3SolverControllerAgent(LLMAgent):
         adaptive_search: bool = False,
         min_candidate_count: int = 1,
         enable_candidate_diversity: bool = False,
+        action_space_controller: bool = False,
     ):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self.candidate_count = max(1, int(candidate_count))
         self.min_candidate_count = max(1, min(int(min_candidate_count), self.candidate_count))
         self.adaptive_search = bool(adaptive_search)
         self.enable_candidate_diversity = bool(enable_candidate_diversity)
+        self.action_space_controller = bool(action_space_controller)
         self.candidate_workers = max(1, int(candidate_workers))
         self.candidate_retries = max(0, int(candidate_retries))
         self.candidate_retry_backoff = max(0.0, float(candidate_retry_backoff))
@@ -85,11 +97,121 @@ class Tau3SolverControllerAgent(LLMAgent):
             state.messages.extend(message.tool_messages)
         else:
             state.messages.append(message)
+        if self.action_space_controller:
+            selected = self._generate_action_space_message(state)
+            state.messages.append(selected)
+            return selected, state
         candidates = self._sample_candidates(state)
         selected = self._select_candidate(candidates, state.messages)
         selected = self._attach_total_sampling_cost(selected, candidates)
         state.messages.append(selected)
         return selected, state
+
+    def _generate_action_space_message(self, state: LLMAgentState) -> AssistantMessage:
+        history = state.messages
+        candidates = self._available_action_space_candidates(history)
+        scored_candidates = []
+        pruned = self._certified_pruned_action_space_candidates(candidates)
+        active_candidates = [candidate for candidate in candidates if candidate.index not in pruned]
+        if not active_candidates:
+            active_candidates = candidates
+        for candidate in active_candidates:
+            score, coverage = self._score_candidate(candidate.synthetic_message, history)
+            scored_candidates.append((candidate.index, score, coverage))
+        selected_index = max(scored_candidates, key=lambda item: (item[1], -item[0]))[0] if scored_candidates else 0
+        selected_candidate = next(candidate for candidate in candidates if candidate.index == selected_index)
+        self._write_action_space_trace(
+            candidates,
+            selected_index=selected_index,
+            scored_candidates=scored_candidates,
+            pruned=pruned,
+            history=history,
+        )
+        return self._instantiate_action_space_candidate(selected_candidate, state)
+
+    def _available_action_space_candidates(self, history: List[APICompatibleMessage]) -> List[_ActionSpaceCandidate]:
+        candidates: list[_ActionSpaceCandidate] = []
+        for tool in self.tools:
+            name = str(getattr(tool, "name", ""))
+            if not name:
+                continue
+            action_type = self._classify_tool_name(name)
+            synthetic = AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name=name, arguments={})],
+                raw_data={"cgr_action_intent": "tool", "cgr_action_type": action_type},
+            )
+            candidates.append(
+                _ActionSpaceCandidate(
+                    index=len(candidates),
+                    intent="tool",
+                    action_type=action_type,
+                    synthetic_message=synthetic,
+                    tool=tool,
+                )
+            )
+        for intent, action_type in (("ask", "ask"), ("respond", "respond"), ("terminate", "terminate")):
+            synthetic = AssistantMessage(
+                role="assistant",
+                content=f"CGR meta action: {intent}",
+                raw_data={"cgr_action_intent": intent, "cgr_action_type": action_type},
+            )
+            candidates.append(
+                _ActionSpaceCandidate(
+                    index=len(candidates),
+                    intent=intent,
+                    action_type=action_type,
+                    synthetic_message=synthetic,
+                )
+            )
+        return candidates
+
+    def _instantiate_action_space_candidate(self, candidate: _ActionSpaceCandidate, state: LLMAgentState) -> AssistantMessage:
+        messages = state.system_messages + state.messages
+        llm_args = deepcopy(self.llm_args)
+        if candidate.tool is not None:
+            hint = (
+                f"CGR selected next action intent: call exactly the `{candidate.tool.name}` tool once. "
+                "Fill arguments only from the visible conversation and tool results. "
+                "If a required argument is missing, ask the user instead of inventing it."
+            )
+            return generate(
+                model=self.llm,
+                tools=[candidate.tool],
+                tool_choice={"type": "function", "function": {"name": candidate.tool.name}},
+                messages=self._messages_with_extra_system_hint(messages, hint),
+                call_name="cgr_action_space_tool_instantiation",
+                **llm_args,
+            )
+        if candidate.intent == "ask":
+            hint = "CGR selected next action intent: ask the user one concise clarification or confirmation. Do not call tools."
+        elif candidate.intent == "terminate":
+            hint = "CGR selected next action intent: provide the final concise answer and stop. Do not call tools."
+        else:
+            hint = "CGR selected next action intent: respond concisely to the user. Do not call tools."
+        return generate(
+            model=self.llm,
+            tools=None,
+            messages=self._messages_with_extra_system_hint(messages, hint),
+            call_name="cgr_action_space_meta_instantiation",
+            **llm_args,
+        )
+
+    def _certified_pruned_action_space_candidates(self, candidates: List[_ActionSpaceCandidate]) -> dict[int, str]:
+        if not self.enable_certified_filter:
+            return {}
+        known_tool_names = {str(getattr(tool, "name", "")).lower() for tool in self.tools if getattr(tool, "name", "")}
+        pruned: dict[int, str] = {}
+        for candidate in candidates:
+            if candidate.tool is None:
+                continue
+            tool_name = str(getattr(candidate.tool, "name", "")).lower()
+            if tool_name not in known_tool_names:
+                pruned[candidate.index] = "unknown_tool"
+        if len(pruned) == len(candidates):
+            return {}
+        return pruned
 
     def _select_candidate(self, candidates: List[AssistantMessage], history: List[APICompatibleMessage]) -> AssistantMessage:
         greedy = candidates[0]
@@ -219,10 +341,14 @@ class Tau3SolverControllerAgent(LLMAgent):
         hint = _candidate_diversity_hint(intent)
         if not hint:
             return messages
-        diversified = list(messages)
-        insert_at = 1 if diversified and isinstance(diversified[0], SystemMessage) else 0
-        diversified.insert(insert_at, SystemMessage(role="system", content=hint))
-        return diversified
+        return self._messages_with_extra_system_hint(messages, hint)
+
+    @staticmethod
+    def _messages_with_extra_system_hint(messages: List[APICompatibleMessage], hint: str) -> List[APICompatibleMessage]:
+        hinted = list(messages)
+        insert_at = 1 if hinted and isinstance(hinted[0], SystemMessage) else 0
+        hinted.insert(insert_at, SystemMessage(role="system", content=hint))
+        return hinted
 
     def _score_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, dict[str, float]]:
         if self.ranker is not None:
@@ -393,12 +519,101 @@ class Tau3SolverControllerAgent(LLMAgent):
         with self.controller_trace_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
+    def _write_action_space_trace(
+        self,
+        candidates: List[_ActionSpaceCandidate],
+        *,
+        selected_index: int,
+        scored_candidates: List[tuple[int, float, dict[str, float]]],
+        pruned: dict[int, str],
+        history: List[APICompatibleMessage],
+    ) -> None:
+        if self.controller_trace_path is None:
+            return
+        self.controller_trace_path.parent.mkdir(parents=True, exist_ok=True)
+        scored_by_index = {idx: score for idx, score, _coverage in scored_candidates}
+        coverage_by_index = {idx: coverage for idx, _score, coverage in scored_candidates}
+        coverage_values = [coverage for _idx, _score, coverage in scored_candidates if coverage]
+        per_feature_availability: dict[str, float] = {}
+        if coverage_values:
+            feature_names = sorted({name for coverage in coverage_values for name in coverage if name != "mean_known_mask_ratio"})
+            per_feature_availability = {
+                name: sum(float(coverage.get(name, 0.0)) for coverage in coverage_values) / len(coverage_values)
+                for name in feature_names
+            }
+        mean_known_mask_ratio = (
+            sum(float(coverage.get("mean_known_mask_ratio", 0.0)) for coverage in coverage_values) / len(coverage_values)
+            if coverage_values
+            else None
+        )
+        contract = canonical_contract_manifest()
+        history_progress = tau3_progress_predicates(message_history=history)
+        row = {
+            "event": "tau3_controller_selection",
+            "timestamp": time.time(),
+            "scoring_mode": "action_space_canonical_ranker" if self.ranker is not None else "action_space_heuristic",
+            "canonical_contract": contract["contract"],
+            "canonical_feature_schema_hash": contract["feature_schema_hash"],
+            "canonical_feature_count": len(canonical_feature_names()),
+            "canonical_mean_known_mask_ratio": mean_known_mask_ratio,
+            "canonical_per_feature_availability": per_feature_availability,
+            "canonical_progress_predicates": history_progress.values(),
+            "canonical_progress_predicate_provenance": history_progress.provenance(),
+            "candidate_count": len(candidates),
+            "configured_candidate_count": len(candidates),
+            "search_budget": 1,
+            "adaptive_search_enabled": self.adaptive_search,
+            "search_budget_reason": "action_space_one_instantiation",
+            "candidate_diversity_enabled": False,
+            "action_space_controller_enabled": True,
+            "candidate_generation_intents": [candidate.intent for candidate in candidates],
+            "candidate_sample_failures": 0,
+            "candidate_sample_failure_types": [],
+            "candidate_retries": self.candidate_retries,
+            "candidate_workers": self.candidate_workers,
+            "selected_index": selected_index,
+            "certified_filter_enabled": self.enable_certified_filter,
+            "certified_pruned_count": len(pruned),
+            "certified_prune_reasons": sorted(set(pruned.values())),
+            "ranker_checkpoint_loaded": self.ranker is not None,
+            "oracle_visible_to_controller": False,
+            "oracle_used_for_candidate_generation": False,
+            "oracle_used_for_filtering": False,
+            "tool_names_used_as_features": False,
+            "tool_name_use_policy": "coarse_action_type_normalization_only",
+            "candidate_scores": [
+                {
+                    "candidate_index": candidate.index,
+                    "candidate_generation_intent": candidate.intent,
+                    "score": scored_by_index.get(candidate.index, None),
+                    "known_mask_ratio": coverage_by_index.get(candidate.index, {}).get("mean_known_mask_ratio"),
+                    "certified_pruned": candidate.index in pruned,
+                    "certified_prune_reason": pruned.get(candidate.index, None),
+                    "action_type": candidate.action_type,
+                    "tool_call_count": 1 if candidate.tool is not None else 0,
+                    "has_content": candidate.tool is None,
+                }
+                for candidate in candidates
+            ],
+        }
+        with self.controller_trace_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+
     @staticmethod
     def _candidate_action_type(candidate: AssistantMessage) -> str:
         tool_calls = list(getattr(candidate, "tool_calls", None) or [])
         if not tool_calls:
+            raw_data = getattr(candidate, "raw_data", None)
+            if isinstance(raw_data, dict):
+                meta_intent = str(raw_data.get("cgr_action_intent", "")).lower()
+                if meta_intent in ("ask", "respond", "terminate"):
+                    return meta_intent
             return "respond" if getattr(candidate, "content", None) else "terminate"
-        lowered = tool_calls[0].name.lower()
+        return Tau3SolverControllerAgent._classify_tool_name(tool_calls[0].name)
+
+    @staticmethod
+    def _classify_tool_name(name: str) -> str:
+        lowered = name.lower()
         if any(token in lowered for token in ("update", "create", "cancel", "book", "refund", "exchange", "modify", "send", "transfer", "delete")):
             return "write"
         return "read"
@@ -433,6 +648,7 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
     adaptive_search = bool(llm_args.pop("cgr_adaptive_search", False))
     min_candidate_count = int(llm_args.pop("cgr_min_candidate_count", 1))
     enable_candidate_diversity = bool(llm_args.pop("cgr_enable_candidate_diversity", False))
+    action_space_controller = bool(llm_args.pop("cgr_action_space_controller", False))
     ranker_checkpoint = llm_args.pop("cgr_ranker_checkpoint", None)
     max_turns = int(llm_args.pop("cgr_max_turns", 200))
     max_tool_budget = int(llm_args.pop("cgr_max_tool_budget", max_turns))
@@ -450,6 +666,7 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
         adaptive_search=adaptive_search,
         min_candidate_count=min_candidate_count,
         enable_candidate_diversity=enable_candidate_diversity,
+        action_space_controller=action_space_controller,
         ranker_checkpoint=ranker_checkpoint,
         max_turns=max_turns,
         max_tool_budget=max_tool_budget,

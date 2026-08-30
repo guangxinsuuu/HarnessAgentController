@@ -380,6 +380,7 @@ def main() -> None:
             p.add_argument("--enable-adaptive-search", action="store_true", default=False)
             p.add_argument("--min-candidate-count", type=int, default=1)
             p.add_argument("--enable-candidate-diversity", action="store_true", default=False)
+            p.add_argument("--enable-action-space-controller", action="store_true", default=False)
         if name == "build-table10-tau3":
             p.add_argument("--expected-test-count", type=int, default=100)
             p.add_argument("--row-dirs", type=Path, nargs="+", required=True)
@@ -1240,6 +1241,7 @@ def main() -> None:
                     adaptive_search=args.enable_adaptive_search,
                     min_candidate_count=args.min_candidate_count,
                     enable_candidate_diversity=args.enable_candidate_diversity,
+                    action_space_controller=args.enable_action_space_controller,
                 )
             )
             row = manifest["row"]
@@ -1258,6 +1260,7 @@ def main() -> None:
                 "adaptive_search": args.enable_adaptive_search,
                 "min_candidate_count": args.min_candidate_count,
                 "enable_candidate_diversity": args.enable_candidate_diversity,
+                "action_space_controller": args.enable_action_space_controller,
                 "num_tasks": args.num_tasks,
                 "num_trials": args.num_trials,
                 "reused_existing_results": row.get("reused_existing_results", False),

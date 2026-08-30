@@ -344,6 +344,51 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertEqual(trace_row["candidate_generation_intents"], ["greedy", "prefer_read", "prefer_write", "prefer_ask_or_respond"])
         self.assertEqual(trace_row["candidate_scores"][1]["candidate_generation_intent"], "prefer_read")
 
+    def test_action_space_controller_ranks_available_tools_and_instantiates_once(self) -> None:
+        calls: list[dict] = []
+
+        def fake_generate(**kwargs):
+            calls.append(kwargs)
+            return AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": "ORD123"})],
+                cost=0.01,
+                usage={"prompt_tokens": 5, "completion_tokens": 2},
+            )
+
+        names = canonical_feature_names()
+        weights = [0.0 for _name in names]
+        weights[names.index("action_is_read")] = 5.0
+        weights[names.index("action_is_write")] = -5.0
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            trace = Path(tmp) / "trace.jsonl"
+            checkpoint.write_text(GenericHarnessRanker(weights).to_json(), encoding="utf-8")
+            agent = Tau3SolverControllerAgent(
+                [as_tool(_get_order), as_tool(_update_order)],
+                "policy",
+                "mock",
+                {"temperature": 0},
+                ranker_checkpoint=str(checkpoint),
+                controller_trace_path=str(trace),
+                action_space_controller=True,
+            )
+            state = agent.get_init_state()
+            with patch("cgr_exp.tau3_solver_agent.generate", side_effect=fake_generate):
+                selected, _state = agent.generate_next_message(UserMessage(role="user", content="order ORD123"), state)
+            trace_row = json.loads(trace.read_text(encoding="utf-8"))
+        self.assertEqual(selected.tool_calls[0].name, "get_order")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["tool_choice"]["function"]["name"], "_get_order")
+        self.assertEqual([tool.name for tool in calls[0]["tools"]], ["_get_order"])
+        self.assertEqual(trace_row["scoring_mode"], "action_space_canonical_ranker")
+        self.assertTrue(trace_row["action_space_controller_enabled"])
+        self.assertEqual(trace_row["candidate_count"], 5)
+        self.assertEqual(len([item for item in trace_row["candidate_scores"] if item["score"] is not None]), 5)
+        self.assertFalse(trace_row["oracle_used_for_candidate_generation"])
+        self.assertFalse(trace_row["tool_names_used_as_features"])
+
     def test_candidate_sampling_retries_transient_failure(self) -> None:
         attempts: dict[int, int] = {}
 

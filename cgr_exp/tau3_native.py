@@ -43,6 +43,9 @@ TRACE_AUDIT_COLUMNS = [
     "mean_search_budget",
     "search_budget_reasons",
     "candidate_diversity_enabled_events",
+    "action_space_controller_enabled_events",
+    "mean_action_space_tool_candidates",
+    "mean_action_space_meta_candidates",
     "candidate_generation_intents",
     "candidate_intent_scored_rates",
     "oracle_visible_to_controller",
@@ -94,6 +97,7 @@ class Tau3RunConfig:
     adaptive_search: bool = False
     min_candidate_count: int = 1
     enable_candidate_diversity: bool = False
+    action_space_controller: bool = False
 
 
 def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
@@ -133,6 +137,7 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
         "adaptive_search": config.adaptive_search,
         "min_candidate_count": config.min_candidate_count,
         "enable_candidate_diversity": config.enable_candidate_diversity,
+        "action_space_controller": config.action_space_controller,
         "source_controller_protocol": _source_controller_protocol(config.solver_ranker_checkpoint),
         "tau3_adapter_protocol": tau3_adapter_manifest() if config.method == "solver" else {},
         "enable_certified_filter": config.enable_certified_filter,
@@ -209,6 +214,8 @@ def _run_tau2_solver_controller(config: Tau3RunConfig, save_path: Path) -> subpr
             llm_args["cgr_min_candidate_count"] = config.min_candidate_count
         if config.enable_candidate_diversity:
             llm_args["cgr_enable_candidate_diversity"] = True
+        if config.action_space_controller:
+            llm_args["cgr_action_space_controller"] = True
         if config.solver_ranker_checkpoint is not None:
             llm_args["cgr_ranker_checkpoint"] = str(config.solver_ranker_checkpoint)
         if config.enable_certified_filter:
@@ -1126,6 +1133,9 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
     opportunity_events = 0
     adaptive_events = 0
     candidate_diversity_events = 0
+    action_space_events = 0
+    action_space_tool_candidate_count = 0
+    action_space_meta_candidate_count = 0
     search_budget_sum = 0.0
     search_budget_count = 0
     search_budget_reasons: set[str] = set()
@@ -1172,6 +1182,14 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
                 event_scored = sum(1 for item in candidate_scores if isinstance(item, Mapping) and item.get("score") is not None)
                 scored_candidate_count += event_scored
                 opportunity_events += 1 if event_scored >= 2 else 0
+                if row.get("action_space_controller_enabled"):
+                    for item in candidate_scores:
+                        if not isinstance(item, Mapping):
+                            continue
+                        if _as_float(item.get("tool_call_count")) > 0:
+                            action_space_tool_candidate_count += 1
+                        else:
+                            action_space_meta_candidate_count += 1
                 for item in candidate_scores:
                     if not isinstance(item, Mapping):
                         continue
@@ -1184,6 +1202,7 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
                         candidate_intent_scored_counts[intent] = candidate_intent_scored_counts.get(intent, 0) + 1
             adaptive_events += 1 if row.get("adaptive_search_enabled") else 0
             candidate_diversity_events += 1 if row.get("candidate_diversity_enabled") else 0
+            action_space_events += 1 if row.get("action_space_controller_enabled") else 0
             search_budget = _as_float(row.get("search_budget"))
             if not math.isnan(search_budget):
                 search_budget_sum += search_budget
@@ -1248,6 +1267,9 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
         "mean_search_budget": 0.0 if search_budget_count == 0 else search_budget_sum / search_budget_count,
         "search_budget_reasons": ";".join(sorted(search_budget_reasons)),
         "candidate_diversity_enabled_events": candidate_diversity_events,
+        "action_space_controller_enabled_events": action_space_events,
+        "mean_action_space_tool_candidates": 0.0 if action_space_events == 0 else action_space_tool_candidate_count / action_space_events,
+        "mean_action_space_meta_candidates": 0.0 if action_space_events == 0 else action_space_meta_candidate_count / action_space_events,
         "candidate_generation_intents": ";".join(sorted(candidate_generation_intents)),
         "candidate_intent_scored_rates": json.dumps(
             {
@@ -1424,6 +1446,9 @@ def _table10_audit_row(
         "mean_search_budget": trace_summary.get("mean_search_budget", ""),
         "search_budget_reasons": trace_summary.get("search_budget_reasons", ""),
         "candidate_diversity_enabled_events": trace_summary.get("candidate_diversity_enabled_events", ""),
+        "action_space_controller_enabled_events": trace_summary.get("action_space_controller_enabled_events", ""),
+        "mean_action_space_tool_candidates": trace_summary.get("mean_action_space_tool_candidates", ""),
+        "mean_action_space_meta_candidates": trace_summary.get("mean_action_space_meta_candidates", ""),
         "candidate_generation_intents": trace_summary.get("candidate_generation_intents", ""),
         "candidate_intent_scored_rates": trace_summary.get("candidate_intent_scored_rates", ""),
         "candidate_sample_failures": trace_summary.get("candidate_sample_failures", ""),
@@ -1458,6 +1483,8 @@ def _table10_evidence_notes(source_protocol: Mapping[str, object], trace_summary
         notes.append(f"adaptive search events={trace_summary.get('adaptive_search_enabled_events')}")
     if trace_summary.get("candidate_diversity_enabled_events"):
         notes.append(f"candidate diversity events={trace_summary.get('candidate_diversity_enabled_events')}")
+    if trace_summary.get("action_space_controller_enabled_events"):
+        notes.append(f"action-space controller events={trace_summary.get('action_space_controller_enabled_events')}")
     if trace_summary.get("greedy_content_passthrough_events"):
         notes.append(f"greedy content passthrough events={trace_summary.get('greedy_content_passthrough_events')}")
     if trace_summary.get("fallback_greedy_events"):

@@ -141,8 +141,15 @@ def tau3_progress_predicates(*, message_history: Sequence[object]) -> Tau3Progre
 def tau3_action_features(*, candidate: object, message_history: Sequence[object], max_tool_budget: int) -> ActionFeatures:
     tool_calls = list(getattr(candidate, "tool_calls", None) or [])
     content = getattr(candidate, "content", None)
+    raw_data = getattr(candidate, "raw_data", None)
+    meta_intent = ""
+    if isinstance(raw_data, Mapping):
+        meta_intent = str(raw_data.get("cgr_action_intent", "")).lower()
     if not tool_calls:
-        action_type = "respond" if content else "terminate"
+        if meta_intent in ("ask", "respond", "terminate"):
+            action_type = meta_intent
+        else:
+            action_type = "respond" if content else "terminate"
         name = ""
         args = {}
     else:

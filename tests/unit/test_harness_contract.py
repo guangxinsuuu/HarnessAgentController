@@ -93,7 +93,16 @@ class HarnessContractTest(unittest.TestCase):
                 self.content = content
                 self.tool_calls = tool_calls
 
-        history = [Message(content="Need order ORD123"), Message(tool_calls=[Call("get_order", {"order_id": "ORD123"})])]
+        class ToolMessage:
+            def __init__(self, content):
+                self.content = content
+                self.tool_calls = None
+
+        history = [
+            Message(content="Need order ORD123. yes, approved to proceed."),
+            Message(tool_calls=[Call("get_order", {"order_id": "ORD123"})]),
+            ToolMessage(content="Order ORD123 found. Customer identity verified."),
+        ]
         candidate = Message(tool_calls=[Call("update_order", {"order_id": "ORD123"})])
         canonical = tau3_candidate_to_canonical(
             candidate_id="c0",
@@ -108,8 +117,14 @@ class HarnessContractTest(unittest.TestCase):
         manifest = tau3_adapter_manifest()
         self.assertEqual(len(canonical.feature_vector()), len(canonical_feature_names()))
         self.assertEqual(canonical.action.action_is_write, 1.0)
+        self.assertEqual(canonical.state.verified_progress_known_mask, 1.0)
+        self.assertEqual(canonical.state.remaining_requirement_known_mask, 1.0)
+        self.assertGreater(canonical.state.verified_progress_frac, 0.0)
+        self.assertLess(canonical.state.remaining_requirement_frac, 1.0)
         self.assertFalse(manifest["oracle_visible_to_controller"])
         self.assertFalse(manifest["oracle_used_for_candidate_generation"])
+        self.assertEqual(manifest["adapter_revision"], "Tau3AdapterV2-progress-predicates")
+        self.assertIn("required_read_completed", manifest["progress_predicates"])
         self.assertEqual(manifest["tool_identity_features"], "none; names are used only for read/write class normalization")
 
 

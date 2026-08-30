@@ -54,6 +54,7 @@ TRACE_AUDIT_COLUMNS = [
     "canonical_feature_count_match",
     "canonical_mean_known_mask_ratio",
     "canonical_per_feature_availability",
+    "canonical_progress_predicate_means",
     "status",
 ]
 
@@ -675,8 +676,10 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
                 blockers.append("tau3 heldout test influenced source generator freeze")
             adapter_protocol = command_manifest.get("tau3_adapter_protocol")
             adapter_protocol = adapter_protocol if isinstance(adapter_protocol, Mapping) else {}
-            if adapter_protocol.get("adapter") != "Tau3AdapterV1":
-                blockers.append("Tau3AdapterV1 manifest missing")
+            if adapter_protocol.get("adapter") != "Tau3AdapterV2":
+                blockers.append("Tau3AdapterV2 manifest missing")
+            if adapter_protocol.get("adapter_revision") != "Tau3AdapterV2-progress-predicates":
+                blockers.append("Tau3AdapterV2 progress-predicate revision missing")
             if adapter_protocol.get("uses_tau3_train_trajectories"):
                 blockers.append("tau3 adapter used tau3 train trajectories")
             if adapter_protocol.get("uses_tau3_heldout_outcomes"):
@@ -1133,6 +1136,8 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
     known_mask_ratio_count = 0
     known_mask_feature_sums: Dict[str, float] = {}
     known_mask_feature_counts: Dict[str, int] = {}
+    progress_predicate_sums: Dict[str, float] = {}
+    progress_predicate_counts: Dict[str, int] = {}
     if trace_path.exists():
         for line in trace_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -1192,6 +1197,14 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
                         key = str(name)
                         known_mask_feature_sums[key] = known_mask_feature_sums.get(key, 0.0) + feature_value
                         known_mask_feature_counts[key] = known_mask_feature_counts.get(key, 0) + 1
+            progress_predicates = row.get("canonical_progress_predicates")
+            if isinstance(progress_predicates, Mapping):
+                for name, value in progress_predicates.items():
+                    predicate_value = _as_float(value)
+                    if not math.isnan(predicate_value):
+                        key = str(name)
+                        progress_predicate_sums[key] = progress_predicate_sums.get(key, 0.0) + predicate_value
+                        progress_predicate_counts[key] = progress_predicate_counts.get(key, 0) + 1
     schema_match = bool(observed_schema_hashes) and observed_schema_hashes == {expected_schema_hash}
     feature_count_match = bool(observed_feature_counts) and observed_feature_counts == {expected_feature_count}
     summary = {
@@ -1228,6 +1241,14 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
                 name: known_mask_feature_sums[name] / known_mask_feature_counts[name]
                 for name in sorted(known_mask_feature_sums)
                 if known_mask_feature_counts.get(name, 0) > 0
+            },
+            sort_keys=True,
+        ),
+        "canonical_progress_predicate_means": json.dumps(
+            {
+                name: progress_predicate_sums[name] / progress_predicate_counts[name]
+                for name in sorted(progress_predicate_sums)
+                if progress_predicate_counts.get(name, 0) > 0
             },
             sort_keys=True,
         ),
@@ -1365,6 +1386,7 @@ def _table10_audit_row(
         "canonical_feature_count_match": trace_summary.get("canonical_feature_count_match", ""),
         "canonical_mean_known_mask_ratio": trace_summary.get("canonical_mean_known_mask_ratio", ""),
         "canonical_per_feature_availability": trace_summary.get("canonical_per_feature_availability", ""),
+        "canonical_progress_predicate_means": trace_summary.get("canonical_progress_predicate_means", ""),
         "controller_opportunity_rate": trace_summary.get("controller_opportunity_rate", ""),
         "adaptive_search_enabled_events": trace_summary.get("adaptive_search_enabled_events", ""),
         "mean_search_budget": trace_summary.get("mean_search_budget", ""),

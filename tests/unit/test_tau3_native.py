@@ -301,7 +301,8 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(certified["row"]["Method"], "Solver-derived canonical controller + certified filter")
             command_manifest = json.loads((root / "certified" / "tau3_native_command.json").read_text(encoding="utf-8"))
             self.assertEqual(command_manifest["candidate_workers"], 3)
-            self.assertEqual(command_manifest["tau3_adapter_protocol"]["adapter"], "Tau3AdapterV1")
+            self.assertEqual(command_manifest["tau3_adapter_protocol"]["adapter"], "Tau3AdapterV2")
+            self.assertEqual(command_manifest["tau3_adapter_protocol"]["adapter_revision"], "Tau3AdapterV2-progress-predicates")
             self.assertFalse(command_manifest["tau3_adapter_protocol"]["uses_tau3_train_trajectories"])
             self.assertFalse(command_manifest["tau3_adapter_protocol"]["oracle_visible_to_controller"])
             reported_metrics = canonical["manifest"]["native_protocol"]["reported_metrics"]
@@ -631,7 +632,7 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(canonical_row["contract_coverage_stress_ready"])
             self.assertTrue(canonical_row["source_contract_audit_ready"])
             self.assertEqual(canonical_row["source_contract_audit_blockers"], "")
-            self.assertEqual(canonical_row["tau3_adapter"], "Tau3AdapterV1")
+            self.assertEqual(canonical_row["tau3_adapter"], "Tau3AdapterV2")
             self.assertTrue(canonical_row["tau3_adapter_train_trajectories_hidden"])
             self.assertTrue(canonical_row["tau3_adapter_oracle_hidden"])
             self.assertEqual(canonical_row["tool_name_use_policy"], "coarse_action_type_normalization_only")

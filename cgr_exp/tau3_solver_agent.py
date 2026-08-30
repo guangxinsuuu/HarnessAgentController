@@ -9,7 +9,7 @@ from typing import Any, List, Optional
 
 from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
-from cgr_exp.tau3_contract_adapter import tau3_candidate_to_canonical
+from cgr_exp.tau3_contract_adapter import tau3_candidate_to_canonical, tau3_progress_predicates
 
 from tau2.agent.base_agent import ValidAgentInputMessage
 from tau2.agent.llm_agent import LLMAgent, LLMAgentState
@@ -95,7 +95,7 @@ class Tau3SolverControllerAgent(LLMAgent):
         if not active_indices:
             active_indices = list(range(len(candidates)))
         if greedy.content and not greedy.tool_calls:
-            self._write_selection_trace(candidates, selected_index=0, scored_candidates=[], scoring_mode="greedy_content_passthrough", pruned=pruned)
+            self._write_selection_trace(candidates, selected_index=0, scored_candidates=[], scoring_mode="greedy_content_passthrough", pruned=pruned, history=history)
             return greedy
         scored_candidates = []
         for idx, candidate in enumerate(candidates):
@@ -105,10 +105,10 @@ class Tau3SolverControllerAgent(LLMAgent):
         if scored_candidates:
             selected_index = max(scored_candidates, key=lambda item: (item[1], -item[0]))[0]
             mode = "canonical_ranker" if self.ranker is not None else "heuristic"
-            self._write_selection_trace(candidates, selected_index=selected_index, scored_candidates=scored_candidates, scoring_mode=mode, pruned=pruned)
+            self._write_selection_trace(candidates, selected_index=selected_index, scored_candidates=scored_candidates, scoring_mode=mode, pruned=pruned, history=history)
             return candidates[selected_index]
         fallback_index = active_indices[0] if active_indices else 0
-        self._write_selection_trace(candidates, selected_index=fallback_index, scored_candidates=[], scoring_mode="fallback_greedy", pruned=pruned)
+        self._write_selection_trace(candidates, selected_index=fallback_index, scored_candidates=[], scoring_mode="fallback_greedy", pruned=pruned, history=history)
         return candidates[fallback_index]
 
     def _sample_candidates(self, state: LLMAgentState) -> List[AssistantMessage]:
@@ -298,6 +298,7 @@ class Tau3SolverControllerAgent(LLMAgent):
         scored_candidates: List[tuple[int, float, dict[str, float]]],
         scoring_mode: str,
         pruned: dict[int, str],
+        history: List[APICompatibleMessage],
     ) -> None:
         if self.controller_trace_path is None:
             return
@@ -318,6 +319,7 @@ class Tau3SolverControllerAgent(LLMAgent):
             else None
         )
         contract = canonical_contract_manifest()
+        history_progress = tau3_progress_predicates(message_history=history)
         row = {
             "event": "tau3_controller_selection",
             "timestamp": time.time(),
@@ -327,6 +329,8 @@ class Tau3SolverControllerAgent(LLMAgent):
             "canonical_feature_count": len(canonical_feature_names()),
             "canonical_mean_known_mask_ratio": mean_known_mask_ratio,
             "canonical_per_feature_availability": per_feature_availability,
+            "canonical_progress_predicates": history_progress.values(),
+            "canonical_progress_predicate_provenance": history_progress.provenance(),
             "candidate_count": len(candidates),
             "configured_candidate_count": self.candidate_count,
             "search_budget": self._last_search_budget,

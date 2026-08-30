@@ -109,6 +109,7 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertTrue(trace_row["ranker_checkpoint_loaded"])
         self.assertFalse(trace_row["oracle_visible_to_controller"])
         self.assertFalse(trace_row["tool_names_used_as_features"])
+        self.assertEqual(trace_row["tool_name_use_policy"], "coarse_action_type_normalization_only")
         self.assertNotIn("get_order", trace_text)
         self.assertNotIn("update_order", trace_text)
 

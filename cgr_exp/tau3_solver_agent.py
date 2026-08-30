@@ -285,6 +285,7 @@ class Tau3SolverControllerAgent(LLMAgent):
             "oracle_used_for_candidate_generation": False,
             "oracle_used_for_filtering": False,
             "tool_names_used_as_features": False,
+            "tool_name_use_policy": "coarse_action_type_normalization_only",
             "candidate_scores": [
                 {
                     "candidate_index": idx,

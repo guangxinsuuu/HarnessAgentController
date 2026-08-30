@@ -712,6 +712,7 @@ def audit_table10_tau3_smoke_gate(out_dir: Path, row_dirs: Sequence[Path], expec
             "tau3_adapter": row.get("tau3_adapter", ""),
             "tau3_adapter_train_trajectories_hidden": row.get("tau3_adapter_train_trajectories_hidden", ""),
             "tau3_adapter_oracle_hidden": row.get("tau3_adapter_oracle_hidden", ""),
+            "tool_name_use_policy": row.get("tool_name_use_policy", ""),
             "result_ready": row["result_ready"],
             "result_blockers": row["result_blockers"],
         }
@@ -1078,6 +1079,7 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
     oracle_generation = False
     oracle_filtering = False
     tool_name_features = False
+    tool_name_use_policies: set[str] = set()
     expected_contract = canonical_contract_manifest()
     expected_schema_hash = str(expected_contract["feature_schema_hash"])
     expected_feature_count = len(canonical_feature_names())
@@ -1109,6 +1111,9 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
             oracle_generation = oracle_generation or bool(row.get("oracle_used_for_candidate_generation"))
             oracle_filtering = oracle_filtering or bool(row.get("oracle_used_for_filtering"))
             tool_name_features = tool_name_features or bool(row.get("tool_names_used_as_features"))
+            tool_name_policy = str(row.get("tool_name_use_policy", "")).strip()
+            if tool_name_policy:
+                tool_name_use_policies.add(tool_name_policy)
             contract_name = str(row.get("canonical_contract", "")).strip()
             if contract_name:
                 observed_contracts.add(contract_name)
@@ -1138,6 +1143,7 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
         "oracle_used_for_candidate_generation": oracle_generation,
         "oracle_used_for_filtering": oracle_filtering,
         "tool_names_used_as_features": tool_name_features,
+        "tool_name_use_policy": ";".join(sorted(tool_name_use_policies)),
         "canonical_contract": ";".join(sorted(observed_contracts)),
         "canonical_feature_schema_hash": ";".join(sorted(observed_schema_hashes)),
         "canonical_feature_schema_match": schema_match,
@@ -1263,6 +1269,7 @@ def _table10_audit_row(
         "tau3_adapter": adapter_protocol.get("adapter", ""),
         "tau3_adapter_train_trajectories_hidden": adapter_protocol.get("uses_tau3_train_trajectories", "") is False,
         "tau3_adapter_oracle_hidden": adapter_protocol.get("oracle_visible_to_controller", "") is False,
+        "tool_name_use_policy": trace_summary.get("tool_name_use_policy", ""),
         "canonical_ranker_events": trace_summary.get("canonical_ranker_events", ""),
         "greedy_content_passthrough_events": trace_summary.get("greedy_content_passthrough_events", ""),
         "fallback_greedy_events": trace_summary.get("fallback_greedy_events", ""),
@@ -1297,6 +1304,8 @@ def _table10_evidence_notes(source_protocol: Mapping[str, object], trace_summary
         notes.append(f"greedy content passthrough events={trace_summary.get('greedy_content_passthrough_events')}")
     if trace_summary.get("fallback_greedy_events"):
         notes.append(f"fallback greedy events={trace_summary.get('fallback_greedy_events')}")
+    if trace_summary.get("tool_name_use_policy"):
+        notes.append(f"tool-name policy={trace_summary.get('tool_name_use_policy')}")
     if _as_float(trace_summary.get("candidate_sample_failures")) > 0:
         notes.append(f"candidate sample failures after retries={trace_summary.get('candidate_sample_failures')}")
     return "; ".join(notes)

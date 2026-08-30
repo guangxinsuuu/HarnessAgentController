@@ -23,6 +23,7 @@ from cgr_exp.alfworld_transfer import (
     _alfworld_diagnostic_action_from_info,
     _label_frontier_by_planner_cost,
     _label_frontier_by_walkthrough_suffix,
+    _load_alfworld_dense_state_label_cache,
     _load_alfworld_dense_training_cache,
     _load_alfworld_planner_label_cache,
     _frontier_sample,
@@ -1092,6 +1093,63 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("planner_label_cache_loaded_entries", resumed["train"])
             self.assertIn("new_planner_label_cache_hits", resumed["train"])
             self.assertTrue(resumed["resume"])
+
+    def test_run_alfworld_dense_train_writes_state_label_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-train"
+            manifest = run_alfworld_dense_train(
+                out,
+                train_episodes=1,
+                max_steps=4,
+                epochs=1,
+                max_pairs_per_state=8,
+                max_frontier_actions=2,
+                counterfactual_rollout_steps=4,
+                planner_timeout_seconds=1,
+                label_source="planner",
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                env_factory=lambda **_kwargs: FakePlannerBatchAlfworldEnv(),
+            )
+            state_cache = out / "alfworld_dense_state_label_cache.jsonl"
+            rows = _load_alfworld_dense_state_label_cache(state_cache)
+            self.assertTrue(state_cache.exists())
+            self.assertGreater(len(rows), 0)
+            self.assertEqual(manifest["train"]["dense_state_label_cache"], str(state_cache))
+            self.assertEqual(manifest["train"]["dense_state_label_cache_rows"], len(rows))
+            self.assertIn("labels", rows[0])
+            self.assertIn("admissible_commands", rows[0])
+
+    def test_dense_training_cache_rebuilds_pairs_from_state_labels_when_feature_cache_incompatible(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-train"
+            run_alfworld_dense_train(
+                out,
+                train_episodes=1,
+                max_steps=4,
+                epochs=1,
+                max_pairs_per_state=8,
+                max_frontier_actions=2,
+                counterfactual_rollout_steps=4,
+                planner_timeout_seconds=1,
+                label_source="planner",
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                env_factory=lambda **_kwargs: FakePlannerBatchAlfworldEnv(),
+            )
+            (out / "alfworld_dense_cache_manifest.json").unlink()
+            cached = _load_alfworld_dense_training_cache(
+                out,
+                rebuild_feature_pairs_from_state_cache=True,
+                max_pairs_per_state=8,
+                seed=0,
+            )
+        self.assertFalse(cached["cache_manifest_compatible"])
+        self.assertGreater(cached["state_label_cache_rows"], 0)
+        self.assertGreater(cached["rebuilt_feature_pairs_from_state_cache"], 0)
+        self.assertGreater(len(cached["pairs"]), 0)
+        self.assertGreater(len(cached["action_label_rows"]), 0)
+        self.assertEqual(cached["completed_episodes"], {0})
 
     def test_dense_training_cache_rejects_feature_vectors_without_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

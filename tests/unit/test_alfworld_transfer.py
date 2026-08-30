@@ -16,7 +16,9 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_expert_transfer,
     run_alfworld_transfer,
     _contract_filtered_admissible_commands,
+    _label_frontier_by_planner_cost,
     _label_frontier_by_walkthrough_suffix,
+    _planner_training_rollout_command,
     _select_command,
     _walkthrough_training_rollout_command,
 )
@@ -167,7 +169,94 @@ class FakeDenseAlfworldEnv:
         }
 
 
+class FakePlannerAlfworldEnv:
+    def __init__(self):
+        self.state = "root"
+
+    def load(self, _gamefile):
+        self.state = "root"
+
+    def reset(self):
+        self.state = "root"
+        return {
+            "feedback": "You are in a hallway. Your task is to put apple on table.",
+            "admissible_commands": ["go to kitchen", "open cabinet"],
+            "policy_commands": ["go to kitchen", "take apple", "put apple on table"],
+            "won": False,
+        }
+
+    def step(self, command):
+        if isinstance(command, list):
+            command = command[0]
+        if self.state == "root" and command == "go to kitchen":
+            self.state = "kitchen"
+            return {
+                "feedback": "You see an apple and a table.",
+                "admissible_commands": ["take apple", "open cabinet"],
+                "policy_commands": ["take apple", "put apple on table"],
+                "won": False,
+            }, 0.0, False
+        if self.state == "root" and command == "open cabinet":
+            self.state = "bad"
+            return {
+                "feedback": "The cabinet is empty.",
+                "admissible_commands": ["go to kitchen"],
+                "policy_commands": [],
+                "won": False,
+            }, 0.0, False
+        if self.state == "kitchen" and command == "take apple":
+            self.state = "holding"
+            return {
+                "feedback": "You are holding the apple.",
+                "admissible_commands": ["put apple on table"],
+                "policy_commands": ["put apple on table"],
+                "won": False,
+            }, 0.0, False
+        if self.state == "holding" and command == "put apple on table":
+            self.state = "done"
+            return {
+                "feedback": "Done.",
+                "admissible_commands": [],
+                "policy_commands": [],
+                "won": True,
+            }, 1.0, True
+        return {
+            "feedback": "Nothing happens.",
+            "admissible_commands": [],
+            "policy_commands": [],
+            "won": False,
+        }, 0.0, False
+
+
 class AlfworldTransferTest(unittest.TestCase):
+    def test_planner_labels_use_successor_replan_cost(self) -> None:
+        labels = _label_frontier_by_planner_cost(
+            FakePlannerAlfworldEnv(),
+            gamefile="fake-game",
+            prefix=[],
+            commands=["go to kitchen", "open cabinet"],
+            max_rollout_steps=5,
+        )
+        by_command = {label.command: label for label in labels}
+        self.assertEqual(by_command["go to kitchen"].reachable, 1)
+        self.assertEqual(by_command["go to kitchen"].cost_to_success, 3)
+        self.assertEqual(by_command["open cabinet"].reachable, 0)
+        self.assertEqual(by_command["go to kitchen"].label_source, "textworld_pddl_replan_cost_to_go")
+
+    def test_planner_training_rollout_prefers_planner_next_command(self) -> None:
+        command = _planner_training_rollout_command(
+            FakePlannerAlfworldEnv(),
+            gamefile="fake-game",
+            prefix=[],
+            expert="open cabinet",
+            admissible=["go to kitchen", "open cabinet"],
+            rng=random.Random(0),
+            step=0,
+            perturbation_prob=0.0,
+            warmup_random_steps=0,
+        )
+        self.assertEqual(command, "go to kitchen")
+
     def test_adapter_uses_canonical_features_without_command_string_feature(self) -> None:
         candidate = alfworld_candidate_to_canonical(
             candidate_id="c0",

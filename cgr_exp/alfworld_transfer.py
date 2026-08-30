@@ -7,6 +7,7 @@ import json
 import os
 import random
 import re
+import signal
 import time
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -28,7 +29,9 @@ TRANSFORM_VERBS = ("cool", "heat", "clean", "slice")
 ALFWORLD_ADAPTER_VERSION = "v2_relational_goal_action"
 ALFWORLD_DENSE_LABEL_REPLAY = "replay-prefix"
 ALFWORLD_DENSE_LABEL_WALKTHROUGH = "walkthrough"
-ALFWORLD_DENSE_LABEL_SOURCES = {ALFWORLD_DENSE_LABEL_REPLAY, ALFWORLD_DENSE_LABEL_WALKTHROUGH}
+ALFWORLD_DENSE_LABEL_PLANNER = "planner"
+ALFWORLD_DENSE_LABEL_SOURCES = {ALFWORLD_DENSE_LABEL_REPLAY, ALFWORLD_DENSE_LABEL_WALKTHROUGH, ALFWORLD_DENSE_LABEL_PLANNER}
+ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS = 8.0
 
 
 @dataclass(frozen=True)
@@ -190,6 +193,7 @@ def run_alfworld_dense_transfer(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     counterfactual_rollout_steps: int = 20,
+    planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
@@ -220,6 +224,7 @@ def run_alfworld_dense_transfer(
             max_pairs_per_state=max_pairs_per_state,
             max_frontier_actions=max_frontier_actions,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
+            planner_timeout_seconds=planner_timeout_seconds,
             label_source=label_source,
             perturbation_prob=perturbation_prob,
             warmup_random_steps=warmup_random_steps,
@@ -294,6 +299,7 @@ def audit_alfworld_dense_labels(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     counterfactual_rollout_steps: int = 20,
+    planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.0,
     warmup_random_steps: int = 0,
@@ -311,6 +317,7 @@ def audit_alfworld_dense_labels(
         max_pairs_per_state=max_pairs_per_state,
         max_frontier_actions=max_frontier_actions,
         counterfactual_rollout_steps=counterfactual_rollout_steps,
+        planner_timeout_seconds=planner_timeout_seconds,
         label_source=label_source,
         perturbation_prob=perturbation_prob,
         warmup_random_steps=warmup_random_steps,
@@ -332,7 +339,7 @@ def audit_alfworld_dense_labels(
         "target_eval_trajectories_used_for_training": False,
         "oracle_labels_in_inference_features": False,
         "command_string_used_as_learned_feature": False,
-        "counterfactual_planner_cost_to_go": False,
+        "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
         "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
         "relational_goal_action_features": True,
         "object_identity_feature_used": False,
@@ -358,6 +365,7 @@ def run_alfworld_dense_train(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     counterfactual_rollout_steps: int = 20,
+    planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
@@ -375,6 +383,7 @@ def run_alfworld_dense_train(
         max_pairs_per_state=max_pairs_per_state,
         max_frontier_actions=max_frontier_actions,
         counterfactual_rollout_steps=counterfactual_rollout_steps,
+        planner_timeout_seconds=planner_timeout_seconds,
         label_source=label_source,
         perturbation_prob=perturbation_prob,
         warmup_random_steps=warmup_random_steps,
@@ -387,6 +396,8 @@ def run_alfworld_dense_train(
         "train_episodes": train_episodes,
         "max_steps": max_steps,
         "training_source": _alfworld_dense_training_source(label_source),
+        "label_source": str(train_manifest.get("label_source", _alfworld_dense_label_source_name(label_source))),
+        "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
         "meta_commands_filtered_from_frontier": True,
         "zero_gain_write_filtered_from_frontier": True,
         "repeated_zero_gain_read_filtered_from_frontier": True,
@@ -667,6 +678,7 @@ def train_alfworld_dense_ranker(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     counterfactual_rollout_steps: int = 20,
+    planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
@@ -675,7 +687,11 @@ def train_alfworld_dense_ranker(
     label_source = _normalize_alfworld_dense_label_source(label_source)
     rng = random.Random(seed)
     train_env = _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
-    label_env = None if label_source == ALFWORLD_DENSE_LABEL_WALKTHROUGH else _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
+    label_env = None
+    if label_source == ALFWORLD_DENSE_LABEL_REPLAY:
+        label_env = _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
+    elif label_source == ALFWORLD_DENSE_LABEL_PLANNER:
+        label_env = _make_alfworld_planner_env(env_factory=env_factory)
     walkthrough_cache: dict[str, list[str]] = {}
     pairs: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
     trace_rows: list[dict[str, object]] = []
@@ -717,6 +733,17 @@ def train_alfworld_dense_ranker(
                     commands=frontier,
                     max_rollout_steps=counterfactual_rollout_steps,
                     walkthrough_cache=walkthrough_cache,
+                )
+            elif label_source == ALFWORLD_DENSE_LABEL_PLANNER:
+                if label_env is None:
+                    raise RuntimeError("planner ALFWorld label source requires a PDDL planner environment")
+                labels = _label_frontier_by_planner_cost(
+                    label_env,
+                    gamefile=gamefile,
+                    prefix=prefix,
+                    commands=frontier,
+                    max_rollout_steps=counterfactual_rollout_steps,
+                    timeout_seconds=planner_timeout_seconds,
                 )
             else:
                 if label_env is None:
@@ -783,6 +810,25 @@ def train_alfworld_dense_ranker(
                 )
                 walkthrough_policy_steps += 1
                 walkthrough_policy_misses += 0 if used_walkthrough else 1
+            elif label_source == ALFWORLD_DENSE_LABEL_PLANNER:
+                if label_env is None:
+                    raise RuntimeError("planner ALFWorld rollout requires a PDDL planner environment")
+                if step < warmup_random_steps or rng.random() < perturbation_prob:
+                    command = rng.choice(list(admissible))
+                else:
+                    command = _best_reachable_label_command(row_labels, admissible=admissible)
+                    if command is None:
+                        command = _planner_training_rollout_command(
+                            label_env,
+                            gamefile=gamefile,
+                            prefix=prefix,
+                            expert=expert,
+                            admissible=admissible,
+                            rng=rng,
+                            step=step,
+                            perturbation_prob=0.0,
+                            warmup_random_steps=0,
+                        )
             else:
                 command = _training_rollout_command(
                     expert=expert,
@@ -829,10 +875,11 @@ def train_alfworld_dense_ranker(
         "max_pairs_per_state": max_pairs_per_state,
         "max_frontier_actions": max_frontier_actions,
         "counterfactual_rollout_steps": counterfactual_rollout_steps,
+        "planner_timeout_seconds": planner_timeout_seconds,
         "perturbation_prob": perturbation_prob,
         "warmup_random_steps": warmup_random_steps,
         "label_source": _alfworld_dense_label_source_name(label_source),
-        "counterfactual_planner_cost_to_go": False,
+        "counterfactual_planner_cost_to_go": label_source == ALFWORLD_DENSE_LABEL_PLANNER,
         "walkthrough_suffix_cost_proxy": label_source == ALFWORLD_DENSE_LABEL_WALKTHROUGH,
         "walkthrough_policy_steps": walkthrough_policy_steps,
         "walkthrough_policy_misses": walkthrough_policy_misses,
@@ -1022,6 +1069,80 @@ def _label_frontier_by_expert_rollout(
     return labels
 
 
+def _label_frontier_by_planner_cost(
+    env: Any,
+    *,
+    gamefile: str | None,
+    prefix: Sequence[str],
+    commands: Sequence[str],
+    max_rollout_steps: int,
+    timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
+) -> list[AlfworldDenseActionLabel]:
+    labels = []
+    unreachable_cost = max_rollout_steps + len(prefix) + len(commands) + 2
+    for command in commands:
+        try:
+            cost, reachable, score, next_done, rollout_steps = _run_with_timeout(
+                timeout_seconds,
+                lambda: _planner_cost_for_candidate(
+                    env,
+                    gamefile=gamefile,
+                    prefix=prefix,
+                    command=command,
+                    unreachable_cost=unreachable_cost,
+                ),
+            )
+            labels.append(
+                AlfworldDenseActionLabel(
+                    episode=-1,
+                    step=-1,
+                    command=command,
+                    cost_to_success=max(1, int(cost)),
+                    reachable=1 if reachable else 0,
+                    final_score=1.0 if next_done and score > 0 else 0.0,
+                    rollout_steps=int(rollout_steps),
+                    label_source="textworld_pddl_replan_cost_to_go",
+                )
+            )
+        except Exception:
+            labels.append(
+                AlfworldDenseActionLabel(
+                    episode=-1,
+                    step=-1,
+                    command=command,
+                    cost_to_success=unreachable_cost,
+                    reachable=0,
+                    final_score=0.0,
+                    rollout_steps=0,
+                    label_source="textworld_pddl_replan_cost_to_go",
+                )
+            )
+    return labels
+
+
+def _planner_cost_for_candidate(
+    env: Any,
+    *,
+    gamefile: str | None,
+    prefix: Sequence[str],
+    command: str,
+    unreachable_cost: int,
+) -> tuple[int, bool, float, bool, int]:
+    target, _observation, info, _score, done = _replay_prefix(env, gamefile=gamefile, prefix=prefix)
+    if done:
+        return 1, True, 1.0, True, 0
+    current_admissible = _filtered_admissible_commands(_admissible_from_info(info))
+    if command not in current_admissible:
+        raise ValueError("candidate is not admissible in replayed planner state")
+    _next_observation, score, next_done, next_info = _step_any(target, command)
+    if next_done and score > 0:
+        return 1, True, score, True, 1
+    remaining_plan = _planner_policy_commands_from_info(next_info)
+    reachable = bool(remaining_plan)
+    cost = 1 + len(remaining_plan) if reachable else unreachable_cost
+    return cost, reachable, score, next_done, cost if reachable else 0
+
+
 def _label_frontier_by_walkthrough_suffix(
     *,
     gamefile: str | None,
@@ -1086,6 +1207,10 @@ def _normalize_alfworld_dense_label_source(label_source: str) -> str:
         "expert-rollout": ALFWORLD_DENSE_LABEL_REPLAY,
         "walkthrough-suffix": ALFWORLD_DENSE_LABEL_WALKTHROUGH,
         "walkthrough-suffix-cost": ALFWORLD_DENSE_LABEL_WALKTHROUGH,
+        "pddl": ALFWORLD_DENSE_LABEL_PLANNER,
+        "pddl-planner": ALFWORLD_DENSE_LABEL_PLANNER,
+        "planner-cost": ALFWORLD_DENSE_LABEL_PLANNER,
+        "textworld-planner": ALFWORLD_DENSE_LABEL_PLANNER,
     }
     normalized = aliases.get(normalized, normalized)
     if normalized not in ALFWORLD_DENSE_LABEL_SOURCES:
@@ -1095,6 +1220,8 @@ def _normalize_alfworld_dense_label_source(label_source: str) -> str:
 
 def _alfworld_dense_label_source_name(label_source: str) -> str:
     normalized = _normalize_alfworld_dense_label_source(label_source)
+    if normalized == ALFWORLD_DENSE_LABEL_PLANNER:
+        return "textworld_pddl_replan_cost_to_go"
     if normalized == ALFWORLD_DENSE_LABEL_WALKTHROUGH:
         return "walkthrough_suffix_cost_proxy"
     return "replay_prefix_plus_expert_rollout_cost_proxy"
@@ -1102,6 +1229,8 @@ def _alfworld_dense_label_source_name(label_source: str) -> str:
 
 def _alfworld_dense_training_source(label_source: str) -> str:
     normalized = _normalize_alfworld_dense_label_source(label_source)
+    if normalized == ALFWORLD_DENSE_LABEL_PLANNER:
+        return "alfworld_train_textworld_pddl_planner_frontier_labels"
     if normalized == ALFWORLD_DENSE_LABEL_WALKTHROUGH:
         return "alfworld_train_walkthrough_suffix_frontier_labels"
     return "alfworld_train_replay_prefix_expert_rollout_frontier_labels"
@@ -1114,6 +1243,23 @@ def _copy_env_state(env: Any | None) -> Any | None:
         return env.copy()
     except Exception:
         return None
+
+
+def _run_with_timeout(timeout_seconds: float, fn: Callable[[], Any]) -> Any:
+    if timeout_seconds <= 0 or not hasattr(signal, "SIGALRM"):
+        return fn()
+
+    def _raise_timeout(_signum: int, _frame: Any) -> None:
+        raise TimeoutError(f"ALFWorld planner candidate exceeded {timeout_seconds:.3f}s")
+
+    old_handler = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, _raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        return fn()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 def _dense_labels_to_pairs(
@@ -1251,11 +1397,16 @@ def _loadable_env(env: Any) -> Any:
 
 
 def _reset_any(env: Any) -> tuple[str, Mapping[str, Any]]:
-    obs, info = env.reset()
-    observation = str(_first(obs))
-    if isinstance(info, Mapping):
-        return observation, info
-    return observation, {}
+    result = env.reset()
+    if isinstance(result, tuple) and len(result) == 2:
+        obs, info = result
+        observation = str(_first(obs))
+        if isinstance(info, Mapping):
+            return observation, info
+        return observation, {}
+    if isinstance(result, Mapping):
+        return str(result.get("feedback", result.get("raw", ""))), result
+    return str(result), {}
 
 
 def _step_any(env: Any, command: str) -> tuple[str, float, bool, Mapping[str, Any]]:
@@ -1334,6 +1485,20 @@ def _make_alfworld_env(*, split: str, config_path: Path | None, env_factory: Cal
     except AttributeError:
         env_cls = getattr(environment, env_type)
     return env_cls(config, train_eval=split).init_env(batch_size=1)
+
+
+def _make_alfworld_planner_env(*, env_factory: Callable[..., Any] | None = None) -> Any:
+    if env_factory is not None:
+        return env_factory(split="train", config_path=None)
+    try:
+        from textworld.core import EnvInfos
+        from textworld.envs.pddl.pddl import PddlEnv
+        from alfworld.agents.environment.alfred_tw_env import AlfredDemangler, AlfredInfos
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("TextWorld PDDL planner support is not installed.") from exc
+    base = PddlEnv(EnvInfos(won=True, admissible_commands=True, policy_commands=True, extras=["gamefile", "walkthrough"]))
+    env = AlfredDemangler(env=base, shuffle=False)
+    return AlfredInfos(env=env)
 
 
 def _alfworld_env_method_for_policy(policy: str) -> str:
@@ -1708,6 +1873,71 @@ def _walkthrough_training_rollout_command(
     if expert in admissible:
         return str(expert), False
     return rng.choice(list(admissible)), False
+
+
+def _planner_training_rollout_command(
+    env: Any,
+    *,
+    gamefile: str | None,
+    prefix: Sequence[str],
+    expert: str | None,
+    admissible: Sequence[str],
+    rng: random.Random,
+    step: int,
+    perturbation_prob: float,
+    warmup_random_steps: int,
+) -> str:
+    if not admissible:
+        raise ValueError("cannot roll out ALFWorld state without admissible commands")
+    if step < warmup_random_steps or rng.random() < perturbation_prob:
+        return rng.choice(list(admissible))
+    planner_next = _planner_next_command(env, gamefile=gamefile, prefix=prefix, admissible=admissible)
+    if planner_next is not None:
+        return planner_next
+    if expert in admissible:
+        return str(expert)
+    return rng.choice(list(admissible))
+
+
+def _best_reachable_label_command(labels: Sequence[AlfworldDenseActionLabel], *, admissible: Sequence[str]) -> str | None:
+    admissible_set = set(admissible)
+    reachable = [label for label in labels if label.reachable and label.command in admissible_set]
+    if not reachable:
+        return None
+    best = min(reachable, key=lambda label: (label.cost_to_success, label.command))
+    return best.command
+
+
+def _planner_next_command(env: Any, *, gamefile: str | None, prefix: Sequence[str], admissible: Sequence[str]) -> str | None:
+    try:
+        _target, _observation, info, _score, done = _replay_prefix(env, gamefile=gamefile, prefix=prefix)
+        if done:
+            return None
+        for command in _planner_policy_commands_from_info(info):
+            if command in admissible:
+                return command
+    except Exception:
+        return None
+    return None
+
+
+def _planner_policy_commands_from_info(info: Mapping[str, Any]) -> list[str]:
+    values: Any = info.get("policy_commands")
+    if values is None:
+        values = info.get("extra.policy_commands")
+    if values is None:
+        return []
+    if isinstance(values, str):
+        return [values]
+    if isinstance(values, Sequence):
+        commands = []
+        for value in values:
+            if isinstance(value, str):
+                commands.append(value)
+            elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+                commands.extend(str(item) for item in value if str(item).strip())
+        return [command for command in commands if command.strip()]
+    return []
 
 
 def _walkthrough_next_command(*, gamefile: str | None, prefix: Sequence[str], walkthrough_cache: dict[str, list[str]]) -> str | None:

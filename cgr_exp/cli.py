@@ -291,6 +291,7 @@ def main() -> None:
             p.add_argument("--max-pairs-per-state", type=int, default=24)
             p.add_argument("--max-frontier-actions", type=int, default=16)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
+            p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
             p.add_argument("--label-source", default="replay-prefix")
             p.add_argument("--perturbation-prob", type=float, default=0.0)
             p.add_argument("--warmup-random-steps", type=int, default=0)
@@ -333,6 +334,7 @@ def main() -> None:
             p.add_argument("--max-pairs-per-state", type=int, default=24)
             p.add_argument("--max-frontier-actions", type=int, default=16)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
+            p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
             p.add_argument("--label-source", default="replay-prefix")
             p.add_argument("--perturbation-prob", type=float, default=0.15)
             p.add_argument("--warmup-random-steps", type=int, default=5)
@@ -346,6 +348,7 @@ def main() -> None:
             p.add_argument("--max-pairs-per-state", type=int, default=24)
             p.add_argument("--max-frontier-actions", type=int, default=16)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
+            p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
             p.add_argument("--label-source", default="replay-prefix")
             p.add_argument("--perturbation-prob", type=float, default=0.15)
             p.add_argument("--warmup-random-steps", type=int, default=5)
@@ -1828,6 +1831,7 @@ def main() -> None:
                 max_pairs_per_state=args.max_pairs_per_state,
                 max_frontier_actions=args.max_frontier_actions,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
+                planner_timeout_seconds=args.planner_timeout_seconds,
                 label_source=args.label_source,
                 perturbation_prob=args.perturbation_prob,
                 warmup_random_steps=args.warmup_random_steps,
@@ -1989,6 +1993,7 @@ def main() -> None:
                 max_pairs_per_state=args.max_pairs_per_state,
                 max_frontier_actions=args.max_frontier_actions,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
+                planner_timeout_seconds=args.planner_timeout_seconds,
                 label_source=args.label_source,
                 perturbation_prob=args.perturbation_prob,
                 warmup_random_steps=args.warmup_random_steps,
@@ -2003,6 +2008,8 @@ def main() -> None:
                 "train_split": manifest["train_split"],
                 "train_episodes": manifest["train_episodes"],
                 "training_source": manifest["training_source"],
+                "label_source": manifest["label_source"],
+                "counterfactual_planner_cost_to_go": manifest["train"]["counterfactual_planner_cost_to_go"],
                 "meta_commands_filtered_from_frontier": manifest["meta_commands_filtered_from_frontier"],
                 "llm_rollout_trajectories_used": manifest["llm_rollout_trajectories_used"],
                 "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],
@@ -2031,6 +2038,7 @@ def main() -> None:
                 max_pairs_per_state=args.max_pairs_per_state,
                 max_frontier_actions=args.max_frontier_actions,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
+                planner_timeout_seconds=args.planner_timeout_seconds,
                 label_source=args.label_source,
                 perturbation_prob=args.perturbation_prob,
                 warmup_random_steps=args.warmup_random_steps,
@@ -2050,6 +2058,8 @@ def main() -> None:
                 "eval_episodes": manifest["eval_episodes"],
                 "uses_admissible_commands": manifest["uses_admissible_commands"],
                 "training_source": manifest["training_source"],
+                "label_source": manifest["label_source"],
+                "counterfactual_planner_cost_to_go": manifest["train"]["counterfactual_planner_cost_to_go"],
                 "meta_commands_filtered_from_frontier": manifest["meta_commands_filtered_from_frontier"],
                 "llm_rollout_trajectories_used": manifest["llm_rollout_trajectories_used"],
                 "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],

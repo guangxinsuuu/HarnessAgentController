@@ -873,6 +873,43 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertIn("label_status_counts", manifest["train"])
         self.assertGreater(manifest["train"]["label_status_counts"].get("planner_replanned", 0), 0)
 
+    def test_run_alfworld_dense_train_can_resume_pair_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-train"
+            first = run_alfworld_dense_train(
+                out,
+                train_episodes=1,
+                max_steps=4,
+                epochs=1,
+                max_pairs_per_state=8,
+                max_frontier_actions=2,
+                counterfactual_rollout_steps=4,
+                planner_timeout_seconds=1,
+                label_source="planner",
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                env_factory=lambda **_kwargs: FakePlannerBatchAlfworldEnv(),
+            )
+            resumed = run_alfworld_dense_train(
+                out,
+                train_episodes=2,
+                max_steps=4,
+                epochs=1,
+                max_pairs_per_state=8,
+                max_frontier_actions=2,
+                counterfactual_rollout_steps=4,
+                planner_timeout_seconds=1,
+                label_source="planner",
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                resume=True,
+                env_factory=lambda **_kwargs: FakePlannerBatchAlfworldEnv(),
+            )
+            self.assertTrue((out / "alfworld_dense_pair_cache.jsonl").exists())
+            self.assertEqual(resumed["train"]["resumed_completed_episodes"], 1)
+            self.assertGreaterEqual(resumed["train"]["train_pair_count"], first["train"]["train_pair_count"])
+            self.assertTrue(resumed["resume"])
+
     def test_audit_alfworld_dense_labels_reports_cost_variation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "dense-audit"

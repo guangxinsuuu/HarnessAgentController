@@ -370,11 +370,20 @@ def run_alfworld_dense_train(
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
+    resume: bool = False,
     env_factory: Callable[..., Any] | None = None,
 ) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     if env_factory is None:
         _assert_alfworld_available()
+    if not resume:
+        for path in (
+            out_dir / "alfworld_dense_pair_cache.jsonl",
+            out_dir / "alfworld_dense_training_trace.csv",
+            out_dir / "alfworld_dense_action_labels.csv",
+        ):
+            if path.exists():
+                path.unlink()
     ranker, train_manifest, train_rows, action_label_rows = train_alfworld_dense_ranker(
         seed=seed,
         config_path=config_path,
@@ -388,6 +397,8 @@ def run_alfworld_dense_train(
         label_source=label_source,
         perturbation_prob=perturbation_prob,
         warmup_random_steps=warmup_random_steps,
+        cache_dir=out_dir,
+        resume=resume,
         env_factory=env_factory,
     )
     manifest = {
@@ -411,6 +422,7 @@ def run_alfworld_dense_train(
         "object_identity_feature_used": False,
         "contract": canonical_contract_manifest(),
         "train": train_manifest,
+        "resume": resume,
         "ranker_checkpoint": str(out_dir / "alfworld_dense_ranker.json"),
     }
     (out_dir / "alfworld_dense_ranker.json").write_text(ranker.to_json(), encoding="utf-8")
@@ -683,6 +695,8 @@ def train_alfworld_dense_ranker(
     label_source: str = ALFWORLD_DENSE_LABEL_REPLAY,
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
+    cache_dir: Path | None = None,
+    resume: bool = False,
     env_factory: Callable[..., Any] | None = None,
 ) -> tuple[GenericHarnessRanker, dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
     label_source = _normalize_alfworld_dense_label_source(label_source)
@@ -697,6 +711,13 @@ def train_alfworld_dense_ranker(
     pairs: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
     trace_rows: list[dict[str, object]] = []
     action_label_rows: list[dict[str, object]] = []
+    completed_episodes: set[int] = set()
+    if cache_dir is not None and resume:
+        cached = _load_alfworld_dense_training_cache(cache_dir)
+        pairs.extend(cached["pairs"])
+        trace_rows.extend(cached["trace_rows"])
+        action_label_rows.extend(cached["action_label_rows"])
+        completed_episodes.update(cached["completed_episodes"])
     labeled_states = 0
     skipped_states = 0
     finite_action_labels = 0
@@ -709,6 +730,9 @@ def train_alfworld_dense_ranker(
     planner_policy_steps = 0
     planner_policy_misses = 0
     for episode in range(train_episodes):
+        if episode in completed_episodes:
+            train_env.reset()
+            continue
         obs, info = train_env.reset()
         observation = _first(obs)
         objective = _objective_from_info(info, observation)
@@ -716,6 +740,7 @@ def train_alfworld_dense_ranker(
         history: list[str] = [f"obs:{observation}"]
         prefix: list[str] = []
         episode_pairs = 0
+        episode_pair_rows: list[dict[str, object]] = []
         episode_labels = 0
         final_score = 0.0
         for step in range(max_steps):
@@ -810,6 +835,7 @@ def train_alfworld_dense_ranker(
                 finite_action_labels += 1 if label.reachable else 0
                 infinite_action_labels += 0 if label.reachable else 1
                 label_status_counts[label.label_status] = label_status_counts.get(label.label_status, 0) + 1
+            episode_labels += len(labels)
             state_pairs = _dense_labels_to_pairs(
                 labels=row_labels,
                 observation=observation,
@@ -825,8 +851,15 @@ def train_alfworld_dense_ranker(
             if state_pairs:
                 labeled_states += 1
                 pairs.extend(state_pairs)
+                episode_pair_rows.extend(
+                    {
+                        "episode": episode,
+                        "positive": list(positive),
+                        "negative": list(negative),
+                    }
+                    for positive, negative in state_pairs
+                )
                 episode_pairs += len(state_pairs)
-                episode_labels += len(labels)
             else:
                 skipped_states += 1
             if label_source == ALFWORLD_DENSE_LABEL_WALKTHROUGH:
@@ -888,6 +921,13 @@ def train_alfworld_dense_ranker(
                 "final_score": final_score,
             }
         )
+        if cache_dir is not None:
+            _append_alfworld_dense_training_cache(
+                cache_dir,
+                pair_rows=episode_pair_rows,
+                trace_rows=trace_rows,
+                action_label_rows=action_label_rows,
+            )
         print(
             "[alfworld-dense-train] "
             f"{episode + 1}/{train_episodes} episodes, "
@@ -899,16 +939,36 @@ def train_alfworld_dense_ranker(
         raise RuntimeError("ALFWorld dense training produced zero ranking pairs; check replay-prefix labels and expert availability.")
     ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
     ranker.train(pairs, epochs=epochs, lr=0.03, seed=seed)
+    total_finite_action_labels = sum(1 for row in action_label_rows if int(row.get("reachable", 0)) == 1)
+    total_infinite_action_labels = sum(1 for row in action_label_rows if int(row.get("reachable", 0)) != 1)
+    total_labeled_states = len(
+        {
+            (int(row.get("episode", -1)), int(row.get("step", -1)))
+            for row in action_label_rows
+            if int(row.get("episode", -1)) >= 0 and int(row.get("step", -1)) >= 0
+        }
+    )
+    total_label_status_counts: dict[str, int] = {}
+    for row in action_label_rows:
+        status = str(row.get("label_status", "")).strip()
+        if status:
+            total_label_status_counts[status] = total_label_status_counts.get(status, 0) + 1
     manifest = {
         "train_pair_count": len(pairs),
-        "dense_labeled_states": labeled_states,
+        "dense_labeled_states": total_labeled_states,
+        "new_dense_labeled_states": labeled_states,
         "skipped_states": skipped_states,
-        "finite_action_labels": finite_action_labels,
-        "infinite_action_labels": infinite_action_labels,
+        "finite_action_labels": total_finite_action_labels,
+        "new_finite_action_labels": finite_action_labels,
+        "infinite_action_labels": total_infinite_action_labels,
+        "new_infinite_action_labels": infinite_action_labels,
         "epochs": epochs,
         "max_pairs_per_state": max_pairs_per_state,
         "max_frontier_actions": max_frontier_actions,
         "frontier_reference_priority": "expert_plan_then_planner_policy",
+        "resume_requested": resume,
+        "resumed_completed_episodes": len(completed_episodes),
+        "dense_pair_cache": str(cache_dir / "alfworld_dense_pair_cache.jsonl") if cache_dir is not None else "",
         "counterfactual_rollout_steps": counterfactual_rollout_steps,
         "planner_timeout_seconds": planner_timeout_seconds,
         "perturbation_prob": perturbation_prob,
@@ -922,7 +982,8 @@ def train_alfworld_dense_ranker(
         "planner_policy_steps": planner_policy_steps,
         "planner_policy_misses": planner_policy_misses,
         "planner_policy_miss_rate": 0.0 if planner_policy_steps == 0 else planner_policy_misses / planner_policy_steps,
-        "label_status_counts": dict(sorted(label_status_counts.items())),
+        "new_label_status_counts": dict(sorted(label_status_counts.items())),
+        "label_status_counts": dict(sorted(total_label_status_counts.items())),
         "expert_monotone_checks": expert_monotone_checks,
         "expert_monotone_failures": expert_monotone_failures,
         "expert_monotone_failure_rate": 0.0 if expert_monotone_checks == 0 else expert_monotone_failures / expert_monotone_checks,
@@ -2597,3 +2658,58 @@ def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, object]]:
+    if not path.exists() or path.stat().st_size == 0:
+        return []
+    with path.open(newline="", encoding="utf-8") as handle:
+        return [dict(row) for row in csv.DictReader(handle)]
+
+
+def _load_alfworld_dense_training_cache(cache_dir: Path) -> dict[str, object]:
+    pair_path = cache_dir / "alfworld_dense_pair_cache.jsonl"
+    pairs: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
+    if pair_path.exists():
+        with pair_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                pairs.append(
+                    (
+                        tuple(float(value) for value in row["positive"]),
+                        tuple(float(value) for value in row["negative"]),
+                    )
+                )
+    trace_rows = _read_csv_rows(cache_dir / "alfworld_dense_training_trace.csv")
+    action_label_rows = _read_csv_rows(cache_dir / "alfworld_dense_action_labels.csv")
+    completed_episodes = {
+        int(row["episode"])
+        for row in trace_rows
+        if str(row.get("episode", "")).strip()
+    }
+    return {
+        "pairs": pairs,
+        "trace_rows": trace_rows,
+        "action_label_rows": action_label_rows,
+        "completed_episodes": completed_episodes,
+    }
+
+
+def _append_alfworld_dense_training_cache(
+    cache_dir: Path,
+    *,
+    pair_rows: Sequence[Mapping[str, object]],
+    trace_rows: Sequence[Mapping[str, object]],
+    action_label_rows: Sequence[Mapping[str, object]],
+) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    pair_path = cache_dir / "alfworld_dense_pair_cache.jsonl"
+    if pair_rows:
+        with pair_path.open("a", encoding="utf-8") as handle:
+            for row in pair_rows:
+                handle.write(json.dumps(row, sort_keys=True) + "\n")
+    _write_csv(cache_dir / "alfworld_dense_training_trace.csv", trace_rows)
+    _write_csv(cache_dir / "alfworld_dense_action_labels.csv", action_label_rows)

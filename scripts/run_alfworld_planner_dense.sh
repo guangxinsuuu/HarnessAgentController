@@ -35,6 +35,7 @@ AUDIT_DIR="${AUDIT_DIR:-${OUT_ROOT}_audit}"
 EVAL_DIR="${EVAL_DIR:-${OUT_ROOT}_eval}"
 RANKER_CHECKPOINT="${RANKER_CHECKPOINT:-${TRAIN_DIR}/alfworld_dense_ranker.json}"
 POLICIES="${POLICIES:-Random,Hand heuristic,ALFWorld dense-ranker}"
+RESUME="${RESUME:-0}"
 
 export ALFWORLD_DATA
 export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
@@ -51,6 +52,7 @@ It does not use an LLM or API key.
 Common environment overrides:
   TRAIN_EPISODES=50 EVAL_EPISODES=20 MAX_STEPS=40 EPOCHS=20
   MAX_FRONTIER_ACTIONS=6 PLANNER_TIMEOUT_SECONDS=3
+  RESUME=1
   EVAL_SPLIT=eval_in_distribution
 EOF
 }
@@ -72,6 +74,10 @@ run_audit() {
 }
 
 run_train() {
+  local resume_args=("--overwrite")
+  if [[ "${RESUME}" == "1" ]]; then
+    resume_args=("--resume")
+  fi
   "${PYTHON_BIN}" -m cgr_exp.cli run-alfworld-dense-train \
     --output-dir "${TRAIN_DIR}" \
     --seed "${SEED}" \
@@ -85,7 +91,7 @@ run_train() {
     --label-source planner \
     --warmup-random-steps 0 \
     --perturbation-prob 0.0 \
-    --overwrite
+    "${resume_args[@]}"
 }
 
 run_eval() {

@@ -338,6 +338,7 @@ def main() -> None:
             p.add_argument("--label-source", default="replay-prefix")
             p.add_argument("--perturbation-prob", type=float, default=0.15)
             p.add_argument("--warmup-random-steps", type=int, default=5)
+            p.add_argument("--resume", action="store_true", default=False)
         if name == "run-alfworld-dense-transfer":
             p.add_argument("--eval-split", default="eval_out_of_distribution")
             p.add_argument("--config-path", type=Path, default=None)
@@ -1997,6 +1998,7 @@ def main() -> None:
                 label_source=args.label_source,
                 perturbation_prob=args.perturbation_prob,
                 warmup_random_steps=args.warmup_random_steps,
+                resume=args.resume,
             )
             command_manifest = {
                 "command": args.command,
@@ -2019,6 +2021,7 @@ def main() -> None:
                 "relational_goal_action_features": manifest["relational_goal_action_features"],
                 "object_identity_feature_used": manifest["object_identity_feature_used"],
                 "ranker_checkpoint": manifest["ranker_checkpoint"],
+                "resume": manifest["resume"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")

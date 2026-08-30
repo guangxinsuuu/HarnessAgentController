@@ -58,9 +58,14 @@ EOF
 }
 
 run_audit() {
+  local cache_args=()
+  if [[ "${AUDIT_CACHE_DIR:-}" != "" ]]; then
+    cache_args=("--cache-dir" "${AUDIT_CACHE_DIR}")
+  fi
   "${PYTHON_BIN}" -m cgr_exp.cli audit-alfworld-dense-labels \
     --output-dir "${AUDIT_DIR}" \
     --seed "${SEED}" \
+    "${cache_args[@]}" \
     --episodes "${TRAIN_EPISODES}" \
     --max-steps "${MAX_STEPS}" \
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
@@ -129,18 +134,18 @@ case "${MODE}" in
     run_eval
     ;;
   smoke)
-    run_audit
     run_train
+    AUDIT_CACHE_DIR="${TRAIN_DIR}" run_audit
     run_eval
     ;;
   pilot)
-    run_audit
     run_train
+    AUDIT_CACHE_DIR="${TRAIN_DIR}" run_audit
     run_eval
     ;;
   all)
-    run_audit
     run_train
+    AUDIT_CACHE_DIR="${TRAIN_DIR}" run_audit
     run_eval
     ;;
   help|-h|--help)

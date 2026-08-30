@@ -122,7 +122,7 @@ def run_alfworld_transfer(
     env_factory: Callable[..., Any] | None = None,
 ) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    if env_factory is None:
+    if env_factory is None and cache_dir is None:
         _assert_alfworld_available()
     ranker, source_manifest = _load_or_train_ranker(
         ranker_checkpoint=ranker_checkpoint,
@@ -304,6 +304,7 @@ def audit_alfworld_dense_labels(
     *,
     seed: int = 0,
     config_path: Path | None = None,
+    cache_dir: Path | None = None,
     episodes: int = 5,
     max_steps: int = 20,
     max_pairs_per_state: int = 24,
@@ -316,23 +317,35 @@ def audit_alfworld_dense_labels(
     env_factory: Callable[..., Any] | None = None,
 ) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    if env_factory is None:
+    if env_factory is None and cache_dir is None:
         _assert_alfworld_available()
-    _ranker, train_manifest, trace_rows, action_label_rows = train_alfworld_dense_ranker(
-        seed=seed,
-        config_path=config_path,
-        train_episodes=episodes,
-        max_steps=max_steps,
-        epochs=0,
-        max_pairs_per_state=max_pairs_per_state,
-        max_frontier_actions=max_frontier_actions,
-        counterfactual_rollout_steps=counterfactual_rollout_steps,
-        planner_timeout_seconds=planner_timeout_seconds,
-        label_source=label_source,
-        perturbation_prob=perturbation_prob,
-        warmup_random_steps=warmup_random_steps,
-        env_factory=env_factory,
-    )
+    if cache_dir is not None:
+        train_manifest, trace_rows, action_label_rows = _load_alfworld_dense_audit_cache(
+            cache_dir,
+            fallback_label_source=label_source,
+            fallback_max_pairs_per_state=max_pairs_per_state,
+            fallback_max_frontier_actions=max_frontier_actions,
+            fallback_counterfactual_rollout_steps=counterfactual_rollout_steps,
+            fallback_planner_timeout_seconds=planner_timeout_seconds,
+            fallback_perturbation_prob=perturbation_prob,
+            fallback_warmup_random_steps=warmup_random_steps,
+        )
+    else:
+        _ranker, train_manifest, trace_rows, action_label_rows = train_alfworld_dense_ranker(
+            seed=seed,
+            config_path=config_path,
+            train_episodes=episodes,
+            max_steps=max_steps,
+            epochs=0,
+            max_pairs_per_state=max_pairs_per_state,
+            max_frontier_actions=max_frontier_actions,
+            counterfactual_rollout_steps=counterfactual_rollout_steps,
+            planner_timeout_seconds=planner_timeout_seconds,
+            label_source=label_source,
+            perturbation_prob=perturbation_prob,
+            warmup_random_steps=warmup_random_steps,
+            env_factory=env_factory,
+        )
     summary = _summarize_dense_label_rows(action_label_rows, train_manifest=train_manifest)
     manifest = {
         "benchmark": "alfworld_dense_frontier_label_audit",
@@ -356,6 +369,8 @@ def audit_alfworld_dense_labels(
         "contract": canonical_contract_manifest(),
         "label_summary": summary,
         "collection": train_manifest,
+        "audit_source": "training_cache" if cache_dir is not None else "fresh_collection",
+        "cache_dir": "" if cache_dir is None else str(cache_dir),
     }
     _write_csv(out_dir / "alfworld_dense_label_audit.csv", [summary])
     _write_csv(out_dir / "alfworld_dense_training_trace.csv", trace_rows)
@@ -2819,6 +2834,49 @@ def _load_alfworld_dense_training_cache(cache_dir: Path) -> dict[str, object]:
         "action_label_rows": action_label_rows,
         "completed_episodes": completed_episodes,
     }
+
+
+def _load_alfworld_dense_audit_cache(
+    cache_dir: Path,
+    *,
+    fallback_label_source: str,
+    fallback_max_pairs_per_state: int,
+    fallback_max_frontier_actions: int,
+    fallback_counterfactual_rollout_steps: int,
+    fallback_planner_timeout_seconds: float,
+    fallback_perturbation_prob: float,
+    fallback_warmup_random_steps: int,
+) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
+    cached = _load_alfworld_dense_training_cache(cache_dir)
+    pairs = cached["pairs"]
+    trace_rows = cached["trace_rows"]
+    action_label_rows = cached["action_label_rows"]
+    if not action_label_rows:
+        raise RuntimeError(f"ALFWorld dense audit cache has no action labels: {cache_dir}")
+
+    train_json = cache_dir / "alfworld_dense_train.json"
+    if train_json.exists():
+        try:
+            body = json.loads(train_json.read_text(encoding="utf-8"))
+            train_manifest = dict(body.get("train", {}))
+        except Exception:
+            train_manifest = {}
+    else:
+        train_manifest = {}
+
+    label_source = str(train_manifest.get("label_source", _alfworld_dense_label_source_name(fallback_label_source)))
+    train_manifest.setdefault("train_pair_count", len(pairs))
+    train_manifest.setdefault("max_pairs_per_state", fallback_max_pairs_per_state)
+    train_manifest.setdefault("max_frontier_actions", fallback_max_frontier_actions)
+    train_manifest.setdefault("counterfactual_rollout_steps", fallback_counterfactual_rollout_steps)
+    train_manifest.setdefault("planner_timeout_seconds", fallback_planner_timeout_seconds)
+    train_manifest.setdefault("perturbation_prob", fallback_perturbation_prob)
+    train_manifest.setdefault("warmup_random_steps", fallback_warmup_random_steps)
+    train_manifest.setdefault("label_source", label_source)
+    train_manifest.setdefault("counterfactual_planner_cost_to_go", label_source == "textworld_pddl_replan_cost_to_go")
+    train_manifest.setdefault("dense_pair_cache", str(cache_dir / "alfworld_dense_pair_cache.jsonl"))
+    train_manifest.setdefault("resumed_completed_episodes", len(cached["completed_episodes"]))
+    return train_manifest, list(trace_rows), list(action_label_rows)
 
 
 def _append_alfworld_dense_training_cache(

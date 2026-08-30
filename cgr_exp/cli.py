@@ -286,6 +286,7 @@ def main() -> None:
             p.add_argument("--target-difficulty", choices=("v1", "v2"), default="v2")
         if name == "audit-alfworld-dense-labels":
             p.add_argument("--config-path", type=Path, default=None)
+            p.add_argument("--cache-dir", type=Path, default=None)
             p.add_argument("--episodes", type=int, default=5)
             p.add_argument("--max-steps", type=int, default=20)
             p.add_argument("--max-pairs-per-state", type=int, default=24)
@@ -1827,6 +1828,7 @@ def main() -> None:
                 args.output_dir,
                 seed=args.seed,
                 config_path=args.config_path,
+                cache_dir=args.cache_dir,
                 episodes=args.episodes,
                 max_steps=args.max_steps,
                 max_pairs_per_state=args.max_pairs_per_state,
@@ -1857,6 +1859,8 @@ def main() -> None:
                 "alfworld_adapter_version": manifest["alfworld_adapter_version"],
                 "relational_goal_action_features": manifest["relational_goal_action_features"],
                 "object_identity_feature_used": manifest["object_identity_feature_used"],
+                "audit_source": manifest["audit_source"],
+                "cache_dir": manifest["cache_dir"],
                 "label_summary": manifest["label_summary"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }

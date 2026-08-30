@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import random
 import tempfile
 import unittest
@@ -964,6 +965,56 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(manifest["benchmark"], "alfworld_dense_frontier_label_audit")
             self.assertGreater(manifest["label_summary"]["action_labels"], 0)
             self.assertGreater(manifest["label_summary"]["states_with_cost_variation"], 0)
+
+    def test_audit_alfworld_dense_labels_can_reuse_training_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "dense-train"
+            cache.mkdir()
+            vector = [0.0 for _name in canonical_feature_names()]
+            with (cache / "alfworld_dense_pair_cache.jsonl").open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"positive": vector, "negative": vector}) + "\n")
+            with (cache / "alfworld_dense_training_trace.csv").open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["episode", "pairs", "action_labels", "steps", "final_score"])
+                writer.writeheader()
+                writer.writerow({"episode": 0, "pairs": 1, "action_labels": 2, "steps": 1, "final_score": 0.0})
+            with (cache / "alfworld_dense_action_labels.csv").open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=["episode", "step", "command", "cost_to_success", "reachable", "final_score", "rollout_steps", "label_source", "label_status"],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "episode": 0,
+                        "step": 0,
+                        "command": "take apple",
+                        "cost_to_success": 1,
+                        "reachable": 1,
+                        "final_score": 0.0,
+                        "rollout_steps": 1,
+                        "label_source": "textworld_pddl_replan_cost_to_go",
+                        "label_status": "planner_replanned",
+                    }
+                )
+                writer.writerow(
+                    {
+                        "episode": 0,
+                        "step": 0,
+                        "command": "open fridge",
+                        "cost_to_success": 4,
+                        "reachable": 1,
+                        "final_score": 0.0,
+                        "rollout_steps": 4,
+                        "label_source": "textworld_pddl_replan_cost_to_go",
+                        "label_status": "planner_replanned",
+                    }
+                )
+            out = Path(tmp) / "dense-audit"
+            manifest = audit_alfworld_dense_labels(out, cache_dir=cache, label_source="planner")
+            self.assertEqual(manifest["audit_source"], "training_cache")
+            self.assertEqual(manifest["cache_dir"], str(cache))
+            self.assertEqual(manifest["label_summary"]["train_pair_count"], 1)
+            self.assertEqual(manifest["label_summary"]["cost_variation_rate"], 1.0)
 
     def test_run_alfworld_dense_transfer_can_load_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -413,6 +413,7 @@ def run_alfworld_dense_train(
             out_dir / "alfworld_dense_pair_cache.jsonl",
             out_dir / "alfworld_dense_training_trace.csv",
             out_dir / "alfworld_dense_action_labels.csv",
+            out_dir / "alfworld_dense_cache_manifest.json",
         ):
             if path.exists():
                 path.unlink()
@@ -748,12 +749,16 @@ def train_alfworld_dense_ranker(
     planner_label_cache_loaded_entries = 0
     planner_label_cache_hits = 0
     planner_label_cache_misses = 0
+    dense_feature_cache_manifest_compatible = True
+    skipped_incompatible_dense_pairs = 0
     if cache_dir is not None and resume:
         cached = _load_alfworld_dense_training_cache(cache_dir)
         pairs.extend(cached["pairs"])
         trace_rows.extend(cached["trace_rows"])
         action_label_rows.extend(cached["action_label_rows"])
         completed_episodes.update(cached["completed_episodes"])
+        dense_feature_cache_manifest_compatible = bool(cached["cache_manifest_compatible"])
+        skipped_incompatible_dense_pairs = int(cached["skipped_incompatible_pairs"])
     if cache_dir is not None and label_source == ALFWORLD_DENSE_LABEL_PLANNER:
         planner_label_cache_path = cache_dir / "alfworld_dense_planner_label_cache.jsonl"
         planner_label_cache = _load_alfworld_planner_label_cache(planner_label_cache_path)
@@ -907,6 +912,7 @@ def train_alfworld_dense_ranker(
                         "episode": episode,
                         "positive": list(positive),
                         "negative": list(negative),
+                        **_alfworld_dense_pair_cache_metadata(),
                     }
                     for positive, negative in state_pairs
                 )
@@ -1012,6 +1018,8 @@ def train_alfworld_dense_ranker(
         "frontier_reference_priority": "expert_plan_if_available_then_frontier_sampling_score",
         "resume_requested": resume,
         "resumed_completed_episodes": len(completed_episodes),
+        "dense_feature_cache_manifest_compatible": dense_feature_cache_manifest_compatible,
+        "skipped_incompatible_dense_pairs": skipped_incompatible_dense_pairs,
         "dense_pair_cache": str(cache_dir / "alfworld_dense_pair_cache.jsonl") if cache_dir is not None else "",
         "counterfactual_rollout_steps": counterfactual_rollout_steps,
         "planner_timeout_seconds": planner_timeout_seconds,
@@ -3105,34 +3113,80 @@ def _read_csv_rows(path: Path) -> list[dict[str, object]]:
         return [dict(row) for row in csv.DictReader(handle)]
 
 
-def _load_alfworld_dense_training_cache(cache_dir: Path) -> dict[str, object]:
+def _alfworld_dense_cache_manifest() -> dict[str, object]:
+    contract = canonical_contract_manifest()
+    return {
+        "cache": "alfworld_dense_feature_pair_cache",
+        "version": 1,
+        "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
+        "feature_schema_hash": contract["feature_schema_hash"],
+        "feature_dim": len(canonical_feature_names()),
+    }
+
+
+def _alfworld_dense_pair_cache_metadata() -> dict[str, object]:
+    manifest = _alfworld_dense_cache_manifest()
+    return {
+        "alfworld_adapter_version": manifest["alfworld_adapter_version"],
+        "feature_schema_hash": manifest["feature_schema_hash"],
+        "feature_dim": manifest["feature_dim"],
+    }
+
+
+def _alfworld_dense_pair_cache_row_compatible(row: Mapping[str, object]) -> bool:
+    metadata = _alfworld_dense_pair_cache_metadata()
+    return (
+        row.get("alfworld_adapter_version") == metadata["alfworld_adapter_version"]
+        and row.get("feature_schema_hash") == metadata["feature_schema_hash"]
+        and int(row.get("feature_dim", -1)) == int(metadata["feature_dim"])
+    )
+
+
+def _load_alfworld_dense_training_cache(cache_dir: Path, *, require_feature_compatibility: bool = True) -> dict[str, object]:
+    cache_manifest = _alfworld_dense_cache_manifest()
+    manifest_path = cache_dir / "alfworld_dense_cache_manifest.json"
+    cache_compatible = False
+    if manifest_path.exists():
+        try:
+            cache_compatible = json.loads(manifest_path.read_text(encoding="utf-8")) == cache_manifest
+        except Exception:
+            cache_compatible = False
     pair_path = cache_dir / "alfworld_dense_pair_cache.jsonl"
     pairs: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
-    if pair_path.exists():
+    skipped_incompatible_pairs = 0
+    can_load_feature_cache = cache_compatible or not require_feature_compatibility
+    if can_load_feature_cache and pair_path.exists():
         with pair_path.open(encoding="utf-8") as handle:
             for line in handle:
                 line = line.strip()
                 if not line:
                     continue
                 row = json.loads(line)
+                if require_feature_compatibility and not _alfworld_dense_pair_cache_row_compatible(row):
+                    skipped_incompatible_pairs += 1
+                    continue
                 pairs.append(
                     (
                         tuple(float(value) for value in row["positive"]),
                         tuple(float(value) for value in row["negative"]),
                     )
                 )
+    elif pair_path.exists():
+        skipped_incompatible_pairs = sum(1 for line in pair_path.read_text(encoding="utf-8").splitlines() if line.strip())
     trace_rows = _read_csv_rows(cache_dir / "alfworld_dense_training_trace.csv")
     action_label_rows = _read_csv_rows(cache_dir / "alfworld_dense_action_labels.csv")
     completed_episodes = {
         int(row["episode"])
         for row in trace_rows
         if str(row.get("episode", "")).strip()
-    }
+    } if cache_compatible and skipped_incompatible_pairs == 0 else set()
     return {
         "pairs": pairs,
-        "trace_rows": trace_rows,
-        "action_label_rows": action_label_rows,
+        "trace_rows": trace_rows if cache_compatible or not require_feature_compatibility else [],
+        "action_label_rows": action_label_rows if cache_compatible or not require_feature_compatibility else [],
         "completed_episodes": completed_episodes,
+        "cache_manifest_compatible": cache_compatible,
+        "skipped_incompatible_pairs": skipped_incompatible_pairs,
     }
 
 
@@ -3148,7 +3202,7 @@ def _load_alfworld_dense_audit_cache(
     fallback_perturbation_prob: float,
     fallback_warmup_random_steps: int,
 ) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
-    cached = _load_alfworld_dense_training_cache(cache_dir)
+    cached = _load_alfworld_dense_training_cache(cache_dir, require_feature_compatibility=False)
     pairs = cached["pairs"]
     trace_rows = cached["trace_rows"]
     action_label_rows = cached["action_label_rows"]
@@ -3197,6 +3251,7 @@ def _append_alfworld_dense_training_cache(
     action_label_rows: Sequence[Mapping[str, object]],
 ) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "alfworld_dense_cache_manifest.json").write_text(json.dumps(_alfworld_dense_cache_manifest(), indent=2, sort_keys=True), encoding="utf-8")
     pair_path = cache_dir / "alfworld_dense_pair_cache.jsonl"
     if pair_rows:
         with pair_path.open("a", encoding="utf-8") as handle:

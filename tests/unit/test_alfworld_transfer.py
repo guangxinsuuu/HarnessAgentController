@@ -23,6 +23,7 @@ from cgr_exp.alfworld_transfer import (
     _alfworld_diagnostic_action_from_info,
     _label_frontier_by_planner_cost,
     _label_frontier_by_walkthrough_suffix,
+    _load_alfworld_dense_training_cache,
     _load_alfworld_planner_label_cache,
     _frontier_sample,
     _gamefile_from_info,
@@ -1091,6 +1092,23 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("planner_label_cache_loaded_entries", resumed["train"])
             self.assertIn("new_planner_label_cache_hits", resumed["train"])
             self.assertTrue(resumed["resume"])
+
+    def test_dense_training_cache_rejects_feature_vectors_without_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "dense-train"
+            cache.mkdir()
+            vector = [0.0 for _name in canonical_feature_names()]
+            with (cache / "alfworld_dense_pair_cache.jsonl").open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"positive": vector, "negative": vector}) + "\n")
+            with (cache / "alfworld_dense_training_trace.csv").open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["episode", "pairs", "action_labels", "steps", "final_score"])
+                writer.writeheader()
+                writer.writerow({"episode": 0, "pairs": 1, "action_labels": 2, "steps": 1, "final_score": 0.0})
+            cached = _load_alfworld_dense_training_cache(cache)
+        self.assertFalse(cached["cache_manifest_compatible"])
+        self.assertEqual(cached["pairs"], [])
+        self.assertEqual(cached["completed_episodes"], set())
+        self.assertEqual(cached["skipped_incompatible_pairs"], 1)
 
     def test_audit_alfworld_dense_labels_reports_cost_variation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

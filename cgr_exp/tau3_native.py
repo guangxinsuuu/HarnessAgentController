@@ -160,6 +160,10 @@ def run_tau3_native(config: Tau3RunConfig) -> Dict[str, object]:
     command_manifest["subprocess_wall_clock_seconds"] = elapsed
     (config.output_dir / "tau3_native_command.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
     if result.returncode != 0:
+        _write_pending_artifacts(config, f"tau2_failed:{result.returncode}", save_to)
+        row = _read_json_or_empty(config.output_dir / "q4_tau_row.json")
+        row["notes"] = f"tau2 official run failed; see {config.output_dir / 'tau3_native_stderr.log'}"
+        _rewrite_tau3_row_artifacts(config.output_dir, row)
         raise RuntimeError(f"tau2 official run failed with exit code {result.returncode}; see {config.output_dir / 'tau3_native_stderr.log'}")
     return aggregate_tau3_official_results(config.output_dir, method=method_label, domain=config.domain, expected_trials=config.num_trials)
 

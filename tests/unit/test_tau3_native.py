@@ -332,6 +332,25 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(command_manifest["existing_task_count"], 1)
             self.assertEqual(command_manifest["expected_task_count"], 2)
 
+    def test_failed_tau2_run_writes_pending_row_for_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            failed = subprocess.CompletedProcess(args=["tau2"], returncode=7, stdout="out", stderr="bad")
+            with (
+                patch("cgr_exp.tau3_native.tau3_preflight", return_value={"ready": True, "blockers": []}),
+                patch("cgr_exp.tau3_native._tau2_revision", return_value="rev"),
+                patch("cgr_exp.tau3_native.subprocess.run", return_value=failed),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "exit code 7"):
+                    run_tau3_native(Tau3RunConfig(output_dir=root / "native", domain="retail", num_tasks=2, num_trials=1))
+            row = json.loads((root / "native" / "q4_tau_row.json").read_text(encoding="utf-8"))
+            command_manifest = json.loads((root / "native" / "tau3_native_command.json").read_text(encoding="utf-8"))
+            self.assertEqual(row["status"], "tau2_failed:7")
+            self.assertEqual(row["task_count"], 0)
+            self.assertIn("tau3_native_stderr.log", row["notes"])
+            self.assertEqual((root / "native" / "tau3_native_stderr.log").read_text(encoding="utf-8"), "bad")
+            self.assertEqual(command_manifest["returncode"], 7)
+
     def test_solver_controller_python_api_injects_canonical_runtime_args(self) -> None:
         class FakeResults:
             def save(self, path: Path, format: str = "json") -> None:

@@ -1992,9 +1992,9 @@ def _table10_latex(rows: Sequence[Mapping[str, object]]) -> str:
         "\\caption{Matched maintained-protocol tau3 evaluation using official tau2-bench text half-duplex runner.}",
         "\\label{tab:q4_tau3}",
         "\\scriptsize",
-        "\\begin{tabular}{llrrrrrrr}",
+        "\\begin{tabular}{llrrrrrrrl}",
         "\\toprule",
-        "Domain & Method & pass$^1$ $\\uparrow$ & pass$^4$ $\\uparrow$ & Violations $\\downarrow$ & Tool calls $\\downarrow$ & LLM calls $\\downarrow$ & Tokens $\\downarrow$ & Wall-clock $\\downarrow$ \\\\",
+        "Domain & Method & pass$^1$ $\\uparrow$ & pass$^4$ $\\uparrow$ & Violations $\\downarrow$ & Tool calls $\\downarrow$ & LLM calls $\\downarrow$ & Tokens $\\downarrow$ & Wall-clock $\\downarrow$ & Status \\\\",
         "\\midrule",
     ]
     for row in rows:
@@ -2010,6 +2010,7 @@ def _table10_latex(rows: Sequence[Mapping[str, object]]) -> str:
                     str(row.get("LLM calls", "--")),
                     str(row.get("Tokens", "--")),
                     str(row.get("Wall-clock", "--")),
+                    _latex_escape(str(row.get("Status", ""))),
                 ]
             )
             + " \\\\"

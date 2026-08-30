@@ -246,6 +246,7 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("missing: q4_tau_row.json", csv_text)
             self.assertIn("LLM calls", tex_text)
             self.assertIn("Wall-clock", tex_text)
+            self.assertIn("Status", tex_text)
             self.assertFalse(manifest["all_rows_result_ready"])
             self.assertIn("readiness/table10_tau3_readiness.csv", manifest["produced_artifacts"])
             self.assertIn("readiness/table10_tau3_readiness.json", manifest["produced_artifacts"])
@@ -267,6 +268,7 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(row["Tokens"], "--")
             tex_text = (root / "table" / "table10_tau3_results.tex").read_text(encoding="utf-8")
             self.assertIn("Solver-derived canonical controller & -- & --", tex_text)
+            self.assertIn("blocked\\_by\\_readiness", tex_text)
 
     def test_dry_run_labels_canonical_and_certified_controller_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

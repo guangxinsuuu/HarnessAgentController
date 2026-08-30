@@ -1054,6 +1054,9 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertIn("label_status_counts", manifest["train"])
         replan_count = manifest["train"]["label_status_counts"].get("planner_replanned", 0) + manifest["train"]["label_status_counts"].get("planner_replanned_snapshot", 0)
         self.assertGreater(replan_count, 0)
+        self.assertGreater(manifest["train"]["planner_path_cost_monotone_checks"], 0)
+        self.assertEqual(manifest["train"]["planner_path_cost_monotone_failures"], 0)
+        self.assertEqual(manifest["train"]["planner_path_cost_monotone_failure_rate"], 0.0)
 
     def test_run_alfworld_dense_train_can_resume_pair_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1119,6 +1122,9 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(manifest["train"]["dense_state_label_cache_rows"], len(rows))
             self.assertIn("labels", rows[0])
             self.assertIn("admissible_commands", rows[0])
+            self.assertIn("selected_rollout_command", rows[0])
+            self.assertIn("selected_rollout_source", rows[0])
+            self.assertTrue(all(label["episode"] == rows[0]["episode"] for label in rows[0]["labels"]))
 
     def test_dense_training_cache_rebuilds_pairs_from_state_labels_when_feature_cache_incompatible(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1240,6 +1246,7 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("ranker_contract_sign_tolerance", manifest["label_summary"])
             self.assertIn("planner_label_cache_loaded_entries", manifest["label_summary"])
             self.assertIn("new_planner_label_cache_hits", manifest["label_summary"])
+            self.assertIn("planner_path_cost_monotone_checks", manifest["label_summary"])
 
     def test_run_alfworld_dense_transfer_can_load_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -787,6 +787,9 @@ def train_alfworld_dense_ranker(
     label_status_counts: dict[str, int] = {}
     expert_monotone_checks = 0
     expert_monotone_failures = 0
+    planner_path_cost_monotone_checks = 0
+    planner_path_cost_monotone_failures = 0
+    planner_path_cost_monotone_failure_examples: list[dict[str, object]] = []
     walkthrough_policy_steps = 0
     walkthrough_policy_misses = 0
     planner_policy_steps = 0
@@ -812,6 +815,7 @@ def train_alfworld_dense_ranker(
         final_score = 0.0
         episode_start = time.perf_counter()
         skip_reason = ""
+        pending_planner_monotone: dict[str, object] | None = None
         for step in range(max_steps):
             if max_episode_label_seconds > 0.0 and (time.perf_counter() - episode_start) >= max_episode_label_seconds:
                 skip_reason = "episode_label_timeout"
@@ -882,6 +886,25 @@ def train_alfworld_dense_ranker(
                 best_cost = min(label.cost_to_success for label in labels)
                 if labels_by_command[monotone_reference].cost_to_success > best_cost:
                     expert_monotone_failures += 1
+            if label_source == ALFWORLD_DENSE_LABEL_PLANNER and pending_planner_monotone is not None:
+                reachable_labels = [label for label in labels if label.reachable]
+                if reachable_labels and int(pending_planner_monotone.get("reachable", 0)):
+                    planner_path_cost_monotone_checks += 1
+                    current_best_cost = min(label.cost_to_success for label in reachable_labels)
+                    previous_cost = int(pending_planner_monotone["cost_to_success"])
+                    if previous_cost != current_best_cost + 1:
+                        planner_path_cost_monotone_failures += 1
+                        if len(planner_path_cost_monotone_failure_examples) < 20:
+                            planner_path_cost_monotone_failure_examples.append(
+                                {
+                                    "episode": int(pending_planner_monotone.get("episode", episode)),
+                                    "step": int(pending_planner_monotone.get("step", step - 1)),
+                                    "command": str(pending_planner_monotone.get("command", "")),
+                                    "selected_cost_to_success": previous_cost,
+                                    "next_state_best_action_cost": current_best_cost,
+                                    "expected_selected_cost": current_best_cost + 1,
+                                }
+                            )
             row_labels = []
             for label in labels:
                 action_label = AlfworldDenseActionLabel(
@@ -901,19 +924,6 @@ def train_alfworld_dense_ranker(
                 infinite_action_labels += 0 if label.reachable else 1
                 label_status_counts[label.label_status] = label_status_counts.get(label.label_status, 0) + 1
             episode_labels += len(labels)
-            episode_state_label_rows.append(
-                _alfworld_dense_state_label_cache_row(
-                    episode=episode,
-                    step=step,
-                    observation=observation,
-                    objective=objective,
-                    history=history,
-                    admissible_commands=admissible,
-                    max_steps=max_steps,
-                    labels=row_labels,
-                    label_source=label_source,
-                )
-            )
             state_pairs = _dense_labels_to_pairs(
                 labels=row_labels,
                 observation=observation,
@@ -941,6 +951,7 @@ def train_alfworld_dense_ranker(
                 episode_pairs += len(state_pairs)
             else:
                 skipped_states += 1
+            rollout_source = ""
             if label_source == ALFWORLD_DENSE_LABEL_WALKTHROUGH:
                 command, used_walkthrough = _walkthrough_training_rollout_command(
                     gamefile=gamefile,
@@ -953,17 +964,30 @@ def train_alfworld_dense_ranker(
                     warmup_random_steps=warmup_random_steps,
                     walkthrough_cache=walkthrough_cache,
                 )
+                rollout_source = "walkthrough" if used_walkthrough else "walkthrough_fallback"
                 walkthrough_policy_steps += 1
                 walkthrough_policy_misses += 0 if used_walkthrough else 1
             elif label_source == ALFWORLD_DENSE_LABEL_PLANNER:
                 if label_env is None:
                     raise RuntimeError("planner ALFWorld rollout requires a PDDL planner environment")
+                planner_policy_steps += 1
                 if step < warmup_random_steps or rng.random() < perturbation_prob:
                     command = rng.choice(list(admissible))
+                    rollout_source = "random"
+                    planner_policy_misses += 1
                 else:
                     command = _best_reachable_label_command(row_labels, admissible=admissible)
                     if command is None:
-                        command = str(expert) if expert in admissible else rng.choice(list(admissible))
+                        if expert in admissible:
+                            command = str(expert)
+                            rollout_source = "expert_fallback"
+                            planner_policy_misses += 1
+                        else:
+                            command = rng.choice(list(admissible))
+                            rollout_source = "random_fallback"
+                            planner_policy_misses += 1
+                    else:
+                        rollout_source = "best_reachable_label"
             else:
                 command = _training_rollout_command(
                     expert=expert,
@@ -973,9 +997,53 @@ def train_alfworld_dense_ranker(
                     perturbation_prob=perturbation_prob,
                     warmup_random_steps=warmup_random_steps,
                 )
+                rollout_source = "expert_or_random"
+            episode_state_label_rows.append(
+                _alfworld_dense_state_label_cache_row(
+                    episode=episode,
+                    step=step,
+                    observation=observation,
+                    objective=objective,
+                    history=history,
+                    admissible_commands=admissible,
+                    max_steps=max_steps,
+                    labels=row_labels,
+                    label_source=label_source,
+                    selected_rollout_command=command,
+                    selected_rollout_source=rollout_source,
+                )
+            )
             next_obs, scores, dones, info = train_env.step([command])
             prefix.append(command)
             final_score = float(_first(scores, 0.0))
+            selected_label = labels_by_command.get(command)
+            if label_source == ALFWORLD_DENSE_LABEL_PLANNER and selected_label is not None and selected_label.reachable:
+                if bool(_first(dones, False)) and final_score > 0:
+                    planner_path_cost_monotone_checks += 1
+                    if int(selected_label.cost_to_success) != 1:
+                        planner_path_cost_monotone_failures += 1
+                        if len(planner_path_cost_monotone_failure_examples) < 20:
+                            planner_path_cost_monotone_failure_examples.append(
+                                {
+                                    "episode": episode,
+                                    "step": step,
+                                    "command": command,
+                                    "selected_cost_to_success": int(selected_label.cost_to_success),
+                                    "next_state_best_action_cost": 0,
+                                    "expected_selected_cost": 1,
+                                }
+                            )
+                    pending_planner_monotone = None
+                else:
+                    pending_planner_monotone = {
+                        "episode": episode,
+                        "step": step,
+                        "command": command,
+                        "cost_to_success": int(selected_label.cost_to_success),
+                        "reachable": int(selected_label.reachable),
+                    }
+            else:
+                pending_planner_monotone = None
             observation = str(_first(next_obs, ""))
             history.extend([f"act:{command}", f"obs:{observation}"])
             if bool(_first(dones, False)):
@@ -990,6 +1058,8 @@ def train_alfworld_dense_ranker(
                 "final_score": final_score,
                 "label_seconds": label_seconds,
                 "skip_reason": skip_reason,
+                "planner_path_cost_monotone_checks": planner_path_cost_monotone_checks,
+                "planner_path_cost_monotone_failures": planner_path_cost_monotone_failures,
             }
         )
         if cache_dir is not None:
@@ -1071,6 +1141,12 @@ def train_alfworld_dense_ranker(
         "planner_policy_steps": planner_policy_steps,
         "planner_policy_misses": planner_policy_misses,
         "planner_policy_miss_rate": 0.0 if planner_policy_steps == 0 else planner_policy_misses / planner_policy_steps,
+        "planner_path_cost_monotone_checks": planner_path_cost_monotone_checks,
+        "planner_path_cost_monotone_failures": planner_path_cost_monotone_failures,
+        "planner_path_cost_monotone_failure_rate": 0.0
+        if planner_path_cost_monotone_checks == 0
+        else planner_path_cost_monotone_failures / planner_path_cost_monotone_checks,
+        "planner_path_cost_monotone_failure_examples": planner_path_cost_monotone_failure_examples,
         "episode_label_timeouts": episode_label_timeouts,
         "new_label_status_counts": dict(sorted(label_status_counts.items())),
         "label_status_counts": dict(sorted(total_label_status_counts.items())),
@@ -1898,6 +1974,10 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
         "expert_monotone_checks": int(train_manifest.get("expert_monotone_checks", 0)),
         "expert_monotone_failures": int(train_manifest.get("expert_monotone_failures", 0)),
         "expert_monotone_failure_rate": float(train_manifest.get("expert_monotone_failure_rate", 0.0)),
+        "planner_path_cost_monotone_checks": int(train_manifest.get("planner_path_cost_monotone_checks", 0)),
+        "planner_path_cost_monotone_failures": int(train_manifest.get("planner_path_cost_monotone_failures", 0)),
+        "planner_path_cost_monotone_failure_rate": float(train_manifest.get("planner_path_cost_monotone_failure_rate", 0.0)),
+        "planner_path_cost_monotone_failure_example_count": len(train_manifest.get("planner_path_cost_monotone_failure_examples", [])),
         "label_source": str(train_manifest.get("label_source", "")),
         "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
         "planner_label_cache_loaded_entries": int(train_manifest.get("planner_label_cache_loaded_entries", 0)),
@@ -3313,6 +3393,8 @@ def _alfworld_dense_state_label_cache_row(
     max_steps: int,
     labels: Sequence[AlfworldDenseActionLabel],
     label_source: str,
+    selected_rollout_command: str = "",
+    selected_rollout_source: str = "",
 ) -> dict[str, object]:
     return {
         "state_label_cache_version": 1,
@@ -3324,7 +3406,16 @@ def _alfworld_dense_state_label_cache_row(
         "admissible_commands": list(admissible_commands),
         "max_steps": max_steps,
         "label_source": _alfworld_dense_label_source_name(label_source),
-        "labels": [label.__dict__ for label in labels],
+        "selected_rollout_command": selected_rollout_command,
+        "selected_rollout_source": selected_rollout_source,
+        "labels": [
+            {
+                **label.__dict__,
+                "episode": episode,
+                "step": step,
+            }
+            for label in labels
+        ],
     }
 
 
@@ -3356,8 +3447,8 @@ def _state_cache_row_to_labels(row: Mapping[str, object]) -> list[AlfworldDenseA
             continue
         labels.append(
             AlfworldDenseActionLabel(
-                episode=int(raw.get("episode", episode)),
-                step=int(raw.get("step", step)),
+                episode=episode,
+                step=step,
                 command=str(raw.get("command", "")),
                 cost_to_success=int(raw.get("cost_to_success", 0)),
                 reachable=int(raw.get("reachable", 0)),

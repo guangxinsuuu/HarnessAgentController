@@ -14,3 +14,4 @@ runs/*
 !runs/game24_final_archive.md
 docs/command_manifest.json
 docs/current_experiment_status.json
+data/

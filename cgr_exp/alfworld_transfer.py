@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import csv
 import importlib.util
 import json
+import os
 import random
 import time
 from pathlib import Path
@@ -236,21 +237,55 @@ def _make_alfworld_env(*, split: str, config_path: Path | None, env_factory: Cal
         return env_factory(split=split, config_path=config_path)
     try:
         import alfworld.agents.environment as environment
-        import alfworld.agents.modules.generic as generic
     except ModuleNotFoundError as exc:
         raise RuntimeError(
             "ALFWorld is not installed. Install alfworld/textworld and run ALFWorld setup before using run-alfworld-transfer."
         ) from exc
     if config_path is not None:
         try:
-            config = generic.load_config(str(config_path))
-        except TypeError:
-            config = generic.load_config()
+            import yaml
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("ALFWorld config loading requires PyYAML.") from exc
+        with config_path.open(encoding="utf-8") as reader:
+            config = yaml.safe_load(reader)
     else:
-        config = generic.load_config()
+        config = _default_alfworld_textworld_config()
     env_type = config.get("env", {}).get("type", "AlfredTWEnv")
-    env_cls = getattr(environment, env_type)
+    try:
+        env_cls = environment.get_environment(env_type)
+    except AttributeError:
+        env_cls = getattr(environment, env_type)
     return env_cls(config, train_eval=split).init_env(batch_size=1)
+
+
+def _default_alfworld_textworld_config() -> dict[str, Any]:
+    data_root = os.environ.get("ALFWORLD_DATA")
+    if not data_root:
+        data_root = str(Path("data/alfworld").resolve())
+    root = Path(data_root)
+    return {
+        "general": {"training_method": "dqn"},
+        "env": {
+            "type": "AlfredTWEnv",
+            "goal_desc_human_anns_prob": 0.0,
+            "task_types": [1, 2, 3, 4, 5, 6],
+            "domain_randomization": False,
+            "expert_type": "handcoded",
+        },
+        "dataset": {
+            "data_path": str(root / "json_2.1.1" / "train"),
+            "eval_id_data_path": str(root / "json_2.1.1" / "valid_seen"),
+            "eval_ood_data_path": str(root / "json_2.1.1" / "valid_unseen"),
+            "num_train_games": 0,
+            "num_eval_games": 0,
+        },
+        "logic": {
+            "domain": str(root / "logic" / "alfred.pddl"),
+            "grammar": str(root / "logic" / "alfred.twl2"),
+        },
+        "rl": {"training": {"max_nb_steps_per_episode": 100}},
+        "dagger": {"training": {"max_nb_steps_per_episode": 100}},
+    }
 
 
 def _assert_alfworld_available() -> None:

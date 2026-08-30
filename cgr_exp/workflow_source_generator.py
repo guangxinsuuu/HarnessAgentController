@@ -192,6 +192,29 @@ def workflow_action_features(task: WorkflowTask, state: WorkflowState, action: W
     )
 
 
+def workflow_action_intent_features(task: WorkflowTask, state: WorkflowState, action: WorkflowAction) -> ActionFeatures:
+    tool = task.tools[action.tool_index]
+    precondition_ok = tool.precondition_fact is None or state.observed_facts[tool.precondition_fact]
+    duplicates = action.tool_index in state.used_actions
+    references_observed = tool.precondition_fact is not None and state.observed_facts[tool.precondition_fact]
+    references_unverified = tool.precondition_fact is not None and not state.observed_facts[tool.precondition_fact]
+    return ActionFeatures(
+        action_is_read=1.0 if tool.action_type == "read" else 0.0,
+        action_is_write=1.0 if tool.action_type == "write" else 0.0,
+        action_is_respond=1.0 if tool.action_type == "respond" else 0.0,
+        action_is_ask=1.0 if tool.action_type == "ask" else 0.0,
+        action_is_terminate=1.0 if tool.action_type == "terminate" else 0.0,
+        argument_completeness=0.0,
+        references_observed_entity=1.0 if references_observed else 0.0,
+        references_unverified_entity=1.0 if references_unverified else 0.0,
+        expected_tool_cost_frac=tool.cost / max(1, task.tool_budget),
+        action_irreversible=1.0 if tool.irreversible else 0.0,
+        precondition_satisfied=1.0 if precondition_ok else 0.0,
+        policy_risk=tool.policy_risk + (0.5 if tool.action_type == "write" and not precondition_ok else 0.0),
+        duplicates_previous_action=1.0 if duplicates else 0.0,
+    )
+
+
 def source_generator_manifest(seed: int, count: int, anonymize_tools: bool = True) -> Dict[str, object]:
     distribution = _source_generator_distribution(anonymize_tools)
     return {

@@ -380,7 +380,7 @@ class Tau3SolverAgentTest(unittest.TestCase):
             trace_row = json.loads(trace.read_text(encoding="utf-8"))
         self.assertEqual(selected.tool_calls[0].name, "get_order")
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0]["tool_choice"]["function"]["name"], "_get_order")
+        self.assertEqual(calls[0]["tool_choice"], "auto")
         self.assertEqual([tool.name for tool in calls[0]["tools"]], ["_get_order"])
         self.assertEqual(trace_row["scoring_mode"], "action_space_canonical_ranker")
         self.assertTrue(trace_row["action_space_controller_enabled"])

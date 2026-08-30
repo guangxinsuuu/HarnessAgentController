@@ -156,25 +156,30 @@ def tau3_action_features(*, candidate: object, message_history: Sequence[object]
         call = tool_calls[0]
         name = _call_name(call)
         args = _call_args(call)
-        action_type = _classify_tool_name(name)
+        action_type = str(raw_data.get("cgr_action_type", "")).lower() if isinstance(raw_data, Mapping) and raw_data.get("cgr_action_type") else _classify_tool_name(name)
     observed_entities = _observed_entity_tokens(message_history)
     arg_values = [str(value).lower() for value in args.values()]
     references_observed = bool(arg_values) and any(any(token and token in value for token in observed_entities) for value in arg_values)
     references_unverified = bool(arg_values) and not references_observed and action_type == "write"
     duplicates = any(_call_name(call) == name and _call_args(call) == args for call in _assistant_tool_calls(message_history))
+    raw_argument_completeness = _raw_float(raw_data, "cgr_argument_completeness")
+    raw_references_observed = _raw_float(raw_data, "cgr_references_observed_entity")
+    raw_references_unverified = _raw_float(raw_data, "cgr_references_unverified_entity")
+    raw_precondition = _raw_float(raw_data, "cgr_precondition_satisfied")
+    raw_policy_risk = _raw_float(raw_data, "cgr_policy_risk")
     return ActionFeatures(
         action_is_read=1.0 if action_type == "read" else 0.0,
         action_is_write=1.0 if action_type == "write" else 0.0,
         action_is_respond=1.0 if action_type == "respond" else 0.0,
         action_is_ask=1.0 if action_type == "ask" else 0.0,
         action_is_terminate=1.0 if action_type == "terminate" else 0.0,
-        argument_completeness=_argument_completeness(args),
-        references_observed_entity=1.0 if references_observed else 0.0,
-        references_unverified_entity=1.0 if references_unverified else 0.0,
+        argument_completeness=raw_argument_completeness if raw_argument_completeness is not None else _argument_completeness(args),
+        references_observed_entity=raw_references_observed if raw_references_observed is not None else (1.0 if references_observed else 0.0),
+        references_unverified_entity=raw_references_unverified if raw_references_unverified is not None else (1.0 if references_unverified else 0.0),
         expected_tool_cost_frac=1.0 / max(1, max_tool_budget) if tool_calls else 0.0,
         action_irreversible=1.0 if action_type == "write" else 0.0,
-        precondition_satisfied=0.0 if references_unverified else 1.0,
-        policy_risk=0.25 if action_type == "write" else 0.0,
+        precondition_satisfied=raw_precondition if raw_precondition is not None else (0.0 if references_unverified else 1.0),
+        policy_risk=raw_policy_risk if raw_policy_risk is not None else (0.25 if action_type == "write" else 0.0),
         duplicates_previous_action=1.0 if duplicates else 0.0,
     )
 
@@ -245,6 +250,15 @@ def _argument_completeness(args: Mapping[str, object]) -> float:
         return 0.0
     filled = sum(1 for value in args.values() if value not in (None, ""))
     return filled / len(args)
+
+
+def _raw_float(raw_data: object, key: str) -> float | None:
+    if not isinstance(raw_data, Mapping) or key not in raw_data:
+        return None
+    try:
+        return float(raw_data[key])
+    except (TypeError, ValueError):
+        return None
 
 
 def _observed_entity_tokens(messages: Sequence[object]) -> set[str]:

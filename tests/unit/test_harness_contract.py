@@ -74,6 +74,24 @@ class HarnessContractTest(unittest.TestCase):
             self.assertIn("verified_progress_known_mask", saved["canonical_feature_coverage"]["train"]["per_feature_availability"])
             self.assertGreater(saved["train_pair_count"], 0)
 
+    def test_workflow_source_validation_can_train_action_intent_controller(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            manifest = run_workflow_source_validation(
+                out,
+                train_count=8,
+                validation_count=4,
+                seed=6,
+                epochs=2,
+                max_states_per_task=60,
+                action_intent_training=True,
+            )
+            saved = json.loads((out / "canonical_harness_source_validation.json").read_text(encoding="utf-8"))
+            self.assertTrue(manifest["action_intent_training"])
+            self.assertEqual(saved["source_action_abstraction"], "available_action_intent")
+            self.assertGreater(saved["train_pair_count"], 0)
+            self.assertTrue((out / "generic_harness_ranker.json").exists())
+
     def test_generic_harness_ranker_rejects_bad_checkpoint_dimension(self) -> None:
         with self.assertRaisesRegex(ValueError, "weight dimension mismatch"):
             GenericHarnessRanker.from_json(json.dumps({"weights": [0.0], "bias": 0.0, "feature_names": canonical_feature_names()}))

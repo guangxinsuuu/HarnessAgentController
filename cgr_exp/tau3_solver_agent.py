@@ -131,16 +131,34 @@ class Tau3SolverControllerAgent(LLMAgent):
 
     def _available_action_space_candidates(self, history: List[APICompatibleMessage]) -> List[_ActionSpaceCandidate]:
         candidates: list[_ActionSpaceCandidate] = []
+        progress = tau3_progress_predicates(message_history=history)
         for tool in self.tools:
             name = str(getattr(tool, "name", ""))
             if not name:
                 continue
             action_type = self._classify_tool_name(name)
+            precondition_satisfied = 1.0
+            references_observed = 0.0
+            references_unverified = 0.0
+            policy_risk = 0.0
+            if action_type == "write":
+                precondition_satisfied = 1.0 if progress.target_entity_resolved and progress.required_read_completed else 0.0
+                references_observed = 1.0 if precondition_satisfied else 0.0
+                references_unverified = 0.0 if precondition_satisfied else 1.0
+                policy_risk = 0.25 if precondition_satisfied else 0.75
             synthetic = AssistantMessage(
                 role="assistant",
                 content=None,
                 tool_calls=[ToolCall(name=name, arguments={})],
-                raw_data={"cgr_action_intent": "tool", "cgr_action_type": action_type},
+                raw_data={
+                    "cgr_action_intent": "tool",
+                    "cgr_action_type": action_type,
+                    "cgr_argument_completeness": 0.0,
+                    "cgr_references_observed_entity": references_observed,
+                    "cgr_references_unverified_entity": references_unverified,
+                    "cgr_precondition_satisfied": precondition_satisfied,
+                    "cgr_policy_risk": policy_risk,
+                },
             )
             candidates.append(
                 _ActionSpaceCandidate(
@@ -179,7 +197,7 @@ class Tau3SolverControllerAgent(LLMAgent):
             return generate(
                 model=self.llm,
                 tools=[candidate.tool],
-                tool_choice={"type": "function", "function": {"name": candidate.tool.name}},
+                tool_choice="auto",
                 messages=self._messages_with_extra_system_hint(messages, hint),
                 call_name="cgr_action_space_tool_instantiation",
                 **llm_args,

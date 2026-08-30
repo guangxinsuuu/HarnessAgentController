@@ -33,6 +33,7 @@ SOURCE_TRAIN_COUNT="${SOURCE_TRAIN_COUNT:-80}"
 SOURCE_VALIDATION_COUNT="${SOURCE_VALIDATION_COUNT:-30}"
 SOURCE_EPOCHS="${SOURCE_EPOCHS:-20}"
 SOURCE_MAX_STATES="${SOURCE_MAX_STATES:-200}"
+SOURCE_ACTION_INTENT_TRAINING="${SOURCE_ACTION_INTENT_TRAINING:-0}"
 FORCE_SOURCE_CONTROLLER="${FORCE_SOURCE_CONTROLLER:-0}"
 BEST_OF_N="${BEST_OF_N:-4}"
 
@@ -66,6 +67,7 @@ Environment overrides:
   SOURCE_VALIDATION_COUNT=30
   SOURCE_EPOCHS=20
   SOURCE_MAX_STATES=200
+  SOURCE_ACTION_INTENT_TRAINING=0
   FORCE_SOURCE_CONTROLLER=0
   BEST_OF_N=4
 
@@ -184,6 +186,10 @@ run_native_domain() {
 }
 
 run_source_controller() {
+  local extra_args=()
+  if [[ "${SOURCE_ACTION_INTENT_TRAINING}" == "1" ]]; then
+    extra_args+=(--action-intent-training)
+  fi
   "${PYTHON_BIN}" -m cgr_exp.cli run-workflow-source-validation \
     --output-dir "${SOURCE_CONTROLLER_DIR}" \
     --seed "${SEED}" \
@@ -191,7 +197,8 @@ run_source_controller() {
     --validation-count "${SOURCE_VALIDATION_COUNT}" \
     --epochs "${SOURCE_EPOCHS}" \
     --max-states-per-task "${SOURCE_MAX_STATES}" \
-    --overwrite
+    --overwrite \
+    "${extra_args[@]}"
   refresh_status
 }
 

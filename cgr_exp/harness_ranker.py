@@ -13,6 +13,7 @@ from cgr_exp.workflow_source_generator import (
     WorkflowTask,
     generate_workflow_source_tasks,
     source_generator_manifest,
+    workflow_action_intent_features,
     workflow_action_features,
     workflow_runtime_features,
 )
@@ -68,10 +69,10 @@ class GenericHarnessRanker:
         return cls(weights, float(data.get("bias", 0.0)))
 
 
-def train_generic_harness_ranker(tasks: Sequence[WorkflowTask], epochs: int = 20, seed: int = 0) -> tuple[GenericHarnessRanker, List[Pair]]:
+def train_generic_harness_ranker(tasks: Sequence[WorkflowTask], epochs: int = 20, seed: int = 0, action_intent_training: bool = False) -> tuple[GenericHarnessRanker, List[Pair]]:
     records = []
     for task in tasks:
-        records.extend(collect_workflow_oracle_records(task))
+        records.extend(collect_workflow_oracle_records(task, action_intent_features=action_intent_training))
     pairs = make_workflow_ranking_pairs(records)
     ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
     ranker.train(pairs, epochs=epochs, lr=0.03, seed=seed)
@@ -83,6 +84,7 @@ def evaluate_workflow_ranker(
     ranker: GenericHarnessRanker,
     max_states_per_task: int = 200,
     contract_coverage: str = "full",
+    action_intent_training: bool = False,
 ) -> Dict[str, object]:
     total = 0
     top1 = 0
@@ -103,7 +105,7 @@ def evaluate_workflow_ranker(
             state_features = _apply_contract_coverage(workflow_runtime_features(task, state), contract_coverage)
             scored = []
             for action in actions:
-                action_features = workflow_action_features(task, state, action)
+                action_features = workflow_action_intent_features(task, state, action) if action_intent_training else workflow_action_features(task, state, action)
                 vec = [*state_features.vector(), *action_features.vector(), *(s * a for s in state_features.vector() for a in action_features.vector())]
                 scored.append((ranker.score(vec), action))
                 child = task.apply(state, action)
@@ -209,31 +211,34 @@ def run_workflow_source_validation(
     seed: int = 0,
     epochs: int = 20,
     max_states_per_task: int = 200,
+    action_intent_training: bool = False,
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     train_tasks = generate_workflow_source_tasks(train_count, seed=seed, anonymize_tools=True)
     validation_tasks = generate_workflow_source_tasks(validation_count, seed=seed + 10000, anonymize_tools=True)
     named_tool_validation_tasks = generate_workflow_source_tasks(validation_count, seed=seed + 10000, anonymize_tools=False)
-    ranker, train_pairs = train_generic_harness_ranker(train_tasks, epochs=epochs, seed=seed)
+    ranker, train_pairs = train_generic_harness_ranker(train_tasks, epochs=epochs, seed=seed, action_intent_training=action_intent_training)
     validation_records = []
     for task in validation_tasks:
-        validation_records.extend(collect_workflow_oracle_records(task, max_states=max_states_per_task))
+        validation_records.extend(collect_workflow_oracle_records(task, max_states=max_states_per_task, action_intent_features=action_intent_training))
     validation_pairs = make_workflow_ranking_pairs(validation_records)
-    eval_metrics = evaluate_workflow_ranker(validation_tasks, ranker, max_states_per_task=max_states_per_task)
+    eval_metrics = evaluate_workflow_ranker(validation_tasks, ranker, max_states_per_task=max_states_per_task, action_intent_training=action_intent_training)
     train_mask_coverage = workflow_known_mask_coverage(train_tasks, max_states_per_task=max_states_per_task)
     validation_mask_coverage = workflow_known_mask_coverage(validation_tasks, max_states_per_task=max_states_per_task)
-    named_tool_eval_metrics = evaluate_workflow_ranker(named_tool_validation_tasks, ranker, max_states_per_task=max_states_per_task)
+    named_tool_eval_metrics = evaluate_workflow_ranker(named_tool_validation_tasks, ranker, max_states_per_task=max_states_per_task, action_intent_training=action_intent_training)
     partial_contract_eval_metrics = evaluate_workflow_ranker(
         validation_tasks,
         ranker,
         max_states_per_task=max_states_per_task,
         contract_coverage="partial",
+        action_intent_training=action_intent_training,
     )
     black_box_contract_eval_metrics = evaluate_workflow_ranker(
         validation_tasks,
         ranker,
         max_states_per_task=max_states_per_task,
         contract_coverage="black_box",
+        action_intent_training=action_intent_training,
     )
     tool_identity_top1_delta = abs(float(eval_metrics["top1_accuracy"]) - float(named_tool_eval_metrics["top1_accuracy"]))
     contract_coverage_rows = [
@@ -264,6 +269,8 @@ def run_workflow_source_validation(
         "validation_count": validation_count,
         "epochs": epochs,
         "max_states_per_task": max_states_per_task,
+        "source_action_abstraction": "available_action_intent" if action_intent_training else "instantiated_action",
+        "action_intent_training": action_intent_training,
         "train_pair_count": len(train_pairs),
         "validation_pair_count": len(validation_pairs),
         "validation_ranking_error": ranker.ranking_error(validation_pairs),

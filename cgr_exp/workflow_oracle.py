@@ -9,6 +9,7 @@ from cgr_exp.workflow_source_generator import (
     WorkflowAction,
     WorkflowState,
     WorkflowTask,
+    workflow_action_intent_features,
     workflow_action_features,
     workflow_runtime_features,
 )
@@ -27,7 +28,7 @@ class WorkflowTraceRecord:
 Pair = Tuple[Tuple[float, ...], Tuple[float, ...]]
 
 
-def collect_workflow_oracle_records(task: WorkflowTask, max_states: int = 200) -> List[WorkflowTraceRecord]:
+def collect_workflow_oracle_records(task: WorkflowTask, max_states: int = 200, action_intent_features: bool = False) -> List[WorkflowTraceRecord]:
     root = task.root_state()
     frontier = [root]
     seen = set()
@@ -49,7 +50,7 @@ def collect_workflow_oracle_records(task: WorkflowTask, max_states: int = 200) -
             candidate = CanonicalCandidate(
                 candidate_id=f"{task.task_id}:{len(records)}",
                 state=state_features,
-                action=workflow_action_features(task, state, action),
+                action=workflow_action_intent_features(task, state, action) if action_intent_features else workflow_action_features(task, state, action),
             )
             records.append(
                 WorkflowTraceRecord(

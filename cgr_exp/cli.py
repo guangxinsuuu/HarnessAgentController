@@ -256,6 +256,7 @@ def main() -> None:
             p.add_argument("--validation-count", type=int, default=30)
             p.add_argument("--epochs", type=int, default=20)
             p.add_argument("--max-states-per-task", type=int, default=200)
+            p.add_argument("--action-intent-training", action="store_true", default=False)
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -1663,6 +1664,7 @@ def main() -> None:
                 seed=args.seed,
                 epochs=args.epochs,
                 max_states_per_task=args.max_states_per_task,
+                action_intent_training=args.action_intent_training,
             )
             command_manifest = {
                 "command": args.command,
@@ -1672,6 +1674,7 @@ def main() -> None:
                 "status": "complete",
                 "benchmark": manifest["benchmark"],
                 "max_states_per_task": args.max_states_per_task,
+                "action_intent_training": args.action_intent_training,
                 "train_pair_count": manifest["train_pair_count"],
                 "validation_pair_count": manifest["validation_pair_count"],
                 "tau3_train_trajectories_used": manifest["tau3_train_trajectories_used"],

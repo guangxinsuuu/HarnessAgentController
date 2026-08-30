@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 import csv
 import importlib.util
@@ -1022,6 +1023,7 @@ def train_alfworld_dense_ranker(
         "ranker_direct_feature_weights": ranker_diagnostics["direct_feature_weights"],
         "ranker_contract_sign_violations": ranker_diagnostics["contract_sign_violations"],
         "ranker_contract_sign_violation_count": ranker_diagnostics["contract_sign_violation_count"],
+        "ranker_contract_sign_tolerance": ranker_diagnostics["contract_sign_tolerance"],
     }
     return ranker, manifest, trace_rows, action_label_rows
 
@@ -1331,18 +1333,40 @@ def _label_frontier_by_planner_cost(
 ) -> list[AlfworldDenseActionLabel]:
     labels = []
     unreachable_cost = max_rollout_steps + len(prefix) + len(commands) + 2
+    replayed_state: Any | None = None
+    replayed_admissible: list[str] | None = None
+    replayed_done = False
+    try:
+        replayed_state, _observation, info, _score, replayed_done = _replay_prefix(env, gamefile=gamefile, prefix=prefix)
+        replayed_admissible = _filtered_admissible_commands(_admissible_from_info(info))
+    except Exception:
+        replayed_state = None
+        replayed_admissible = None
     for command in commands:
         try:
-            cost, reachable, score, next_done, rollout_steps, label_status = _run_with_timeout(
-                timeout_seconds,
-                lambda: _planner_cost_for_candidate(
-                    env,
-                    gamefile=gamefile,
-                    prefix=prefix,
-                    command=command,
-                    unreachable_cost=unreachable_cost,
-                ),
-            )
+            state_copy = _copy_env_state(replayed_state)
+            if state_copy is not None and replayed_admissible is not None:
+                cost, reachable, score, next_done, rollout_steps, label_status = _run_with_timeout(
+                    timeout_seconds,
+                    lambda: _planner_cost_for_candidate_from_state(
+                        state_copy,
+                        command=command,
+                        current_admissible=replayed_admissible,
+                        done=replayed_done,
+                        unreachable_cost=unreachable_cost,
+                    ),
+                )
+            else:
+                cost, reachable, score, next_done, rollout_steps, label_status = _run_with_timeout(
+                    timeout_seconds,
+                    lambda: _planner_cost_for_candidate(
+                        env,
+                        gamefile=gamefile,
+                        prefix=prefix,
+                        command=command,
+                        unreachable_cost=unreachable_cost,
+                    ),
+                )
             labels.append(
                 AlfworldDenseActionLabel(
                     episode=-1,
@@ -1399,6 +1423,27 @@ def _label_frontier_by_planner_cost(
                 )
             )
     return labels
+
+
+def _planner_cost_for_candidate_from_state(
+    env: Any,
+    *,
+    command: str,
+    current_admissible: Sequence[str],
+    done: bool,
+    unreachable_cost: int,
+) -> tuple[int, bool, float, bool, int, str]:
+    if done:
+        return 1, True, 1.0, True, 0, "already_done_snapshot"
+    if command not in current_admissible:
+        raise ValueError("candidate is not admissible in copied planner state")
+    _next_observation, score, next_done, next_info = _step_any(env, command)
+    if next_done and score > 0:
+        return 1, True, score, True, 1, "candidate_solves_snapshot"
+    remaining_plan = _planner_policy_commands_from_info(next_info)
+    reachable = bool(remaining_plan)
+    cost = 1 + len(remaining_plan) if reachable else unreachable_cost
+    return cost, reachable, score, next_done, cost if reachable else 0, "planner_replanned_snapshot" if reachable else "planner_no_plan_snapshot"
 
 
 def _planner_cost_for_candidate(
@@ -1518,12 +1563,20 @@ def _alfworld_dense_training_source(label_source: str) -> str:
 
 
 def _copy_env_state(env: Any | None) -> Any | None:
-    if env is None or not hasattr(env, "copy"):
+    if env is None:
         return None
+    if not hasattr(env, "copy"):
+        try:
+            return copy.deepcopy(env)
+        except Exception:
+            return None
     try:
         return env.copy()
     except Exception:
-        return None
+        try:
+            return copy.deepcopy(env)
+        except Exception:
+            return None
 
 
 def _run_with_timeout(timeout_seconds: float, fn: Callable[[], Any]) -> Any:
@@ -1622,7 +1675,7 @@ def _dense_labels_to_pairs(
     return raw_pairs
 
 
-def _alfworld_ranker_weight_diagnostics(ranker: GenericHarnessRanker) -> dict[str, object]:
+def _alfworld_ranker_weight_diagnostics(ranker: GenericHarnessRanker, *, tolerance: float = 0.02) -> dict[str, object]:
     names = canonical_feature_names()
     direct_feature_names = [
         "declared_requirement_gain",
@@ -1650,14 +1703,15 @@ def _alfworld_ranker_weight_diagnostics(ranker: GenericHarnessRanker) -> dict[st
         value = weights.get(name)
         if value is None:
             continue
-        if expected == "positive" and value < 0.0:
+        if expected == "positive" and value < -tolerance:
             violations.append(f"{name}<0")
-        if expected == "negative" and value > 0.0:
+        if expected == "negative" and value > tolerance:
             violations.append(f"{name}>0")
     return {
         "direct_feature_weights": weights,
         "contract_sign_violations": violations,
         "contract_sign_violation_count": len(violations),
+        "contract_sign_tolerance": tolerance,
     }
 
 
@@ -1700,6 +1754,7 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
         "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
         "ranker_contract_sign_violation_count": int(train_manifest.get("ranker_contract_sign_violation_count", 0)),
         "ranker_contract_sign_violations": "|".join(str(item) for item in train_manifest.get("ranker_contract_sign_violations", [])),
+        "ranker_contract_sign_tolerance": float(train_manifest.get("ranker_contract_sign_tolerance", 0.0)),
     }
     for status, count in sorted(status_counts.items()):
         safe_status = re.sub(r"[^a-zA-Z0-9_]+", "_", status).strip("_") or "unknown"

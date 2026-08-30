@@ -179,11 +179,16 @@ class FakeDenseAlfworldEnv:
 class FakePlannerAlfworldEnv:
     def __init__(self):
         self.state = "root"
+        self.reset_count = 0
 
     def load(self, _gamefile):
         self.state = "root"
 
+    def __deepcopy__(self, _memo):
+        raise TypeError("fake planner env intentionally disables deepcopy")
+
     def reset(self):
+        self.reset_count += 1
         self.state = "root"
         return {
             "feedback": "You are in a hallway. Your task is to put apple on table.",
@@ -233,6 +238,14 @@ class FakePlannerAlfworldEnv:
             "policy_commands": [],
             "won": False,
         }, 0.0, False
+
+
+class FakeCopyablePlannerAlfworldEnv(FakePlannerAlfworldEnv):
+    def copy(self):
+        copied = FakeCopyablePlannerAlfworldEnv()
+        copied.state = self.state
+        copied.reset_count = self.reset_count
+        return copied
 
 
 class FakePlannerBatchAlfworldEnv:
@@ -309,6 +322,23 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(by_command["go to kitchen"].label_source, "textworld_pddl_replan_cost_to_go")
         self.assertEqual(by_command["go to kitchen"].label_status, "planner_replanned")
         self.assertEqual(by_command["open cabinet"].label_status, "planner_no_plan")
+
+    def test_planner_labels_use_snapshot_fast_path_when_available(self) -> None:
+        env = FakeCopyablePlannerAlfworldEnv()
+        labels = _label_frontier_by_planner_cost(
+            env,
+            gamefile="fake-game",
+            prefix=[],
+            commands=["go to kitchen", "open cabinet"],
+            max_rollout_steps=5,
+        )
+        by_command = {label.command: label for label in labels}
+        self.assertEqual(env.reset_count, 1)
+        self.assertEqual(by_command["go to kitchen"].reachable, 1)
+        self.assertEqual(by_command["go to kitchen"].cost_to_success, 3)
+        self.assertEqual(by_command["open cabinet"].reachable, 0)
+        self.assertEqual(by_command["go to kitchen"].label_status, "planner_replanned_snapshot")
+        self.assertEqual(by_command["open cabinet"].label_status, "planner_no_plan_snapshot")
 
     def test_planner_training_rollout_prefers_planner_next_command(self) -> None:
         command = _planner_training_rollout_command(
@@ -965,6 +995,7 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertLess(manifest["train"]["walkthrough_policy_miss_rate"], 1.0)
         self.assertIn("ranker_contract_sign_violation_count", manifest["train"])
         self.assertIn("ranker_direct_feature_weights", manifest["train"])
+        self.assertIn("ranker_contract_sign_tolerance", manifest["train"])
 
     def test_run_alfworld_dense_train_can_use_planner_label_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -988,7 +1019,8 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertTrue(manifest["counterfactual_planner_cost_to_go"])
         self.assertEqual(manifest["train"]["planner_policy_miss_rate"], 0.0)
         self.assertIn("label_status_counts", manifest["train"])
-        self.assertGreater(manifest["train"]["label_status_counts"].get("planner_replanned", 0), 0)
+        replan_count = manifest["train"]["label_status_counts"].get("planner_replanned", 0) + manifest["train"]["label_status_counts"].get("planner_replanned_snapshot", 0)
+        self.assertGreater(replan_count, 0)
 
     def test_run_alfworld_dense_train_can_resume_pair_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1096,6 +1128,7 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(manifest["label_summary"]["train_pair_count"], 1)
             self.assertEqual(manifest["label_summary"]["cost_variation_rate"], 1.0)
             self.assertIn("ranker_contract_sign_violation_count", manifest["label_summary"])
+            self.assertIn("ranker_contract_sign_tolerance", manifest["label_summary"])
 
     def test_run_alfworld_dense_transfer_can_load_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

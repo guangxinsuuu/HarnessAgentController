@@ -9,7 +9,7 @@ from cgr_exp.harness_contract import audit_canonical_contract_manifest, canonica
 from cgr_exp.harness_ranker import run_workflow_source_validation
 from cgr_exp.tau3_contract_adapter import tau3_adapter_manifest, tau3_candidate_to_canonical
 from cgr_exp.workflow_oracle import collect_workflow_oracle_records, make_workflow_ranking_pairs
-from cgr_exp.workflow_source_generator import generate_workflow_source_tasks
+from cgr_exp.workflow_source_generator import generate_workflow_source_tasks, source_generator_manifest
 
 
 class HarnessContractTest(unittest.TestCase):
@@ -27,6 +27,12 @@ class HarnessContractTest(unittest.TestCase):
         tasks = generate_workflow_source_tasks(6, seed=3, anonymize_tools=True)
         self.assertGreaterEqual(len({task.family for task in tasks}), 5)
         self.assertTrue(all(tool.name.startswith("source_tool_") for task in tasks for tool in task.tools))
+        anonymous_manifest = source_generator_manifest(seed=3, count=6, anonymize_tools=True)
+        named_manifest = source_generator_manifest(seed=3, count=6, anonymize_tools=False)
+        self.assertTrue(anonymous_manifest["anonymized_tool_names"])
+        self.assertFalse(named_manifest["anonymized_tool_names"])
+        self.assertIn("anonymous", anonymous_manifest["parameter_distribution"]["tool_names"])
+        self.assertIn("family_action", named_manifest["parameter_distribution"]["tool_names"])
         records = []
         for task in tasks:
             records.extend(collect_workflow_oracle_records(task, max_states=50))

@@ -755,6 +755,7 @@ def train_alfworld_dense_ranker(
     planner_label_cache_hits = 0
     planner_label_cache_misses = 0
     dense_feature_cache_manifest_compatible = True
+    resume_feature_cache_manifest_compatible = True
     skipped_incompatible_dense_pairs = 0
     rebuilt_dense_pairs_from_state_cache = 0
     if cache_dir is not None and resume:
@@ -769,6 +770,7 @@ def train_alfworld_dense_ranker(
         action_label_rows.extend(cached["action_label_rows"])
         completed_episodes.update(cached["completed_episodes"])
         dense_feature_cache_manifest_compatible = bool(cached["cache_manifest_compatible"])
+        resume_feature_cache_manifest_compatible = dense_feature_cache_manifest_compatible
         skipped_incompatible_dense_pairs = int(cached["skipped_incompatible_pairs"])
         rebuilt_dense_pairs_from_state_cache = int(cached.get("rebuilt_feature_pairs_from_state_cache", 0))
     if cache_dir is not None and label_source == ALFWORLD_DENSE_LABEL_PLANNER:
@@ -1130,6 +1132,8 @@ def train_alfworld_dense_ranker(
         )
     if not pairs:
         raise RuntimeError("ALFWorld dense training produced zero ranking pairs; check replay-prefix labels and expert availability.")
+    if cache_dir is not None:
+        dense_feature_cache_manifest_compatible = _alfworld_dense_cache_manifest_compatible(cache_dir / "alfworld_dense_cache_manifest.json")
     ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
     ranker.train(pairs, epochs=epochs, lr=0.03, seed=seed)
     ranker_diagnostics = _alfworld_ranker_weight_diagnostics(ranker)
@@ -1186,6 +1190,7 @@ def train_alfworld_dense_ranker(
         "frontier_reference_priority": "expert_plan_if_available_then_frontier_sampling_score",
         "resume_requested": resume,
         "resumed_completed_episodes": len(completed_episodes),
+        "resume_feature_cache_manifest_compatible": resume_feature_cache_manifest_compatible,
         "dense_feature_cache_manifest_compatible": dense_feature_cache_manifest_compatible,
         "skipped_incompatible_dense_pairs": skipped_incompatible_dense_pairs,
         "dense_state_label_cache": str(cache_dir / "alfworld_dense_state_label_cache.jsonl") if cache_dir is not None else "",
@@ -3486,6 +3491,18 @@ def _alfworld_dense_cache_manifest() -> dict[str, object]:
     }
 
 
+def _alfworld_dense_cache_manifest_compatible(path: Path) -> bool:
+    if not path.exists():
+        return False
+    expected = _alfworld_dense_cache_manifest()
+    try:
+        actual = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    required_keys = ("cache", "version", "alfworld_adapter_version", "feature_schema_hash", "feature_dim")
+    return all(actual.get(key) == expected.get(key) for key in required_keys)
+
+
 def _alfworld_dense_pair_cache_metadata() -> dict[str, object]:
     manifest = _alfworld_dense_cache_manifest()
     return {
@@ -3512,14 +3529,8 @@ def _load_alfworld_dense_training_cache(
     max_pairs_per_state: int = 24,
     seed: int = 0,
 ) -> dict[str, object]:
-    cache_manifest = _alfworld_dense_cache_manifest()
     manifest_path = cache_dir / "alfworld_dense_cache_manifest.json"
-    cache_compatible = False
-    if manifest_path.exists():
-        try:
-            cache_compatible = json.loads(manifest_path.read_text(encoding="utf-8")) == cache_manifest
-        except Exception:
-            cache_compatible = False
+    cache_compatible = _alfworld_dense_cache_manifest_compatible(manifest_path)
     pair_path = cache_dir / "alfworld_dense_pair_cache.jsonl"
     pairs: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
     skipped_incompatible_pairs = 0

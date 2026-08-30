@@ -983,6 +983,35 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertTrue((out / "alfworld_dense_transfer_table.csv").exists())
             self.assertTrue((out / "alfworld_dense_transfer_step_trace.csv").exists())
 
+    def test_alfworld_step_trace_records_diagnostic_alignment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-eval"
+            result = run_alfworld_dense_transfer(
+                out,
+                ranker_checkpoint=None,
+                train_episodes=1,
+                eval_episodes=1,
+                max_steps=4,
+                epochs=1,
+                max_pairs_per_state=8,
+                max_frontier_actions=2,
+                counterfactual_rollout_steps=4,
+                planner_timeout_seconds=1,
+                label_source="planner",
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                policies=("ALFWorld planner diagnostic",),
+                env_factory=lambda **_kwargs: FakePlannerBatchAlfworldEnv(),
+            )
+            self.assertEqual(result["rows"][0]["success"], 1.0)
+            self.assertIn("diagnostic_available_rate", result["rows"][0])
+            self.assertEqual(result["rows"][0]["diagnostic_match_rate"], 1.0)
+            with (out / "alfworld_dense_transfer_step_trace.csv").open() as handle:
+                trace_rows = list(csv.DictReader(handle))
+        self.assertGreater(len(trace_rows), 0)
+        self.assertEqual(trace_rows[0]["diagnostic_source"], "policy_commands")
+        self.assertEqual(trace_rows[0]["matches_diagnostic"], "1")
+
 
 if __name__ == "__main__":
     unittest.main()

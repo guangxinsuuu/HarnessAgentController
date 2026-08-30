@@ -59,6 +59,9 @@ class AlfworldStepTrace:
     second_best_score: float | str
     score_margin: float | str
     expert_available: int
+    diagnostic_command: str
+    diagnostic_source: str
+    matches_diagnostic: int
     admissible_count: int
     verified_progress_frac: float
     remaining_requirement_frac: float
@@ -150,7 +153,10 @@ def run_alfworld_transfer(
                     step_trace_rows=step_trace_rows,
                 )
             )
-    rows = [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies]
+    rows = _with_step_trace_diagnostics(
+        [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies],
+        step_trace_rows,
+    )
     manifest = {
         "benchmark": "alfworld_admissible_action_transfer",
         "seed": seed,
@@ -252,7 +258,10 @@ def run_alfworld_dense_transfer(
                     step_trace_rows=step_trace_rows,
                 )
             )
-    rows = [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies]
+    rows = _with_step_trace_diagnostics(
+        [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies],
+        step_trace_rows,
+    )
     manifest = {
         "benchmark": "alfworld_dense_frontier_transfer",
         "seed": seed,
@@ -493,7 +502,10 @@ def run_alfworld_expert_transfer(
                     step_trace_rows=step_trace_rows,
                 )
             )
-    rows = [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies]
+    rows = _with_step_trace_diagnostics(
+        [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies],
+        step_trace_rows,
+    )
     manifest = {
         "benchmark": "alfworld_expert_frontier_transfer",
         "seed": seed,
@@ -1833,13 +1845,14 @@ def _run_episode(
             break
         admissible_counts.append(len(admissible))
         opportunities += 1 if len(admissible) >= 2 else 0
-        diagnostic_action = _alfworld_diagnostic_action_from_info(
+        diagnostic = _alfworld_diagnostic_action_with_source(
             info,
             gamefile=gamefile,
             prefix=prefix,
             admissible=admissible,
             walkthrough_cache=walkthrough_cache,
         )
+        diagnostic_action = str(diagnostic.get("command", ""))
         command, selection = _select_command_with_trace(
             policy,
             observation,
@@ -1849,8 +1862,12 @@ def _run_episode(
             ranker,
             rng,
             max_steps,
-            expert=diagnostic_action,
+            expert=diagnostic_action or None,
         )
+        selection = dict(selection)
+        selection["diagnostic_command"] = diagnostic_action
+        selection["diagnostic_source"] = str(diagnostic.get("source", "none"))
+        selection["matches_diagnostic"] = 1 if diagnostic_action and command == diagnostic_action else 0
         if command not in admissible:
             invalid_actions += 1
         next_obs, scores, dones, info = env.step([command])
@@ -2067,6 +2084,9 @@ def _step_trace_row(
         second_best_score=selection.get("second_best_score", ""),
         score_margin=selection.get("score_margin", ""),
         expert_available=int(selection.get("expert_available", 0)),
+        diagnostic_command=str(selection.get("diagnostic_command", "")),
+        diagnostic_source=str(selection.get("diagnostic_source", "")),
+        matches_diagnostic=int(selection.get("matches_diagnostic", 0)),
         admissible_count=len(admissible),
         verified_progress_frac=candidate.state.verified_progress_frac,
         remaining_requirement_frac=candidate.state.remaining_requirement_frac,
@@ -2118,16 +2138,37 @@ def _alfworld_diagnostic_action_from_info(
     admissible: Sequence[str],
     walkthrough_cache: dict[str, list[str]],
 ) -> str | None:
+    command = _alfworld_diagnostic_action_with_source(
+        info,
+        gamefile=gamefile,
+        prefix=prefix,
+        admissible=admissible,
+        walkthrough_cache=walkthrough_cache,
+    ).get("command")
+    return str(command) if command else None
+
+
+def _alfworld_diagnostic_action_with_source(
+    info: Mapping[str, Any],
+    *,
+    gamefile: str | None,
+    prefix: Sequence[str],
+    admissible: Sequence[str],
+    walkthrough_cache: dict[str, list[str]],
+) -> dict[str, str]:
     expert = _expert_action_from_info(info)
     matched = _match_admissible_command(expert, admissible)
     if matched is not None:
-        return matched
+        return {"command": matched, "source": "expert_plan"}
     for command in _planner_policy_commands_from_info(info):
         matched = _match_admissible_command(command, admissible)
         if matched is not None:
-            return matched
+            return {"command": matched, "source": "policy_commands"}
     walkthrough_next = _walkthrough_next_command(gamefile=gamefile, prefix=prefix, walkthrough_cache=walkthrough_cache)
-    return _match_admissible_command(walkthrough_next, admissible)
+    matched = _match_admissible_command(walkthrough_next, admissible)
+    if matched is not None:
+        return {"command": matched, "source": "walkthrough"}
+    return {"command": "", "source": "none"}
 
 
 def _match_admissible_command(command: str | None, admissible: Sequence[str]) -> str | None:
@@ -2707,6 +2748,28 @@ def _aggregate_policy(policy: str, rows: Sequence[AlfworldEpisodeResult]) -> dic
         "tokens": 0,
         "llm_calls": 0,
     }
+
+
+def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    by_policy: dict[str, dict[str, float]] = {}
+    for row in step_trace_rows:
+        policy = str(row.get("policy", ""))
+        stats = by_policy.setdefault(policy, {"steps": 0.0, "available": 0.0, "matched": 0.0})
+        stats["steps"] += 1.0
+        if str(row.get("diagnostic_command", "")).strip():
+            stats["available"] += 1.0
+        try:
+            matched = int(row.get("matches_diagnostic", 0))
+        except (TypeError, ValueError):
+            matched = 0
+        stats["matched"] += 1.0 if matched else 0.0
+    for row in rows:
+        stats = by_policy.get(str(row.get("policy", "")), {"steps": 0.0, "available": 0.0, "matched": 0.0})
+        steps = stats["steps"]
+        available = stats["available"]
+        row["diagnostic_available_rate"] = 0.0 if steps == 0.0 else available / steps
+        row["diagnostic_match_rate"] = 0.0 if available == 0.0 else stats["matched"] / available
+    return rows
 
 
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:

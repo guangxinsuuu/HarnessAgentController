@@ -140,6 +140,11 @@ For canonical smoke to be valid, the trace audit should show
 `canonical_feature_schema_match=True`, `canonical_feature_count_match=True`,
 `ranker_checkpoint_loaded_events>0`, and all oracle visibility/use flags
 `False`.
+Use `canonical_ranker_events`, `greedy_content_passthrough_events`, and
+`fallback_greedy_events` to separate decisions actually ranked by the frozen
+controller from content passthrough and fallback decisions. Inspect
+`candidate_sample_failures`; nonzero values mean at least one candidate request
+still failed after configured retries, even if the row completed.
 
 They also write a promotion gate:
 

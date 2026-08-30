@@ -153,6 +153,10 @@ class PaperAuditScriptTest(unittest.TestCase):
         self.assertIn("legacy solver-controller retail and airline", text)
         self.assertIn("canonical solver-controller retail and airline", text)
         self.assertIn("certified canonical solver-controller retail and airline", text)
+        self.assertIn("canonical_ranker_events", text)
+        self.assertIn("greedy_content_passthrough_events", text)
+        self.assertIn("fallback_greedy_events", text)
+        self.assertIn("candidate_sample_failures", text)
 
     def test_tau3_solver_canonical_suite_runs_only_ours_rows(self) -> None:
         text = Path("scripts/run_table10_tau3.sh").read_text(encoding="utf-8")

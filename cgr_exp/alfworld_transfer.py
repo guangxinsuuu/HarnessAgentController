@@ -704,6 +704,8 @@ def train_alfworld_dense_ranker(
     expert_monotone_failures = 0
     walkthrough_policy_steps = 0
     walkthrough_policy_misses = 0
+    planner_policy_steps = 0
+    planner_policy_misses = 0
     for episode in range(train_episodes):
         obs, info = train_env.reset()
         observation = _first(obs)
@@ -725,7 +727,15 @@ def train_alfworld_dense_ranker(
             expert = _expert_action_from_info(info)
             if not admissible:
                 break
-            frontier = _frontier_sample(admissible, expert=expert, max_frontier_actions=max_frontier_actions, rng=rng)
+            planner_next = None
+            if label_source == ALFWORLD_DENSE_LABEL_PLANNER:
+                if label_env is None:
+                    raise RuntimeError("planner ALFWorld label source requires a PDDL planner environment")
+                planner_next = _planner_next_command(label_env, gamefile=gamefile, prefix=prefix, admissible=admissible)
+                planner_policy_steps += 1
+                planner_policy_misses += 0 if planner_next is not None else 1
+            frontier_reference = planner_next if planner_next is not None else expert
+            frontier = _frontier_sample(admissible, expert=frontier_reference, max_frontier_actions=max_frontier_actions, rng=rng)
             if label_source == ALFWORLD_DENSE_LABEL_WALKTHROUGH:
                 labels = _label_frontier_by_walkthrough_suffix(
                     gamefile=gamefile,
@@ -756,10 +766,11 @@ def train_alfworld_dense_ranker(
                     max_rollout_steps=counterfactual_rollout_steps,
                 )
             labels_by_command = {label.command: label for label in labels}
-            if expert in labels_by_command and labels_by_command[expert].reachable:
+            monotone_reference = frontier_reference
+            if monotone_reference in labels_by_command and labels_by_command[monotone_reference].reachable:
                 expert_monotone_checks += 1
                 best_cost = min(label.cost_to_success for label in labels)
-                if labels_by_command[expert].cost_to_success > best_cost:
+                if labels_by_command[monotone_reference].cost_to_success > best_cost:
                     expert_monotone_failures += 1
             row_labels = []
             for label in labels:
@@ -884,6 +895,9 @@ def train_alfworld_dense_ranker(
         "walkthrough_policy_steps": walkthrough_policy_steps,
         "walkthrough_policy_misses": walkthrough_policy_misses,
         "walkthrough_policy_miss_rate": 0.0 if walkthrough_policy_steps == 0 else walkthrough_policy_misses / walkthrough_policy_steps,
+        "planner_policy_steps": planner_policy_steps,
+        "planner_policy_misses": planner_policy_misses,
+        "planner_policy_miss_rate": 0.0 if planner_policy_steps == 0 else planner_policy_misses / planner_policy_steps,
         "expert_monotone_checks": expert_monotone_checks,
         "expert_monotone_failures": expert_monotone_failures,
         "expert_monotone_failure_rate": 0.0 if expert_monotone_checks == 0 else expert_monotone_failures / expert_monotone_checks,

@@ -228,6 +228,64 @@ class FakePlannerAlfworldEnv:
         }, 0.0, False
 
 
+class FakePlannerBatchAlfworldEnv:
+    def __init__(self):
+        self.state = "root"
+
+    def load(self, _gamefile):
+        self.state = "root"
+
+    def reset(self):
+        self.state = "root"
+        return ["You are in a hallway. Your task is to put apple on table."], {
+            "admissible_commands": [["go to kitchen", "open cabinet"]],
+            "objective": ["put apple on table"],
+            "extra.gamefile": ["fake-game"],
+            "policy_commands": [["go to kitchen", "take apple", "put apple on table"]],
+        }
+
+    def step(self, commands):
+        command = commands[0] if isinstance(commands, list) else commands
+        if self.state == "root" and command == "go to kitchen":
+            self.state = "kitchen"
+            return ["You see an apple and a table."], [0.0], [False], {
+                "admissible_commands": [["take apple", "open cabinet"]],
+                "objective": ["put apple on table"],
+                "extra.gamefile": ["fake-game"],
+                "policy_commands": [["take apple", "put apple on table"]],
+            }
+        if self.state == "root" and command == "open cabinet":
+            self.state = "bad"
+            return ["The cabinet is empty."], [0.0], [False], {
+                "admissible_commands": [["go to kitchen"]],
+                "objective": ["put apple on table"],
+                "extra.gamefile": ["fake-game"],
+                "policy_commands": [[]],
+            }
+        if self.state == "kitchen" and command == "take apple":
+            self.state = "holding"
+            return ["You hold the apple near the table."], [0.0], [False], {
+                "admissible_commands": [["put apple on table", "look around"]],
+                "objective": ["put apple on table"],
+                "extra.gamefile": ["fake-game"],
+                "policy_commands": [["put apple on table"]],
+            }
+        if self.state == "holding" and command == "put apple on table":
+            self.state = "done"
+            return ["Done."], [1.0], [True], {
+                "admissible_commands": [[]],
+                "objective": ["put apple on table"],
+                "extra.gamefile": ["fake-game"],
+                "policy_commands": [[]],
+            }
+        return ["Nothing happens."], [0.0], [False], {
+            "admissible_commands": [["look around"]],
+            "objective": ["put apple on table"],
+            "extra.gamefile": ["fake-game"],
+            "policy_commands": [[]],
+        }
+
+
 class AlfworldTransferTest(unittest.TestCase):
     def test_planner_labels_use_successor_replan_cost(self) -> None:
         labels = _label_frontier_by_planner_cost(
@@ -762,6 +820,28 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(manifest["train"]["label_source"], "walkthrough_suffix_cost_proxy")
         self.assertTrue(manifest["train"]["walkthrough_suffix_cost_proxy"])
         self.assertLess(manifest["train"]["walkthrough_policy_miss_rate"], 1.0)
+
+    def test_run_alfworld_dense_train_can_use_planner_label_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-train"
+            manifest = run_alfworld_dense_train(
+                out,
+                train_episodes=1,
+                max_steps=4,
+                epochs=1,
+                max_pairs_per_state=8,
+                max_frontier_actions=2,
+                counterfactual_rollout_steps=4,
+                planner_timeout_seconds=1,
+                label_source="planner",
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                env_factory=lambda **_kwargs: FakePlannerBatchAlfworldEnv(),
+            )
+        self.assertEqual(manifest["training_source"], "alfworld_train_textworld_pddl_planner_frontier_labels")
+        self.assertEqual(manifest["label_source"], "textworld_pddl_replan_cost_to_go")
+        self.assertTrue(manifest["counterfactual_planner_cost_to_go"])
+        self.assertEqual(manifest["train"]["planner_policy_miss_rate"], 0.0)
 
     def test_audit_alfworld_dense_labels_reports_cost_variation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

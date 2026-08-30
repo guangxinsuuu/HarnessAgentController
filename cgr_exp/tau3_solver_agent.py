@@ -92,12 +92,12 @@ class Tau3SolverControllerAgent(LLMAgent):
             self._write_selection_trace(candidates, selected_index=0, scored_candidates=[], scoring_mode="greedy_content_passthrough", pruned=pruned)
             return greedy
         scored_candidates = [
-            (idx, *self._score_candidate(candidate, history))
+            (idx, self._score_candidate(candidate, history))
             for idx, candidate in enumerate(candidates)
             if idx in active_indices and candidate.tool_calls and not candidate.content
         ]
         if scored_candidates:
-            selected_index = max(scored_candidates, key=lambda item: (item[1], item[2]))[0]
+            selected_index = max(scored_candidates, key=lambda item: (item[1], -item[0]))[0]
             mode = "canonical_ranker" if self.ranker is not None else "heuristic"
             self._write_selection_trace(candidates, selected_index=selected_index, scored_candidates=scored_candidates, scoring_mode=mode, pruned=pruned)
             return candidates[selected_index]
@@ -163,15 +163,15 @@ class Tau3SolverControllerAgent(LLMAgent):
             **llm_args,
         )
 
-    def _score_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, str]:
+    def _score_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> float:
         if self.ranker is not None:
             return self._score_canonical_candidate(candidate, history)
         return self._score_heuristic_candidate(candidate, history)
 
-    def _score_canonical_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, str]:
+    def _score_canonical_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> float:
         canonical = self._canonical_candidate(candidate, history)
         assert self.ranker is not None
-        return self.ranker.score(canonical.feature_vector()), self._score_heuristic_candidate(candidate, history)[1]
+        return self.ranker.score(canonical.feature_vector())
 
     def _canonical_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]):
         used_tool_calls = sum(len(getattr(item, "tool_calls", None) or []) for item in history)
@@ -186,7 +186,7 @@ class Tau3SolverControllerAgent(LLMAgent):
             max_tool_budget=self.max_tool_budget,
         )
 
-    def _score_heuristic_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, str]:
+    def _score_heuristic_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> float:
         score = 0.0
         if candidate.tool_calls:
             score += 3.0
@@ -210,7 +210,7 @@ class Tau3SolverControllerAgent(LLMAgent):
                 score += 0.4
             if "sorry" in text or "can't" in text or "cannot" in text:
                 score -= 0.2
-        return score, candidate.model_dump_json()
+        return score
 
     @staticmethod
     def _has_repeated_exact_tool_call(name: str, arguments: dict, history: List[APICompatibleMessage]) -> bool:
@@ -255,14 +255,14 @@ class Tau3SolverControllerAgent(LLMAgent):
         candidates: List[AssistantMessage],
         *,
         selected_index: int,
-        scored_candidates: List[tuple[int, float, str]],
+        scored_candidates: List[tuple[int, float]],
         scoring_mode: str,
         pruned: dict[int, str],
     ) -> None:
         if self.controller_trace_path is None:
             return
         self.controller_trace_path.parent.mkdir(parents=True, exist_ok=True)
-        scored_by_index = {idx: score for idx, score, _tie in scored_candidates}
+        scored_by_index = {idx: score for idx, score in scored_candidates}
         contract = canonical_contract_manifest()
         row = {
             "event": "tau3_controller_selection",

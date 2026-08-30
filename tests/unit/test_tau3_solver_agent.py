@@ -113,6 +113,47 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertNotIn("get_order", trace_text)
         self.assertNotIn("update_order", trace_text)
 
+    def test_canonical_ranker_tie_break_does_not_use_raw_tool_names(self) -> None:
+        calls = [
+            AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="aaa_read_order", arguments={"order_id": "A"})],
+                cost=0.01,
+                usage={"prompt_tokens": 10, "completion_tokens": 1},
+            ),
+            AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="zzz_read_order", arguments={"order_id": "A"})],
+                cost=0.02,
+                usage={"prompt_tokens": 11, "completion_tokens": 2},
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            trace = Path(tmp) / "trace.jsonl"
+            checkpoint.write_text(GenericHarnessRanker([0.0] * len(canonical_feature_names())).to_json(), encoding="utf-8")
+            agent = Tau3SolverControllerAgent(
+                [as_tool(_aaa_read_order), as_tool(_zzz_read_order)],
+                "policy",
+                "mock",
+                {"temperature": 0},
+                candidate_count=2,
+                ranker_checkpoint=str(checkpoint),
+                controller_trace_path=str(trace),
+            )
+            state = agent.get_init_state()
+            with patch("cgr_exp.tau3_solver_agent.generate", side_effect=calls):
+                selected, _state = agent.generate_next_message(UserMessage(role="user", content="read order A"), state)
+            trace_text = trace.read_text(encoding="utf-8")
+            trace_row = json.loads(trace_text)
+        self.assertEqual(selected.tool_calls[0].name, "aaa_read_order")
+        self.assertEqual(trace_row["selected_index"], 0)
+        self.assertEqual(trace_row["tool_name_use_policy"], "coarse_action_type_normalization_only")
+        self.assertNotIn("aaa_read_order", trace_text)
+        self.assertNotIn("zzz_read_order", trace_text)
+
     def test_bad_checkpoint_error_names_checkpoint_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint = Path(tmp) / "bad_ranker.json"
@@ -260,6 +301,16 @@ def _get_order(order_id: str) -> str:
 
 def _update_order(order_id: str) -> str:
     """Update order."""
+    return order_id
+
+
+def _aaa_read_order(order_id: str) -> str:
+    """Read order."""
+    return order_id
+
+
+def _zzz_read_order(order_id: str) -> str:
+    """Read order."""
     return order_id
 
 

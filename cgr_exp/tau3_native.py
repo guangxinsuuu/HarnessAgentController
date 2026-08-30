@@ -48,6 +48,8 @@ TRACE_AUDIT_COLUMNS = [
     "canonical_feature_schema_match",
     "canonical_feature_count",
     "canonical_feature_count_match",
+    "canonical_mean_known_mask_ratio",
+    "canonical_per_feature_availability",
     "status",
 ]
 
@@ -1111,6 +1113,10 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
     observed_contracts: set[str] = set()
     observed_schema_hashes: set[str] = set()
     observed_feature_counts: set[int] = set()
+    known_mask_ratio_sum = 0.0
+    known_mask_ratio_count = 0
+    known_mask_feature_sums: Dict[str, float] = {}
+    known_mask_feature_counts: Dict[str, int] = {}
     if trace_path.exists():
         for line in trace_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -1148,6 +1154,18 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
             feature_count = _as_float(row.get("canonical_feature_count"))
             if not math.isnan(feature_count):
                 observed_feature_counts.add(int(feature_count))
+            known_mask_ratio = _as_float(row.get("canonical_mean_known_mask_ratio"))
+            if not math.isnan(known_mask_ratio):
+                known_mask_ratio_sum += known_mask_ratio
+                known_mask_ratio_count += 1
+            per_feature = row.get("canonical_per_feature_availability")
+            if isinstance(per_feature, Mapping):
+                for name, value in per_feature.items():
+                    feature_value = _as_float(value)
+                    if not math.isnan(feature_value):
+                        key = str(name)
+                        known_mask_feature_sums[key] = known_mask_feature_sums.get(key, 0.0) + feature_value
+                        known_mask_feature_counts[key] = known_mask_feature_counts.get(key, 0) + 1
     schema_match = bool(observed_schema_hashes) and observed_schema_hashes == {expected_schema_hash}
     feature_count_match = bool(observed_feature_counts) and observed_feature_counts == {expected_feature_count}
     summary = {
@@ -1174,6 +1192,15 @@ def audit_tau3_controller_trace(out_dir: Path, trace_path: Path) -> Dict[str, ob
         "canonical_feature_schema_match": schema_match,
         "canonical_feature_count": ";".join(str(value) for value in sorted(observed_feature_counts)),
         "canonical_feature_count_match": feature_count_match,
+        "canonical_mean_known_mask_ratio": "" if known_mask_ratio_count == 0 else known_mask_ratio_sum / known_mask_ratio_count,
+        "canonical_per_feature_availability": json.dumps(
+            {
+                name: known_mask_feature_sums[name] / known_mask_feature_counts[name]
+                for name in sorted(known_mask_feature_sums)
+                if known_mask_feature_counts.get(name, 0) > 0
+            },
+            sort_keys=True,
+        ),
         "status": "complete" if event_count > 0 else "empty_or_missing_trace",
     }
     _write_csv(out_dir / "tau3_controller_trace_audit.csv", [summary])
@@ -1306,6 +1333,8 @@ def _table10_audit_row(
         "canonical_feature_schema_match": trace_summary.get("canonical_feature_schema_match", ""),
         "canonical_feature_count": trace_summary.get("canonical_feature_count", ""),
         "canonical_feature_count_match": trace_summary.get("canonical_feature_count_match", ""),
+        "canonical_mean_known_mask_ratio": trace_summary.get("canonical_mean_known_mask_ratio", ""),
+        "canonical_per_feature_availability": trace_summary.get("canonical_per_feature_availability", ""),
         "candidate_sample_failures": trace_summary.get("candidate_sample_failures", ""),
         "certified_prune_rate": trace_summary.get("certified_prune_rate", ""),
         "notes": notes,
@@ -1330,6 +1359,8 @@ def _table10_evidence_notes(source_protocol: Mapping[str, object], trace_summary
         notes.append(f"contract coverage black-box delta={source_protocol.get('contract_coverage_black_box_top1_delta_from_full', '')}")
     if trace_summary.get("canonical_ranker_events"):
         notes.append(f"canonical ranker events={trace_summary.get('canonical_ranker_events')}")
+    if trace_summary.get("canonical_mean_known_mask_ratio") != "":
+        notes.append(f"target canonical known-mask ratio={trace_summary.get('canonical_mean_known_mask_ratio')}")
     if trace_summary.get("greedy_content_passthrough_events"):
         notes.append(f"greedy content passthrough events={trace_summary.get('greedy_content_passthrough_events')}")
     if trace_summary.get("fallback_greedy_events"):

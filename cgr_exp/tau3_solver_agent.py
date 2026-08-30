@@ -91,11 +91,11 @@ class Tau3SolverControllerAgent(LLMAgent):
         if greedy.content and not greedy.tool_calls:
             self._write_selection_trace(candidates, selected_index=0, scored_candidates=[], scoring_mode="greedy_content_passthrough", pruned=pruned)
             return greedy
-        scored_candidates = [
-            (idx, self._score_candidate(candidate, history))
-            for idx, candidate in enumerate(candidates)
-            if idx in active_indices and candidate.tool_calls and not candidate.content
-        ]
+        scored_candidates = []
+        for idx, candidate in enumerate(candidates):
+            if idx in active_indices and candidate.tool_calls and not candidate.content:
+                score, coverage = self._score_candidate(candidate, history)
+                scored_candidates.append((idx, score, coverage))
         if scored_candidates:
             selected_index = max(scored_candidates, key=lambda item: (item[1], -item[0]))[0]
             mode = "canonical_ranker" if self.ranker is not None else "heuristic"
@@ -163,15 +163,17 @@ class Tau3SolverControllerAgent(LLMAgent):
             **llm_args,
         )
 
-    def _score_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> float:
+    def _score_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, dict[str, float]]:
         if self.ranker is not None:
             return self._score_canonical_candidate(candidate, history)
-        return self._score_heuristic_candidate(candidate, history)
+        return self._score_heuristic_candidate(candidate, history), {}
 
-    def _score_canonical_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> float:
+    def _score_canonical_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, dict[str, float]]:
         canonical = self._canonical_candidate(candidate, history)
         assert self.ranker is not None
-        return self.ranker.score(canonical.feature_vector())
+        coverage = canonical.state.known_mask_values()
+        coverage["mean_known_mask_ratio"] = canonical.state.known_mask_ratio()
+        return self.ranker.score(canonical.feature_vector()), coverage
 
     def _canonical_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]):
         used_tool_calls = sum(len(getattr(item, "tool_calls", None) or []) for item in history)
@@ -255,14 +257,28 @@ class Tau3SolverControllerAgent(LLMAgent):
         candidates: List[AssistantMessage],
         *,
         selected_index: int,
-        scored_candidates: List[tuple[int, float]],
+        scored_candidates: List[tuple[int, float, dict[str, float]]],
         scoring_mode: str,
         pruned: dict[int, str],
     ) -> None:
         if self.controller_trace_path is None:
             return
         self.controller_trace_path.parent.mkdir(parents=True, exist_ok=True)
-        scored_by_index = {idx: score for idx, score in scored_candidates}
+        scored_by_index = {idx: score for idx, score, _coverage in scored_candidates}
+        coverage_by_index = {idx: coverage for idx, _score, coverage in scored_candidates}
+        coverage_values = [coverage for _idx, _score, coverage in scored_candidates if coverage]
+        per_feature_availability: dict[str, float] = {}
+        if coverage_values:
+            feature_names = sorted({name for coverage in coverage_values for name in coverage if name != "mean_known_mask_ratio"})
+            per_feature_availability = {
+                name: sum(float(coverage.get(name, 0.0)) for coverage in coverage_values) / len(coverage_values)
+                for name in feature_names
+            }
+        mean_known_mask_ratio = (
+            sum(float(coverage.get("mean_known_mask_ratio", 0.0)) for coverage in coverage_values) / len(coverage_values)
+            if coverage_values
+            else None
+        )
         contract = canonical_contract_manifest()
         row = {
             "event": "tau3_controller_selection",
@@ -271,6 +287,8 @@ class Tau3SolverControllerAgent(LLMAgent):
             "canonical_contract": contract["contract"],
             "canonical_feature_schema_hash": contract["feature_schema_hash"],
             "canonical_feature_count": len(canonical_feature_names()),
+            "canonical_mean_known_mask_ratio": mean_known_mask_ratio,
+            "canonical_per_feature_availability": per_feature_availability,
             "candidate_count": len(candidates),
             "candidate_sample_failures": self._last_sample_failures,
             "candidate_sample_failure_types": sorted(set(self._last_sample_failure_types)),
@@ -290,6 +308,7 @@ class Tau3SolverControllerAgent(LLMAgent):
                 {
                     "candidate_index": idx,
                     "score": scored_by_index.get(idx, None),
+                    "known_mask_ratio": coverage_by_index.get(idx, {}).get("mean_known_mask_ratio"),
                     "certified_pruned": idx in pruned,
                     "certified_prune_reason": pruned.get(idx, None),
                     "action_type": self._candidate_action_type(candidate),

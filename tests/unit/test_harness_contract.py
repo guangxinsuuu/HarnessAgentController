@@ -20,7 +20,11 @@ class HarnessContractTest(unittest.TestCase):
         self.assertFalse(manifest["oracle_labels_in_inference_features"])
         self.assertFalse(manifest["learned_score_authorizes_pruning"])
         self.assertFalse(manifest["tool_names_used_as_features"])
+        self.assertIn("verified_progress_known_mask", manifest["runtime_known_mask_features"])
+        self.assertTrue(set(manifest["runtime_known_mask_features"]).issubset(set(manifest["runtime_features"])))
         self.assertFalse(set(manifest["runtime_features"]) & set(manifest["training_only_labels"]))
+        self.assertFalse(set(canonical_feature_names()) & set(manifest["training_only_labels"]))
+        self.assertFalse(set(canonical_feature_names()) & set(manifest["evaluation_only_metrics"]))
         self.assertGreater(len(canonical_feature_names()), len(manifest["runtime_features"]))
 
     def test_workflow_source_generator_uses_anonymous_tools_and_oracle_pairs(self) -> None:
@@ -50,6 +54,7 @@ class HarnessContractTest(unittest.TestCase):
             self.assertTrue((out / "canonical_harness_source_validation.csv").exists())
             self.assertTrue((out / "canonical_harness_tool_identity_stress.csv").exists())
             self.assertTrue((out / "canonical_harness_contract_coverage_stress.csv").exists())
+            self.assertTrue((out / "canonical_harness_feature_coverage.csv").exists())
             self.assertTrue((out / "generic_harness_ranker.json").exists())
             saved = json.loads((out / "canonical_harness_source_validation.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["benchmark"], manifest["benchmark"])
@@ -64,6 +69,9 @@ class HarnessContractTest(unittest.TestCase):
             self.assertEqual(saved["tool_identity_generalization"]["top1_absolute_delta"], 0.0)
             self.assertTrue(saved["contract_coverage_stress"]["ready"])
             self.assertIn("black_box_contract_top1_accuracy", saved["contract_coverage_stress"])
+            self.assertIn("canonical_feature_coverage", saved)
+            self.assertIn("train", saved["canonical_feature_coverage"])
+            self.assertIn("verified_progress_known_mask", saved["canonical_feature_coverage"]["train"]["per_feature_availability"])
             self.assertGreater(saved["train_pair_count"], 0)
 
     def test_generic_harness_ranker_rejects_bad_checkpoint_dimension(self) -> None:

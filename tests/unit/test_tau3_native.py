@@ -471,6 +471,13 @@ class Tau3NativeTest(unittest.TestCase):
                         "canonical_contract": contract["contract"],
                         "canonical_feature_schema_hash": contract["feature_schema_hash"],
                         "canonical_feature_count": len(canonical_feature_names()),
+                        "canonical_mean_known_mask_ratio": 0.5,
+                        "canonical_per_feature_availability": {
+                            "verified_progress_known_mask": 0.0,
+                            "remaining_requirement_known_mask": 0.0,
+                            "observed_fact_known_mask": 1.0,
+                            "constraint_pressure_known_mask": 1.0,
+                        },
                         "ranker_checkpoint_loaded": True,
                         "certified_filter_enabled": True,
                         "certified_pruned_count": 1,
@@ -530,11 +537,16 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(manifest["canonical_feature_schema_hash"], contract["feature_schema_hash"])
             self.assertTrue(manifest["canonical_feature_schema_match"])
             self.assertTrue(manifest["canonical_feature_count_match"])
+            self.assertAlmostEqual(manifest["canonical_mean_known_mask_ratio"], 0.5)
+            per_feature = json.loads(manifest["canonical_per_feature_availability"])
+            self.assertEqual(per_feature["verified_progress_known_mask"], 0.0)
+            self.assertEqual(per_feature["observed_fact_known_mask"], 1.0)
             self.assertTrue((root / "audit" / "tau3_controller_trace_audit.csv").exists())
             csv_text = (root / "audit" / "tau3_controller_trace_audit.csv").read_text(encoding="utf-8")
             self.assertIn("candidate_sample_failures", csv_text.splitlines()[0])
             self.assertIn("greedy_content_passthrough_events", csv_text.splitlines()[0])
             self.assertIn("fallback_greedy_events", csv_text.splitlines()[0])
+            self.assertIn("canonical_mean_known_mask_ratio", csv_text.splitlines()[0])
             self.assertIn(",1,", csv_text)
 
     def test_audits_table10_tau3_readiness_with_canonical_trace(self) -> None:
@@ -567,6 +579,13 @@ class Tau3NativeTest(unittest.TestCase):
                         "canonical_contract": contract["contract"],
                         "canonical_feature_schema_hash": contract["feature_schema_hash"],
                         "canonical_feature_count": len(canonical_feature_names()),
+                        "canonical_mean_known_mask_ratio": 0.5,
+                        "canonical_per_feature_availability": {
+                            "verified_progress_known_mask": 0.0,
+                            "remaining_requirement_known_mask": 0.0,
+                            "observed_fact_known_mask": 1.0,
+                            "constraint_pressure_known_mask": 1.0,
+                        },
                         "ranker_checkpoint_loaded": True,
                         "certified_filter_enabled": False,
                         "certified_pruned_count": 0,
@@ -608,12 +627,15 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(canonical_row["ranker_checkpoint_loaded_events"], 1)
             self.assertTrue(canonical_row["canonical_feature_schema_match"])
             self.assertTrue(canonical_row["canonical_feature_count_match"])
+            self.assertAlmostEqual(canonical_row["canonical_mean_known_mask_ratio"], 0.5)
+            self.assertIn("verified_progress_known_mask", canonical_row["canonical_per_feature_availability"])
             self.assertEqual(canonical_row["candidate_sample_failures"], 2)
             self.assertIn("source generator frozen before target test", canonical_row["notes"])
             self.assertIn("source generator hash=source-hash", canonical_row["notes"])
             self.assertIn("tool-identity stress delta=0.0", canonical_row["notes"])
             self.assertIn("candidate sample failures after retries=2", canonical_row["notes"])
             self.assertIn("contract coverage black-box delta=0.0", canonical_row["notes"])
+            self.assertIn("target canonical known-mask ratio=0.5", canonical_row["notes"])
             self.assertIn("tool-name policy=coarse_action_type_normalization_only", canonical_row["notes"])
 
     def test_audits_table10_tau3_readiness_rejects_missing_compute_accounting(self) -> None:

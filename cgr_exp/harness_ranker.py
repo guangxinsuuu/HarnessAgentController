@@ -129,6 +129,35 @@ def evaluate_workflow_ranker(
     }
 
 
+def workflow_known_mask_coverage(tasks: Sequence[WorkflowTask], max_states_per_task: int = 200) -> Dict[str, object]:
+    total = 0
+    ratio_sum = 0.0
+    per_feature: Dict[str, float] = {}
+    for task in tasks:
+        frontier = [task.root_state()]
+        seen = set()
+        while frontier and len(seen) < max_states_per_task:
+            state = frontier.pop(0)
+            if state.key() in seen:
+                continue
+            seen.add(state.key())
+            features = workflow_runtime_features(task, state)
+            masks = features.known_mask_values()
+            total += 1
+            ratio_sum += features.known_mask_ratio()
+            for name, value in masks.items():
+                per_feature[name] = per_feature.get(name, 0.0) + value
+            for action in task.candidate_actions(state):
+                child = task.apply(state, action)
+                if child.remaining_turns > 0 and not task.success(child):
+                    frontier.append(child)
+    return {
+        "state_count": total,
+        "mean_known_mask_ratio": 0.0 if total == 0 else ratio_sum / total,
+        "per_feature_availability": {name: value / total for name, value in sorted(per_feature.items())} if total else {},
+    }
+
+
 def _apply_contract_coverage(features, coverage: str):
     if coverage == "full":
         return features
@@ -191,6 +220,8 @@ def run_workflow_source_validation(
         validation_records.extend(collect_workflow_oracle_records(task, max_states=max_states_per_task))
     validation_pairs = make_workflow_ranking_pairs(validation_records)
     eval_metrics = evaluate_workflow_ranker(validation_tasks, ranker, max_states_per_task=max_states_per_task)
+    train_mask_coverage = workflow_known_mask_coverage(train_tasks, max_states_per_task=max_states_per_task)
+    validation_mask_coverage = workflow_known_mask_coverage(validation_tasks, max_states_per_task=max_states_per_task)
     named_tool_eval_metrics = evaluate_workflow_ranker(named_tool_validation_tasks, ranker, max_states_per_task=max_states_per_task)
     partial_contract_eval_metrics = evaluate_workflow_ranker(
         validation_tasks,
@@ -238,6 +269,10 @@ def run_workflow_source_validation(
         "validation_ranking_error": ranker.ranking_error(validation_pairs),
         "validation_top1_accuracy": eval_metrics["top1_accuracy"],
         "validation_random_expected_top1": eval_metrics["random_expected_top1"],
+        "canonical_feature_coverage": {
+            "train": train_mask_coverage,
+            "validation": validation_mask_coverage,
+        },
         "tool_identity_generalization": {
             "anonymous_tool_validation_top1_accuracy": eval_metrics["top1_accuracy"],
             "semantic_tool_name_validation_top1_accuracy": named_tool_eval_metrics["top1_accuracy"],
@@ -298,6 +333,21 @@ def run_workflow_source_validation(
         ],
     )
     _write_csv(out_dir / "canonical_harness_contract_coverage_stress.csv", contract_coverage_rows)
+    _write_csv(
+        out_dir / "canonical_harness_feature_coverage.csv",
+        [
+            {
+                "split": split,
+                "state_count": coverage["state_count"],
+                "mean_known_mask_ratio": coverage["mean_known_mask_ratio"],
+                **{
+                    f"availability_{name}": value
+                    for name, value in dict(coverage["per_feature_availability"]).items()
+                },
+            }
+            for split, coverage in [("train", train_mask_coverage), ("validation", validation_mask_coverage)]
+        ],
+    )
     return manifest
 
 

@@ -110,6 +110,12 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertFalse(trace_row["oracle_visible_to_controller"])
         self.assertFalse(trace_row["tool_names_used_as_features"])
         self.assertEqual(trace_row["tool_name_use_policy"], "coarse_action_type_normalization_only")
+        self.assertAlmostEqual(trace_row["canonical_mean_known_mask_ratio"], 0.5)
+        self.assertEqual(trace_row["canonical_per_feature_availability"]["verified_progress_known_mask"], 0.0)
+        self.assertEqual(trace_row["canonical_per_feature_availability"]["remaining_requirement_known_mask"], 0.0)
+        self.assertEqual(trace_row["canonical_per_feature_availability"]["observed_fact_known_mask"], 1.0)
+        self.assertEqual(trace_row["canonical_per_feature_availability"]["constraint_pressure_known_mask"], 1.0)
+        self.assertAlmostEqual(trace_row["candidate_scores"][0]["known_mask_ratio"], 0.5)
         self.assertNotIn("get_order", trace_text)
         self.assertNotIn("update_order", trace_text)
 
@@ -151,6 +157,7 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertEqual(selected.tool_calls[0].name, "aaa_read_order")
         self.assertEqual(trace_row["selected_index"], 0)
         self.assertEqual(trace_row["tool_name_use_policy"], "coarse_action_type_normalization_only")
+        self.assertAlmostEqual(trace_row["canonical_mean_known_mask_ratio"], 0.5)
         self.assertNotIn("aaa_read_order", trace_text)
         self.assertNotIn("zzz_read_order", trace_text)
 

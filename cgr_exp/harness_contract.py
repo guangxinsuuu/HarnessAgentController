@@ -25,6 +25,13 @@ RUNTIME_FEATURE_NAMES = [
     "irreversible_action_used",
 ]
 
+RUNTIME_KNOWN_MASK_FEATURE_NAMES = [
+    "verified_progress_known_mask",
+    "remaining_requirement_known_mask",
+    "observed_fact_known_mask",
+    "constraint_pressure_known_mask",
+]
+
 ACTION_FEATURE_NAMES = [
     "action_is_read",
     "action_is_write",
@@ -82,6 +89,13 @@ class RuntimeFeatures:
 
     def vector(self) -> List[float]:
         return [float(getattr(self, name)) for name in RUNTIME_FEATURE_NAMES]
+
+    def known_mask_values(self) -> Dict[str, float]:
+        return {name: float(getattr(self, name)) for name in RUNTIME_KNOWN_MASK_FEATURE_NAMES}
+
+    def known_mask_ratio(self) -> float:
+        values = list(self.known_mask_values().values())
+        return 0.0 if not values else sum(values) / len(values)
 
 
 @dataclass(frozen=True)
@@ -157,6 +171,7 @@ def canonical_feature_names() -> List[str]:
 def canonical_contract_manifest() -> Dict[str, object]:
     feature_schema = {
         "runtime_features": RUNTIME_FEATURE_NAMES,
+        "runtime_known_mask_features": RUNTIME_KNOWN_MASK_FEATURE_NAMES,
         "action_features": ACTION_FEATURE_NAMES,
         "training_only_labels": TRAINING_ONLY_LABEL_FIELDS,
         "evaluation_only_metrics": EVALUATION_ONLY_METRIC_FIELDS,
@@ -166,6 +181,7 @@ def canonical_contract_manifest() -> Dict[str, object]:
         "contract": "CanonicalHarnessContractV1",
         "feature_schema_hash": schema_hash,
         "runtime_features": RUNTIME_FEATURE_NAMES,
+        "runtime_known_mask_features": RUNTIME_KNOWN_MASK_FEATURE_NAMES,
         "action_features": ACTION_FEATURE_NAMES,
         "training_only_labels": TRAINING_ONLY_LABEL_FIELDS,
         "evaluation_only_metrics": EVALUATION_ONLY_METRIC_FIELDS,
@@ -187,10 +203,19 @@ def canonical_contract_manifest() -> Dict[str, object]:
 def audit_canonical_contract_manifest(manifest: Mapping[str, object]) -> Dict[str, object]:
     blockers: List[str] = []
     runtime = {str(item) for item in manifest.get("runtime_features", [])}
+    masks = {str(item) for item in manifest.get("runtime_known_mask_features", [])}
     labels = {str(item) for item in manifest.get("training_only_labels", [])}
+    metrics = {str(item) for item in manifest.get("evaluation_only_metrics", [])}
+    inference = set(canonical_feature_names())
     leaked = sorted(runtime & labels)
     if leaked:
         blockers.append("training-only labels appear in runtime features: " + ", ".join(leaked))
+    leaked_inference = sorted((labels | metrics) & inference)
+    if leaked_inference:
+        blockers.append("training/evaluation-only fields appear in inference features: " + ", ".join(leaked_inference))
+    missing_masks = sorted(mask for mask in RUNTIME_KNOWN_MASK_FEATURE_NAMES if mask not in masks or mask not in runtime)
+    if missing_masks:
+        blockers.append("runtime known-mask features missing: " + ", ".join(missing_masks))
     required_false = [
         "oracle_labels_in_inference_features",
         "learned_score_authorizes_pruning",
@@ -226,4 +251,3 @@ def dataclass_to_json_dict(value) -> Dict[str, object]:
 
 def write_json(path, data: Mapping[str, object]) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-

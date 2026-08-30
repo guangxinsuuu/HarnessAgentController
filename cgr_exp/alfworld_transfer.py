@@ -968,6 +968,7 @@ def train_alfworld_dense_ranker(
         raise RuntimeError("ALFWorld dense training produced zero ranking pairs; check replay-prefix labels and expert availability.")
     ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
     ranker.train(pairs, epochs=epochs, lr=0.03, seed=seed)
+    ranker_diagnostics = _alfworld_ranker_weight_diagnostics(ranker)
     total_finite_action_labels = sum(1 for row in action_label_rows if int(row.get("reachable", 0)) == 1)
     total_infinite_action_labels = sum(1 for row in action_label_rows if int(row.get("reachable", 0)) != 1)
     total_labeled_states = len(
@@ -1018,6 +1019,9 @@ def train_alfworld_dense_ranker(
         "expert_monotone_checks": expert_monotone_checks,
         "expert_monotone_failures": expert_monotone_failures,
         "expert_monotone_failure_rate": 0.0 if expert_monotone_checks == 0 else expert_monotone_failures / expert_monotone_checks,
+        "ranker_direct_feature_weights": ranker_diagnostics["direct_feature_weights"],
+        "ranker_contract_sign_violations": ranker_diagnostics["contract_sign_violations"],
+        "ranker_contract_sign_violation_count": ranker_diagnostics["contract_sign_violation_count"],
     }
     return ranker, manifest, trace_rows, action_label_rows
 
@@ -1104,6 +1108,8 @@ def alfworld_action_features(
     held_terms = _held_terms(observation=observation, history=history)
     target_related = bool(command_terms & (goal.object_terms | goal.receptacle_terms | goal.transform_terms))
     references_observed = bool(command_terms & observed_terms)
+    recent_move_streak = _recent_action_type_streak(history, "move")
+    recent_read_streak = _recent_action_type_streak(history, "read")
     relation = _action_goal_relation(
         command=command,
         action_type=action_type,
@@ -1111,6 +1117,8 @@ def alfworld_action_features(
         observed_terms=observed_terms,
         held_terms=held_terms,
         repeats=repeats,
+        recent_move_streak=recent_move_streak,
+        recent_read_streak=recent_read_streak,
     )
     return ActionFeatures(
         action_is_read=1.0 if action_type == "read" else 0.0,
@@ -1614,6 +1622,45 @@ def _dense_labels_to_pairs(
     return raw_pairs
 
 
+def _alfworld_ranker_weight_diagnostics(ranker: GenericHarnessRanker) -> dict[str, object]:
+    names = canonical_feature_names()
+    direct_feature_names = [
+        "declared_requirement_gain",
+        "declared_observation_gain",
+        "completes_goal_placement",
+        "precondition_satisfied",
+        "policy_risk",
+        "duplicates_previous_action",
+    ]
+    weights = {
+        name: float(ranker.weights[names.index(name)])
+        for name in direct_feature_names
+        if name in names
+    }
+    expected_signs = {
+        "declared_requirement_gain": "positive",
+        "declared_observation_gain": "positive",
+        "completes_goal_placement": "positive",
+        "precondition_satisfied": "positive",
+        "policy_risk": "negative",
+        "duplicates_previous_action": "negative",
+    }
+    violations = []
+    for name, expected in expected_signs.items():
+        value = weights.get(name)
+        if value is None:
+            continue
+        if expected == "positive" and value < 0.0:
+            violations.append(f"{name}<0")
+        if expected == "negative" and value > 0.0:
+            violations.append(f"{name}>0")
+    return {
+        "direct_feature_weights": weights,
+        "contract_sign_violations": violations,
+        "contract_sign_violation_count": len(violations),
+    }
+
+
 def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]], *, train_manifest: Mapping[str, object]) -> dict[str, object]:
     by_state: dict[tuple[int, int], list[int]] = {}
     status_counts: dict[str, int] = {}
@@ -1651,6 +1698,8 @@ def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]
         "expert_monotone_failure_rate": float(train_manifest.get("expert_monotone_failure_rate", 0.0)),
         "label_source": str(train_manifest.get("label_source", "")),
         "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
+        "ranker_contract_sign_violation_count": int(train_manifest.get("ranker_contract_sign_violation_count", 0)),
+        "ranker_contract_sign_violations": "|".join(str(item) for item in train_manifest.get("ranker_contract_sign_violations", [])),
     }
     for status, count in sorted(status_counts.items()):
         safe_status = re.sub(r"[^a-zA-Z0-9_]+", "_", status).strip("_") or "unknown"
@@ -2539,6 +2588,8 @@ def _action_goal_relation(
     observed_terms: set[str],
     held_terms: set[str],
     repeats: bool,
+    recent_move_streak: int = 0,
+    recent_read_streak: int = 0,
 ) -> dict[str, float]:
     lowered = command.lower().strip()
     command_terms = _object_tokens(lowered)
@@ -2594,6 +2645,26 @@ def _action_goal_relation(
 
     if action_type == "write" and precondition == 0.0:
         risk += 0.3
+    zero_gain = observation_gain == 0.0 and requirement_gain == 0.0
+    if action_type == "move":
+        if zero_gain and not goal_receptacle_ref:
+            risk += 0.12
+        if zero_gain and recent_move_streak >= 2:
+            risk += 0.35
+        elif zero_gain and recent_move_streak == 1:
+            risk += 0.18
+        if object_held and goal.receptacle_terms and not action_receptacle_goal_ref and not goal_receptacle_ref:
+            risk += 0.25
+        if object_held and (action_receptacle_goal_ref or goal_receptacle_ref):
+            risk = min(risk, 0.08)
+    if action_type == "read" and zero_gain and recent_read_streak >= 2:
+        risk += 0.25
+    if lowered.startswith(TAKE_VERBS) and requirement_gain > 0.0 and precondition == 1.0:
+        risk = min(risk, 0.08)
+    if lowered.startswith(USE_VERBS) and requirement_gain > 0.0 and precondition == 1.0:
+        risk = min(risk, 0.08)
+    if placement_ready and requirement_gain > 0.0:
+        risk = min(risk, 0.03)
     return {
         "references_goal_object": 1.0 if action_object_goal_ref or goal_object_ref else 0.0,
         "references_goal_receptacle": 1.0 if action_receptacle_goal_ref or goal_receptacle_ref else 0.0,
@@ -2686,6 +2757,17 @@ def _stagnation_frac(history: Sequence[str]) -> float:
         return 0.0
     tail = actions[-3:]
     return len(tail) / 3.0 if len(set(tail)) == 1 else 0.0
+
+
+def _recent_action_type_streak(history: Sequence[str], action_type: str) -> int:
+    streak = 0
+    for item in reversed(history):
+        if not item.startswith("act:"):
+            continue
+        if _command_type(item[4:].strip()) != action_type:
+            break
+        streak += 1
+    return streak
 
 
 def _action_count(history: Sequence[str]) -> int:

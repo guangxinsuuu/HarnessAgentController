@@ -19,6 +19,7 @@ from cgr_exp.alfworld_transfer import (
     _contract_filtered_admissible_commands,
     _command_type,
     _alfworld_env_method_for_policy,
+    _alfworld_ranker_weight_diagnostics,
     _alfworld_diagnostic_action_from_info,
     _label_frontier_by_planner_cost,
     _label_frontier_by_walkthrough_suffix,
@@ -407,6 +408,83 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(candidate.action.references_goal_receptacle, 1.0)
         self.assertEqual(candidate.action.goal_object_held, 1.0)
         self.assertEqual(candidate.action.declared_requirement_gain, 0.5)
+
+    def test_low_gain_move_after_move_streak_gets_higher_policy_risk(self) -> None:
+        without_streak = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You are holding an apple near a countertop.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on a countertop.",
+                "act:take apple from countertop",
+                "obs:You are holding an apple near a countertop.",
+            ],
+            admissible_commands=["go to cabinet", "go to table"],
+            command="go to cabinet",
+            max_steps=20,
+        )
+        after_streak = alfworld_candidate_to_canonical(
+            candidate_id="c1",
+            observation="You are holding an apple near a drawer.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on a countertop.",
+                "act:take apple from countertop",
+                "obs:You are holding an apple near a countertop.",
+                "act:go to cabinet",
+                "obs:You are at cabinet 1.",
+                "act:go to drawer",
+                "obs:You are at drawer 1.",
+            ],
+            admissible_commands=["go to cabinet", "go to table"],
+            command="go to cabinet",
+            max_steps=20,
+        )
+        self.assertEqual(without_streak.action.declared_requirement_gain, 0.0)
+        self.assertEqual(after_streak.action.declared_requirement_gain, 0.0)
+        self.assertGreater(after_streak.action.policy_risk, without_streak.action.policy_risk)
+        self.assertGreaterEqual(after_streak.action.policy_risk, 0.5)
+
+    def test_ready_goal_placement_has_low_policy_risk(self) -> None:
+        placement = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You are holding an apple near a table.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on a countertop and a table.",
+                "act:take apple from countertop",
+                "obs:You are holding an apple near a table.",
+            ],
+            admissible_commands=["move apple to table", "move apple to countertop"],
+            command="move apple to table",
+            max_steps=20,
+        )
+        distractor = alfworld_candidate_to_canonical(
+            candidate_id="c1",
+            observation="You are holding an apple near a table and a countertop.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on a countertop and a table.",
+                "act:take apple from countertop",
+                "obs:You are holding an apple near a table and a countertop.",
+            ],
+            admissible_commands=["move apple to table", "move apple to countertop"],
+            command="move apple to countertop",
+            max_steps=20,
+        )
+        self.assertEqual(placement.action.completes_goal_placement, 1.0)
+        self.assertLess(placement.action.policy_risk, distractor.action.policy_risk)
+        self.assertLessEqual(placement.action.policy_risk, 0.05)
+
+    def test_ranker_weight_diagnostics_flags_contract_sign_violations(self) -> None:
+        names = canonical_feature_names()
+        weights = [0.0 for _name in names]
+        weights[names.index("declared_requirement_gain")] = -0.2
+        weights[names.index("policy_risk")] = 0.3
+        diagnostics = _alfworld_ranker_weight_diagnostics(GenericHarnessRanker(weights))
+        self.assertIn("declared_requirement_gain<0", diagnostics["contract_sign_violations"])
+        self.assertIn("policy_risk>0", diagnostics["contract_sign_violations"])
+        self.assertEqual(diagnostics["contract_sign_violation_count"], 2)
 
     def test_repeated_goal_navigation_is_not_noop_after_object_is_held(self) -> None:
         candidate = alfworld_candidate_to_canonical(
@@ -885,6 +963,8 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(manifest["train"]["label_source"], "walkthrough_suffix_cost_proxy")
         self.assertTrue(manifest["train"]["walkthrough_suffix_cost_proxy"])
         self.assertLess(manifest["train"]["walkthrough_policy_miss_rate"], 1.0)
+        self.assertIn("ranker_contract_sign_violation_count", manifest["train"])
+        self.assertIn("ranker_direct_feature_weights", manifest["train"])
 
     def test_run_alfworld_dense_train_can_use_planner_label_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1015,6 +1095,7 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(manifest["cache_dir"], str(cache))
             self.assertEqual(manifest["label_summary"]["train_pair_count"], 1)
             self.assertEqual(manifest["label_summary"]["cost_variation_rate"], 1.0)
+            self.assertIn("ranker_contract_sign_violation_count", manifest["label_summary"])
 
     def test_run_alfworld_dense_transfer_can_load_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

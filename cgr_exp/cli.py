@@ -1844,6 +1844,9 @@ def main() -> None:
                 "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],
                 "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
                 "command_string_used_as_learned_feature": manifest["command_string_used_as_learned_feature"],
+                "alfworld_adapter_version": manifest["alfworld_adapter_version"],
+                "relational_goal_action_features": manifest["relational_goal_action_features"],
+                "object_identity_feature_used": manifest["object_identity_feature_used"],
                 "label_summary": manifest["label_summary"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
@@ -1880,6 +1883,9 @@ def main() -> None:
                 "alfworld_train_trajectories_used": manifest["alfworld_train_trajectories_used"],
                 "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
                 "command_string_used_as_learned_feature": manifest["command_string_used_as_learned_feature"],
+                "alfworld_adapter_version": manifest["alfworld_adapter_version"],
+                "relational_goal_action_features": manifest["relational_goal_action_features"],
+                "object_identity_feature_used": manifest["object_identity_feature_used"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
@@ -1911,6 +1917,9 @@ def main() -> None:
                 "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],
                 "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
                 "command_string_used_as_learned_feature": manifest["command_string_used_as_learned_feature"],
+                "alfworld_adapter_version": manifest["alfworld_adapter_version"],
+                "relational_goal_action_features": manifest["relational_goal_action_features"],
+                "object_identity_feature_used": manifest["object_identity_feature_used"],
                 "ranker_checkpoint": manifest["ranker_checkpoint"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
@@ -1951,6 +1960,9 @@ def main() -> None:
                 "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],
                 "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
                 "command_string_used_as_learned_feature": manifest["command_string_used_as_learned_feature"],
+                "alfworld_adapter_version": manifest["alfworld_adapter_version"],
+                "relational_goal_action_features": manifest["relational_goal_action_features"],
+                "object_identity_feature_used": manifest["object_identity_feature_used"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
@@ -1984,6 +1996,9 @@ def main() -> None:
                 "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],
                 "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
                 "command_string_used_as_learned_feature": manifest["command_string_used_as_learned_feature"],
+                "alfworld_adapter_version": manifest["alfworld_adapter_version"],
+                "relational_goal_action_features": manifest["relational_goal_action_features"],
+                "object_identity_feature_used": manifest["object_identity_feature_used"],
                 "ranker_checkpoint": manifest["ranker_checkpoint"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
@@ -2026,6 +2041,9 @@ def main() -> None:
                 "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],
                 "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
                 "command_string_used_as_learned_feature": manifest["command_string_used_as_learned_feature"],
+                "alfworld_adapter_version": manifest["alfworld_adapter_version"],
+                "relational_goal_action_features": manifest["relational_goal_action_features"],
+                "object_identity_feature_used": manifest["object_identity_feature_used"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")

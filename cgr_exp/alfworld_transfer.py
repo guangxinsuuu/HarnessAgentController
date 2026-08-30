@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import random
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -22,6 +23,8 @@ TAKE_VERBS = ("take", "pick")
 PUT_VERBS = ("put", "place", "insert")
 USE_VERBS = ("toggle", "heat", "cool", "clean", "slice", "pour", "turn", "use")
 TERMINATE_VERBS = ("done", "finish", "stop")
+TRANSFORM_VERBS = ("cool", "heat", "clean", "slice")
+ALFWORLD_ADAPTER_VERSION = "v2_relational_goal_action"
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,14 @@ class AlfworldDenseActionLabel:
     final_score: float
     rollout_steps: int
     label_source: str
+
+
+@dataclass(frozen=True)
+class AlfworldGoalSpec:
+    object_terms: frozenset[str]
+    receptacle_terms: frozenset[str]
+    transform_terms: frozenset[str]
+    raw_terms: frozenset[str]
 
 
 def run_alfworld_transfer(
@@ -103,6 +114,9 @@ def run_alfworld_transfer(
         "alfworld_train_trajectories_used": False,
         "oracle_labels_in_inference_features": False,
         "command_string_used_as_learned_feature": False,
+        "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
+        "relational_goal_action_features": True,
+        "object_identity_feature_used": False,
         "controller_checkpoint_frozen": True,
         "contract": canonical_contract_manifest(),
         "source_controller": source_manifest,
@@ -190,6 +204,9 @@ def run_alfworld_dense_transfer(
         "target_eval_trajectories_used_for_training": False,
         "oracle_labels_in_inference_features": False,
         "command_string_used_as_learned_feature": False,
+        "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
+        "relational_goal_action_features": True,
+        "object_identity_feature_used": False,
         "controller_checkpoint_frozen_before_eval": True,
         "contract": canonical_contract_manifest(),
         "train": train_manifest,
@@ -248,6 +265,9 @@ def audit_alfworld_dense_labels(
         "command_string_used_as_learned_feature": False,
         "counterfactual_planner_cost_to_go": False,
         "label_source": "replay_prefix_plus_expert_rollout_cost_proxy",
+        "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
+        "relational_goal_action_features": True,
+        "object_identity_feature_used": False,
         "contract": canonical_contract_manifest(),
         "label_summary": summary,
         "collection": train_manifest,
@@ -301,6 +321,9 @@ def run_alfworld_dense_train(
         "target_eval_trajectories_used_for_training": False,
         "oracle_labels_in_inference_features": False,
         "command_string_used_as_learned_feature": False,
+        "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
+        "relational_goal_action_features": True,
+        "object_identity_feature_used": False,
         "contract": canonical_contract_manifest(),
         "train": train_manifest,
         "ranker_checkpoint": str(out_dir / "alfworld_dense_ranker.json"),
@@ -382,6 +405,9 @@ def run_alfworld_expert_transfer(
         "target_eval_trajectories_used_for_training": False,
         "oracle_labels_in_inference_features": False,
         "command_string_used_as_learned_feature": False,
+        "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
+        "relational_goal_action_features": True,
+        "object_identity_feature_used": False,
         "controller_checkpoint_frozen_before_eval": True,
         "contract": canonical_contract_manifest(),
         "train": train_manifest,
@@ -433,6 +459,9 @@ def run_alfworld_expert_train(
         "target_eval_trajectories_used_for_training": False,
         "oracle_labels_in_inference_features": False,
         "command_string_used_as_learned_feature": False,
+        "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
+        "relational_goal_action_features": True,
+        "object_identity_feature_used": False,
         "contract": canonical_contract_manifest(),
         "train": train_manifest,
         "ranker_checkpoint": str(out_dir / "alfworld_expert_ranker.json"),
@@ -715,19 +744,23 @@ def alfworld_runtime_features(
     admissible_commands: Sequence[str],
     max_steps: int,
 ) -> RuntimeFeatures:
-    text = f"{objective} {observation}".lower()
+    goal = _alfworld_goal_spec(objective)
     history_text = " ".join(history).lower()
-    observed_entities = _object_tokens(text)
-    progress = _progress_proxy(objective=objective, observation=observation, history=history)
+    observed_terms = _observed_terms(observation=observation, history=history)
+    progress = _relational_progress(goal=goal, observation=observation, history=history)
     failed = sum(1 for item in history if item.startswith("obs:") and ("can't" in item.lower() or "nothing happens" in item.lower()))
     read_count = sum(1 for item in history if item.startswith("act:") and _command_type(item[4:].strip()) == "read")
     write_count = sum(1 for item in history if item.startswith("act:") and _command_type(item[4:].strip()) == "write")
+    relevant_observed = (goal.object_terms | goal.receptacle_terms) & observed_terms
+    expected_facts = max(1, len(goal.object_terms | goal.receptacle_terms))
+    observed_fact_frac = min(1.0, len(relevant_observed) / expected_facts)
+    missing_goal_terms = (goal.object_terms | goal.receptacle_terms) - observed_terms
     return RuntimeFeatures(
         verified_progress_frac=progress,
         verified_progress_known_mask=1.0,
         remaining_requirement_frac=1.0 - progress,
         remaining_requirement_known_mask=1.0,
-        observed_fact_frac=min(1.0, len(observed_entities) / 12.0),
+        observed_fact_frac=observed_fact_frac,
         observed_fact_known_mask=1.0,
         remaining_turn_budget_frac=max(0.0, (max_steps - _action_count(history)) / max(1, max_steps)),
         remaining_tool_budget_frac=max(0.0, (max_steps - _action_count(history)) / max(1, max_steps)),
@@ -736,7 +769,7 @@ def alfworld_runtime_features(
         valid_action_ratio=1.0,
         previous_failure_rate=failed / max(1, _action_count(history)),
         stagnation_steps_frac=_stagnation_frac(history),
-        uncertainty_score=1.0 if not observed_entities else max(0.0, 1.0 - len(observed_entities) / 12.0),
+        uncertainty_score=min(1.0, len(missing_goal_terms) / expected_facts),
         read_write_balance=(read_count - write_count) / max(1, _action_count(history)),
         irreversible_action_used=1.0 if write_count else 0.0,
     )
@@ -752,11 +785,20 @@ def alfworld_action_features(
 ) -> ActionFeatures:
     action_type = _command_type(command)
     repeats = any(item == f"act:{command}" for item in history)
-    objective_tokens = _object_tokens(objective.lower())
-    command_tokens = _object_tokens(command.lower())
-    observation_tokens = _object_tokens(observation.lower())
-    target_related = bool(command_tokens & objective_tokens)
-    references_observed = bool(command_tokens & observation_tokens) or target_related
+    goal = _alfworld_goal_spec(objective)
+    command_terms = _object_tokens(command.lower())
+    observed_terms = _observed_terms(observation=observation, history=history)
+    held_terms = _held_terms(observation=observation, history=history)
+    target_related = bool(command_terms & (goal.object_terms | goal.receptacle_terms | goal.transform_terms))
+    references_observed = bool(command_terms & observed_terms)
+    relation = _action_goal_relation(
+        command=command,
+        action_type=action_type,
+        goal=goal,
+        observed_terms=observed_terms,
+        held_terms=held_terms,
+        repeats=repeats,
+    )
     return ActionFeatures(
         action_is_read=1.0 if action_type == "read" else 0.0,
         action_is_write=1.0 if action_type == "write" else 0.0,
@@ -765,13 +807,13 @@ def alfworld_action_features(
         action_is_terminate=1.0 if action_type == "terminate" else 0.0,
         argument_completeness=1.0 if command.strip() else 0.0,
         references_observed_entity=1.0 if references_observed else 0.0,
-        references_unverified_entity=1.0 if command_tokens and not references_observed else 0.0,
-        declared_observation_gain=1.0 if action_type == "read" and not repeats else 0.0,
-        declared_requirement_gain=1.0 if action_type == "write" and target_related and not repeats else 0.0,
+        references_unverified_entity=1.0 if command_terms and target_related and not references_observed else 0.0,
+        declared_observation_gain=relation["observation_gain"],
+        declared_requirement_gain=relation["requirement_gain"],
         expected_tool_cost_frac=1.0 / max(1, max_steps),
         action_irreversible=1.0 if action_type == "write" else 0.0,
-        precondition_satisfied=1.0,
-        policy_risk=0.1 if action_type == "read" else (0.3 if action_type == "write" else 0.0),
+        precondition_satisfied=relation["precondition_satisfied"],
+        policy_risk=relation["policy_risk"],
         duplicates_previous_action=1.0 if repeats else 0.0,
     )
 
@@ -1209,6 +1251,192 @@ def _command_type(command: str) -> str:
     return "write"
 
 
+def _alfworld_goal_spec(objective: str) -> AlfworldGoalSpec:
+    lowered = objective.lower().replace("_", " ")
+    raw_terms = _object_tokens(lowered)
+    transform_terms = frozenset(term for term in TRANSFORM_VERBS if re.search(rf"\b{re.escape(term)}\w*\b", lowered))
+    object_terms: set[str] = set()
+    receptacle_terms: set[str] = set()
+
+    put_match = re.search(r"\bput\b\s+(?P<object>.+?)\s+\b(?:in|on|into|onto)\b\s+(?P<receptacle>.+)$", lowered)
+    if put_match:
+        object_terms.update(_goal_phrase_terms(put_match.group("object"), drop_transforms=True))
+        receptacle_terms.update(_goal_phrase_terms(put_match.group("receptacle"), drop_transforms=False))
+    else:
+        examine_match = re.search(r"\b(?:examine|look at)\b\s+(?P<object>.+?)\s+\b(?:with|under|using)\b\s+(?P<receptacle>.+)$", lowered)
+        if examine_match:
+            object_terms.update(_goal_phrase_terms(examine_match.group("object"), drop_transforms=True))
+            receptacle_terms.update(_goal_phrase_terms(examine_match.group("receptacle"), drop_transforms=False))
+        else:
+            pickup_match = re.search(r"\b(?:pick up|take|get)\b\s+(?P<object>.+)$", lowered)
+            if pickup_match:
+                object_terms.update(_goal_phrase_terms(pickup_match.group("object"), drop_transforms=True))
+
+    if not object_terms:
+        object_terms.update(term for term in raw_terms if term not in _goal_function_words() and term not in transform_terms)
+    object_terms.difference_update(receptacle_terms)
+    return AlfworldGoalSpec(
+        object_terms=frozenset(object_terms),
+        receptacle_terms=frozenset(receptacle_terms),
+        transform_terms=transform_terms,
+        raw_terms=frozenset(raw_terms),
+    )
+
+
+def _goal_phrase_terms(phrase: str, *, drop_transforms: bool) -> set[str]:
+    terms = _object_tokens(phrase)
+    terms.difference_update(_goal_function_words())
+    if drop_transforms:
+        terms.difference_update(TRANSFORM_VERBS)
+    return terms
+
+
+def _goal_function_words() -> set[str]:
+    return {
+        "put",
+        "place",
+        "pick",
+        "take",
+        "get",
+        "find",
+        "examine",
+        "look",
+        "with",
+        "under",
+        "using",
+        "into",
+        "onto",
+        "two",
+        "some",
+        "one",
+        "all",
+        "cleaned",
+        "heated",
+        "cooled",
+        "sliced",
+    }
+
+
+def _observed_terms(*, observation: str, history: Sequence[str]) -> set[str]:
+    texts = [_strip_task_text(observation)]
+    texts.extend(_strip_task_text(item[4:]) for item in history if item.startswith("obs:"))
+    return _object_tokens(" ".join(texts))
+
+
+def _held_terms(*, observation: str, history: Sequence[str]) -> set[str]:
+    held = set()
+    for action in [item[4:].strip().lower() for item in history if item.startswith("act:")]:
+        if action.startswith(TAKE_VERBS):
+            held.update(_object_tokens(action))
+        if action.startswith(PUT_VERBS):
+            held.difference_update(_object_tokens(action))
+    holding_text = " ".join(
+        _strip_task_text(text)
+        for text in [observation, *(item[4:] for item in history if item.startswith("obs:"))]
+        if "holding" in text.lower() or "carrying" in text.lower() or "inventory" in text.lower()
+    )
+    held.update(_object_tokens(holding_text))
+    held.difference_update({"holding", "carrying", "inventory", "nothing"})
+    return held
+
+
+def _relational_progress(*, goal: AlfworldGoalSpec, observation: str, history: Sequence[str]) -> float:
+    observed_terms = _observed_terms(observation=observation, history=history)
+    held_terms = _held_terms(observation=observation, history=history)
+    actions = [item[4:].strip().lower() for item in history if item.startswith("act:")]
+    completed = 0.0
+    total = 0.0
+
+    if goal.object_terms:
+        total += 1.0
+        if goal.object_terms & observed_terms:
+            completed += 0.5
+        if goal.object_terms & held_terms:
+            completed += 0.5
+
+    if goal.transform_terms:
+        total += 1.0
+        for action in actions:
+            action_terms = _object_tokens(action)
+            if action.startswith(tuple(goal.transform_terms)) and (not goal.object_terms or action_terms & goal.object_terms):
+                completed += 1.0
+                break
+
+    if goal.receptacle_terms:
+        total += 1.0
+        if goal.receptacle_terms & observed_terms:
+            completed += 0.5
+        for action in actions:
+            action_terms = _object_tokens(action)
+            if action.startswith(PUT_VERBS) and action_terms & goal.receptacle_terms and (not goal.object_terms or action_terms & goal.object_terms):
+                completed += 0.5
+                break
+
+    if total == 0.0:
+        return _progress_proxy(objective=" ".join(goal.raw_terms), observation=observation, history=history)
+    return min(1.0, completed / total)
+
+
+def _action_goal_relation(
+    *,
+    command: str,
+    action_type: str,
+    goal: AlfworldGoalSpec,
+    observed_terms: set[str],
+    held_terms: set[str],
+    repeats: bool,
+) -> dict[str, float]:
+    lowered = command.lower().strip()
+    command_terms = _object_tokens(lowered)
+    goal_object_ref = bool(command_terms & goal.object_terms) if goal.object_terms else False
+    goal_receptacle_ref = bool(command_terms & goal.receptacle_terms) if goal.receptacle_terms else False
+    transform_ref = bool(goal.transform_terms and any(lowered.startswith(term) for term in goal.transform_terms))
+    object_observed = bool(goal.object_terms & observed_terms) if goal.object_terms else True
+    object_held = bool(goal.object_terms & held_terms) if goal.object_terms else False
+    receptacle_observed = bool(goal.receptacle_terms & observed_terms) if goal.receptacle_terms else True
+
+    observation_gain = 0.0
+    requirement_gain = 0.0
+    precondition = 1.0
+    risk = 0.1 if action_type in {"read", "move"} else (0.35 if action_type == "write" else 0.0)
+
+    if repeats:
+        risk += 0.25
+    if action_type in {"read", "move"}:
+        missing_object = goal.object_terms and not object_observed
+        missing_receptacle = goal.receptacle_terms and not receptacle_observed
+        if not repeats and (missing_object or missing_receptacle or goal_receptacle_ref or goal_object_ref):
+            observation_gain = 1.0
+
+    if lowered.startswith(TAKE_VERBS):
+        requirement_gain = 1.0 if goal_object_ref and object_observed and not object_held and not repeats else 0.0
+        precondition = 1.0 if object_observed else 0.0
+    elif lowered.startswith(PUT_VERBS):
+        requirement_gain = 1.0 if goal_object_ref and goal_receptacle_ref and object_held and not repeats else 0.0
+        precondition = 1.0 if (object_held or not goal.object_terms) and (receptacle_observed or not goal.receptacle_terms) else 0.0
+    elif lowered.startswith(USE_VERBS):
+        requirement_gain = 1.0 if (transform_ref or bool(command_terms & goal.transform_terms)) and (object_held or object_observed) and not repeats else 0.0
+        precondition = 1.0 if object_held or object_observed or goal_object_ref else 0.0
+    elif action_type == "terminate":
+        precondition = 1.0 if _goal_ready_to_finish(goal=goal, observed_terms=observed_terms, held_terms=held_terms) else 0.0
+        risk = 0.8 if precondition == 0.0 else 0.2
+
+    if action_type == "write" and precondition == 0.0:
+        risk += 0.3
+    return {
+        "observation_gain": 0.0 if repeats else min(1.0, observation_gain),
+        "requirement_gain": 0.0 if repeats else min(1.0, requirement_gain),
+        "precondition_satisfied": min(1.0, max(0.0, precondition)),
+        "policy_risk": min(1.0, max(0.0, risk)),
+    }
+
+
+def _goal_ready_to_finish(*, goal: AlfworldGoalSpec, observed_terms: set[str], held_terms: set[str]) -> bool:
+    object_ok = not goal.object_terms or bool(goal.object_terms & (observed_terms | held_terms))
+    receptacle_ok = not goal.receptacle_terms or bool(goal.receptacle_terms & observed_terms)
+    return object_ok and receptacle_ok
+
+
 def _object_tokens(text: str) -> set[str]:
     stop = {
         "the",
@@ -1228,6 +1456,12 @@ def _object_tokens(text: str) -> set[str]:
         "of",
         "your",
         "task",
+        "this",
+        "that",
+        "there",
+        "here",
+        "room",
+        "rooms",
     }
     return {token.strip(".,:;!?()[]") for token in text.lower().split() if len(token.strip(".,:;!?()[]")) > 2 and token.strip(".,:;!?()[]") not in stop}
 
@@ -1289,6 +1523,15 @@ def _task_text_from_observation(observation: str) -> str:
         if stop in task:
             task = task.split(stop, 1)[0].strip()
     return task.strip(" .")
+
+
+def _strip_task_text(observation: str) -> str:
+    lowered = observation.lower()
+    for marker in ("your task is to:", "your task is to"):
+        idx = lowered.find(marker)
+        if idx >= 0:
+            return observation[:idx]
+    return observation
 
 
 def _first(value: Any, default: Any = None) -> Any:

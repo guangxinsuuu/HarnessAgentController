@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from cgr_exp.alfworld_transfer import (
+    ALFWORLD_ADAPTER_VERSION,
     audit_alfworld_dense_labels,
     alfworld_candidate_to_canonical,
     run_alfworld_dense_train,
@@ -152,6 +153,66 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(candidate.action.action_is_write, 1.0)
         self.assertEqual(candidate.action.declared_requirement_gain, 1.0)
 
+    def test_relational_adapter_tracks_observed_and_held_goal_progress(self) -> None:
+        before = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You are in a kitchen. There is a table here.",
+            objective="put apple on table",
+            history=["obs:You are in a kitchen. Your task is to: put apple on table."],
+            admissible_commands=["take apple", "look"],
+            command="take apple",
+            max_steps=10,
+        )
+        after = alfworld_candidate_to_canonical(
+            candidate_id="c1",
+            observation="You are holding an apple near a table.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on the counter. Your task is to: put apple on table.",
+                "act:take apple",
+                "obs:You are holding an apple near a table.",
+            ],
+            admissible_commands=["put apple on table", "look"],
+            command="put apple on table",
+            max_steps=10,
+        )
+        self.assertEqual(before.action.precondition_satisfied, 0.0)
+        self.assertGreater(before.action.policy_risk, after.action.policy_risk)
+        self.assertEqual(after.action.precondition_satisfied, 1.0)
+        self.assertEqual(after.action.declared_requirement_gain, 1.0)
+        self.assertGreater(after.state.verified_progress_frac, before.state.verified_progress_frac)
+
+    def test_relational_adapter_matches_transform_subgoal(self) -> None:
+        related = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You are holding a tomato near a fridge.",
+            objective="put a cool tomato in fridge",
+            history=[
+                "obs:You see a tomato and a fridge.",
+                "act:take tomato",
+                "obs:You are holding a tomato near a fridge.",
+            ],
+            admissible_commands=["cool tomato with fridge", "take plate"],
+            command="cool tomato with fridge",
+            max_steps=10,
+        )
+        unrelated = alfworld_candidate_to_canonical(
+            candidate_id="c1",
+            observation="You are holding a tomato near a fridge.",
+            objective="put a cool tomato in fridge",
+            history=[
+                "obs:You see a tomato and a fridge.",
+                "act:take tomato",
+                "obs:You are holding a tomato near a fridge.",
+            ],
+            admissible_commands=["cool tomato with fridge", "take plate"],
+            command="take plate",
+            max_steps=10,
+        )
+        self.assertEqual(related.action.declared_requirement_gain, 1.0)
+        self.assertEqual(unrelated.action.declared_requirement_gain, 0.0)
+        self.assertEqual(related.action.precondition_satisfied, 1.0)
+
     def test_adapter_extracts_task_text_from_full_alfworld_observation(self) -> None:
         candidate = alfworld_candidate_to_canonical(
             candidate_id="c0",
@@ -198,6 +259,8 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertFalse(manifest["alfworld_train_trajectories_used"])
         self.assertFalse(manifest["oracle_labels_in_inference_features"])
         self.assertFalse(manifest["command_string_used_as_learned_feature"])
+        self.assertEqual(manifest["alfworld_adapter_version"], ALFWORLD_ADAPTER_VERSION)
+        self.assertTrue(manifest["relational_goal_action_features"])
         self.assertEqual({row["policy"] for row in rows}, {"Random", "Source-trained controller"})
 
     def test_run_alfworld_expert_transfer_trains_from_frontier_expert_labels(self) -> None:

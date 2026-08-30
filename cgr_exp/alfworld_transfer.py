@@ -728,12 +728,6 @@ def train_alfworld_dense_ranker(
 ) -> tuple[GenericHarnessRanker, dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
     label_source = _normalize_alfworld_dense_label_source(label_source)
     rng = random.Random(seed)
-    train_env = _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
-    label_env = None
-    if label_source == ALFWORLD_DENSE_LABEL_REPLAY:
-        label_env = _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
-    elif label_source == ALFWORLD_DENSE_LABEL_PLANNER:
-        label_env = _make_alfworld_planner_env(env_factory=env_factory)
     walkthrough_cache: dict[str, list[str]] = {}
     pairs: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
     trace_rows: list[dict[str, object]] = []
@@ -745,6 +739,15 @@ def train_alfworld_dense_ranker(
         trace_rows.extend(cached["trace_rows"])
         action_label_rows.extend(cached["action_label_rows"])
         completed_episodes.update(cached["completed_episodes"])
+    train_env = None
+    label_env = None
+    needs_collection = any(episode not in completed_episodes for episode in range(train_episodes))
+    if needs_collection:
+        train_env = _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
+        if label_source == ALFWORLD_DENSE_LABEL_REPLAY:
+            label_env = _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
+        elif label_source == ALFWORLD_DENSE_LABEL_PLANNER:
+            label_env = _make_alfworld_planner_env(env_factory=env_factory)
     labeled_states = 0
     skipped_states = 0
     finite_action_labels = 0
@@ -758,8 +761,11 @@ def train_alfworld_dense_ranker(
     planner_policy_misses = 0
     for episode in range(train_episodes):
         if episode in completed_episodes:
-            train_env.reset()
+            if train_env is not None:
+                train_env.reset()
             continue
+        if train_env is None:
+            raise RuntimeError("ALFWorld dense training cache state is inconsistent; collection is required but no environment was created.")
         obs, info = train_env.reset()
         observation = _first(obs)
         objective = _objective_from_info(info, observation)

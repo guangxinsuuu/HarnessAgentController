@@ -35,7 +35,7 @@ AUDIT_DIR="${AUDIT_DIR:-${OUT_ROOT}_audit}"
 EVAL_DIR="${EVAL_DIR:-${OUT_ROOT}_eval}"
 RANKER_CHECKPOINT="${RANKER_CHECKPOINT:-${TRAIN_DIR}/alfworld_dense_ranker.json}"
 POLICIES="${POLICIES:-Random,Hand heuristic,ALFWorld dense-ranker,ALFWorld planner diagnostic}"
-RESUME="${RESUME:-0}"
+RESUME="${RESUME:-1}"
 
 export ALFWORLD_DATA
 export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
@@ -52,7 +52,8 @@ It does not use an LLM or API key.
 Common environment overrides:
   TRAIN_EPISODES=50 EVAL_EPISODES=20 MAX_STEPS=40 EPOCHS=20
   MAX_FRONTIER_ACTIONS=6 PLANNER_TIMEOUT_SECONDS=3
-  RESUME=1
+  RESUME=1       # default; reuses existing dense label cache if present
+  RESUME=0       # clears an existing training cache and starts over
   EVAL_SPLIT=eval_in_distribution
 EOF
 }

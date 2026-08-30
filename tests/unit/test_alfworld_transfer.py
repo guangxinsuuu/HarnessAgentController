@@ -5,7 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cgr_exp.alfworld_transfer import alfworld_candidate_to_canonical, run_alfworld_expert_train, run_alfworld_expert_transfer, run_alfworld_transfer
+from cgr_exp.alfworld_transfer import (
+    alfworld_candidate_to_canonical,
+    run_alfworld_dense_train,
+    run_alfworld_dense_transfer,
+    run_alfworld_expert_train,
+    run_alfworld_expert_transfer,
+    run_alfworld_transfer,
+)
 from cgr_exp.harness_contract import canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
 
@@ -56,6 +63,77 @@ class FakeExpertAlfworldEnv(FakeAlfworldEnv):
             expert = admissible[0] if admissible else "look"
         info["extra.expert_plan"] = [[expert]]
         return obs, score, done, info
+
+
+class FakeDenseAlfworldEnv:
+    def __init__(self):
+        self.state = "root"
+
+    def load(self, _gamefile):
+        self.state = "root"
+
+    def reset(self):
+        self.state = "root"
+        return ["You are in a hallway. Your task is to put apple on table."], {
+            "admissible_commands": [["look around", "go to kitchen", "take apple"]],
+            "objective": ["put apple on table"],
+            "extra.gamefile": ["fake-game"],
+            "extra.expert_plan": [["go to kitchen"]],
+        }
+
+    def step(self, commands):
+        command = commands[0] if isinstance(commands, list) else commands
+        if self.state == "root":
+            if command == "go to kitchen":
+                self.state = "kitchen"
+                return ["You see an apple and a table."], [0.0], [False], {
+                    "admissible_commands": [["take apple", "look around"]],
+                    "objective": ["put apple on table"],
+                    "extra.gamefile": ["fake-game"],
+                    "extra.expert_plan": [["take apple"]],
+                }
+            if command == "look around":
+                return ["You are still in a hallway."], [0.0], [False], {
+                    "admissible_commands": [["go to kitchen", "take apple"]],
+                    "objective": ["put apple on table"],
+                    "extra.gamefile": ["fake-game"],
+                    "extra.expert_plan": [["go to kitchen"]],
+                }
+            return ["You cannot take that."], [0.0], [False], {
+                "admissible_commands": [["look around"]],
+                "objective": ["put apple on table"],
+                "extra.gamefile": ["fake-game"],
+                "extra.expert_plan": [["look around"]],
+            }
+        if self.state == "kitchen":
+            if command == "take apple":
+                self.state = "holding"
+                return ["You hold the apple near the table."], [0.0], [False], {
+                    "admissible_commands": [["put apple on table", "look around"]],
+                    "objective": ["put apple on table"],
+                    "extra.gamefile": ["fake-game"],
+                    "extra.expert_plan": [["put apple on table"]],
+                }
+            return ["Nothing new."], [0.0], [False], {
+                "admissible_commands": [["take apple", "look around"]],
+                "objective": ["put apple on table"],
+                "extra.gamefile": ["fake-game"],
+                "extra.expert_plan": [["take apple"]],
+            }
+        if self.state == "holding" and command == "put apple on table":
+            self.state = "done"
+            return ["Done."], [1.0], [True], {
+                "admissible_commands": [[]],
+                "objective": ["put apple on table"],
+                "extra.gamefile": ["fake-game"],
+                "extra.expert_plan": [[]],
+            }
+        return ["Nothing happens."], [0.0], [False], {
+            "admissible_commands": [["look around"]],
+            "objective": ["put apple on table"],
+            "extra.gamefile": ["fake-game"],
+            "extra.expert_plan": [["look around"]],
+        }
 
 
 class AlfworldTransferTest(unittest.TestCase):
@@ -179,6 +257,47 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertFalse(manifest["train"]["trained_in_this_run"])
             self.assertEqual(manifest["train"]["checkpoint"], str(checkpoint))
             self.assertTrue((out / "alfworld_expert_ranker.json").exists())
+
+    def test_run_alfworld_dense_train_writes_frontier_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-train"
+            manifest = run_alfworld_dense_train(
+                out,
+                train_episodes=3,
+                max_steps=4,
+                epochs=3,
+                max_pairs_per_state=8,
+                max_frontier_actions=3,
+                counterfactual_rollout_steps=4,
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            self.assertTrue((out / "alfworld_dense_ranker.json").exists())
+            self.assertTrue((out / "alfworld_dense_action_labels.csv").exists())
+            self.assertEqual(manifest["benchmark"], "alfworld_dense_frontier_controller_train")
+            self.assertEqual(manifest["train"]["label_source"], "replay_prefix_plus_expert_rollout_cost_proxy")
+            self.assertGreater(manifest["train"]["train_pair_count"], 0)
+            with (out / "alfworld_dense_action_labels.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertGreater(len(rows), 0)
+
+    def test_run_alfworld_dense_transfer_can_load_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            checkpoint.write_text(GenericHarnessRanker([0.0 for _name in canonical_feature_names()]).to_json(), encoding="utf-8")
+            out = Path(tmp) / "dense-eval"
+            manifest = run_alfworld_dense_transfer(
+                out,
+                ranker_checkpoint=checkpoint,
+                eval_episodes=2,
+                max_steps=5,
+                policies=("ALFWorld dense-ranker",),
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            self.assertFalse(manifest["train"]["trained_in_this_run"])
+            self.assertEqual(manifest["train"]["checkpoint"], str(checkpoint))
+            self.assertTrue((out / "alfworld_dense_transfer_table.csv").exists())
 
 
 if __name__ == "__main__":

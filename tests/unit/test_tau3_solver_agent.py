@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
-from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
+from tau2.data_model.message import AssistantMessage, SystemMessage, ToolCall, ToolMessage, UserMessage
 from tau2.environment.tool import as_tool
 
 from cgr_exp.tau3_solver_agent import Tau3SolverControllerAgent
@@ -205,6 +205,40 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertEqual([candidate.tool_calls[0].arguments["order_id"] for candidate in candidates], ["7", "8", "9"])
         self.assertEqual(sorted(seen), [(7, 0), (8, 0.2), (9, 0.2)])
 
+    def test_candidate_diversity_adds_intent_hints_without_changing_index_order(self) -> None:
+        seen: list[tuple[int, list[str]]] = []
+
+        def fake_generate(**kwargs):
+            system_text = [message.content for message in kwargs["messages"] if isinstance(message, SystemMessage)]
+            seen.append((kwargs["seed"], system_text))
+            return AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": str(kwargs["seed"])})],
+                cost=0.01,
+                usage={"prompt_tokens": 1, "completion_tokens": 1},
+            )
+
+        agent = Tau3SolverControllerAgent(
+            [as_tool(_get_order)],
+            "policy",
+            "mock",
+            {"temperature": 0, "seed": 7},
+            candidate_count=4,
+            candidate_workers=1,
+            enable_candidate_diversity=True,
+        )
+        state = agent.get_init_state()
+        with patch("cgr_exp.tau3_solver_agent.generate", side_effect=fake_generate):
+            candidates = agent._sample_candidates(state)
+        self.assertEqual([candidate.tool_calls[0].arguments["order_id"] for candidate in candidates], ["7", "8", "9", "10"])
+        self.assertEqual(agent._last_candidate_generation_intents, ["greedy", "prefer_read", "prefer_write", "prefer_ask_or_respond"])
+        self.assertEqual(seen[0][0], 7)
+        self.assertEqual(len(seen[0][1]), 1)
+        self.assertIn("information-gathering", " ".join(seen[1][1]))
+        self.assertIn("state-changing", " ".join(seen[2][1]))
+        self.assertIn("clarification", " ".join(seen[3][1]))
+
     def test_adaptive_search_uses_min_candidates_for_low_risk_state(self) -> None:
         seen: list[int] = []
 
@@ -279,6 +313,36 @@ class Tau3SolverAgentTest(unittest.TestCase):
         self.assertEqual(trace_row["search_budget"], 4)
         self.assertTrue(trace_row["adaptive_search_enabled"])
         self.assertIn("adaptive_high_risk", trace_row["search_budget_reason"])
+
+    def test_candidate_diversity_trace_records_generation_intents(self) -> None:
+        def fake_generate(**kwargs):
+            return AssistantMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[ToolCall(name="get_order", arguments={"order_id": str(kwargs["seed"])})],
+                cost=0.01,
+                usage={"prompt_tokens": 1, "completion_tokens": 1},
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trace = Path(tmp) / "trace.jsonl"
+            agent = Tau3SolverControllerAgent(
+                [as_tool(_get_order)],
+                "policy",
+                "mock",
+                {"temperature": 0, "seed": 7},
+                candidate_count=4,
+                candidate_workers=1,
+                enable_candidate_diversity=True,
+                controller_trace_path=str(trace),
+            )
+            state = agent.get_init_state()
+            with patch("cgr_exp.tau3_solver_agent.generate", side_effect=fake_generate):
+                agent.generate_next_message(UserMessage(role="user", content="order ORD123"), state)
+            trace_row = json.loads(trace.read_text(encoding="utf-8"))
+        self.assertTrue(trace_row["candidate_diversity_enabled"])
+        self.assertEqual(trace_row["candidate_generation_intents"], ["greedy", "prefer_read", "prefer_write", "prefer_ask_or_respond"])
+        self.assertEqual(trace_row["candidate_scores"][1]["candidate_generation_intent"], "prefer_read")
 
     def test_candidate_sampling_retries_transient_failure(self) -> None:
         attempts: dict[int, int] = {}

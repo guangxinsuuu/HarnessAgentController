@@ -43,16 +43,19 @@ class Tau3SolverControllerAgent(LLMAgent):
         candidate_retry_backoff: float = 0.5,
         adaptive_search: bool = False,
         min_candidate_count: int = 1,
+        enable_candidate_diversity: bool = False,
     ):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self.candidate_count = max(1, int(candidate_count))
         self.min_candidate_count = max(1, min(int(min_candidate_count), self.candidate_count))
         self.adaptive_search = bool(adaptive_search)
+        self.enable_candidate_diversity = bool(enable_candidate_diversity)
         self.candidate_workers = max(1, int(candidate_workers))
         self.candidate_retries = max(0, int(candidate_retries))
         self.candidate_retry_backoff = max(0.0, float(candidate_retry_backoff))
         self._last_sample_failures = 0
         self._last_sample_failure_types: list[str] = []
+        self._last_candidate_generation_intents: list[str] = []
         self._last_search_budget = self.candidate_count
         self._last_search_reason = "fixed_candidate_count"
         self.max_turns = max(1, int(max_turns))
@@ -118,6 +121,7 @@ class Tau3SolverControllerAgent(LLMAgent):
         search_budget, reason = self._search_budget_for_state(state)
         self._last_search_budget = search_budget
         self._last_search_reason = reason
+        self._last_candidate_generation_intents = [self._candidate_generation_intent(idx) for idx in range(search_budget)]
         if self.candidate_workers <= 1 or search_budget == 1:
             indexed = []
             for idx in range(search_budget):
@@ -189,6 +193,8 @@ class Tau3SolverControllerAgent(LLMAgent):
 
     def _sample_candidate(self, idx: int, messages: List[APICompatibleMessage]) -> AssistantMessage:
         llm_args = deepcopy(self.llm_args)
+        intent = self._candidate_generation_intent(idx)
+        sample_messages = self._messages_with_candidate_intent(messages, intent)
         if "seed" in llm_args:
             llm_args["seed"] = int(llm_args["seed"]) + idx
         if idx > 0 and self.candidate_count > 1:
@@ -196,10 +202,27 @@ class Tau3SolverControllerAgent(LLMAgent):
         return generate(
             model=self.llm,
             tools=self.tools,
-            messages=messages,
+            messages=sample_messages,
             call_name="cgr_solver_controller_candidate",
             **llm_args,
         )
+
+    def _candidate_generation_intent(self, idx: int) -> str:
+        if not self.enable_candidate_diversity or idx == 0:
+            return "greedy"
+        intents = ["prefer_read", "prefer_write", "prefer_ask_or_respond"]
+        return intents[(idx - 1) % len(intents)]
+
+    def _messages_with_candidate_intent(self, messages: List[APICompatibleMessage], intent: str) -> List[APICompatibleMessage]:
+        if intent == "greedy":
+            return messages
+        hint = _candidate_diversity_hint(intent)
+        if not hint:
+            return messages
+        diversified = list(messages)
+        insert_at = 1 if diversified and isinstance(diversified[0], SystemMessage) else 0
+        diversified.insert(insert_at, SystemMessage(role="system", content=hint))
+        return diversified
 
     def _score_candidate(self, candidate: AssistantMessage, history: List[APICompatibleMessage]) -> tuple[float, dict[str, float]]:
         if self.ranker is not None:
@@ -336,6 +359,8 @@ class Tau3SolverControllerAgent(LLMAgent):
             "search_budget": self._last_search_budget,
             "adaptive_search_enabled": self.adaptive_search,
             "search_budget_reason": self._last_search_reason,
+            "candidate_diversity_enabled": self.enable_candidate_diversity,
+            "candidate_generation_intents": self._last_candidate_generation_intents,
             "candidate_sample_failures": self._last_sample_failures,
             "candidate_sample_failure_types": sorted(set(self._last_sample_failure_types)),
             "candidate_retries": self.candidate_retries,
@@ -353,6 +378,7 @@ class Tau3SolverControllerAgent(LLMAgent):
             "candidate_scores": [
                 {
                     "candidate_index": idx,
+                    "candidate_generation_intent": self._last_candidate_generation_intents[idx] if idx < len(self._last_candidate_generation_intents) else "unknown",
                     "score": scored_by_index.get(idx, None),
                     "known_mask_ratio": coverage_by_index.get(idx, {}).get("mean_known_mask_ratio"),
                     "certified_pruned": idx in pruned,
@@ -406,6 +432,7 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
     candidate_retry_backoff = float(llm_args.pop("cgr_candidate_retry_backoff", 0.5))
     adaptive_search = bool(llm_args.pop("cgr_adaptive_search", False))
     min_candidate_count = int(llm_args.pop("cgr_min_candidate_count", 1))
+    enable_candidate_diversity = bool(llm_args.pop("cgr_enable_candidate_diversity", False))
     ranker_checkpoint = llm_args.pop("cgr_ranker_checkpoint", None)
     max_turns = int(llm_args.pop("cgr_max_turns", 200))
     max_tool_budget = int(llm_args.pop("cgr_max_tool_budget", max_turns))
@@ -422,9 +449,30 @@ def create_tau3_solver_controller_agent(tools, domain_policy, **kwargs):
         candidate_retry_backoff=candidate_retry_backoff,
         adaptive_search=adaptive_search,
         min_candidate_count=min_candidate_count,
+        enable_candidate_diversity=enable_candidate_diversity,
         ranker_checkpoint=ranker_checkpoint,
         max_turns=max_turns,
         max_tool_budget=max_tool_budget,
         controller_trace_path=controller_trace_path,
         enable_certified_filter=enable_certified_filter,
     )
+
+
+def _candidate_diversity_hint(intent: str) -> str:
+    if intent == "prefer_read":
+        return (
+            "CGR candidate diversification hint: if a safe information-gathering action is useful, "
+            "prefer a read/search/list/lookup style tool call. Avoid repeating an exact previous tool call. "
+            "If no such action is appropriate, answer normally."
+        )
+    if intent == "prefer_write":
+        return (
+            "CGR candidate diversification hint: if the required entity and user authorization are already visible, "
+            "prefer one safe state-changing tool call. Do not invent missing identifiers or confirmations; ask or read instead."
+        )
+    if intent == "prefer_ask_or_respond":
+        return (
+            "CGR candidate diversification hint: if required information, identity, or confirmation is missing, "
+            "prefer asking the user a concise clarification. If the task is complete, respond concisely instead of calling a tool."
+        )
+    return ""

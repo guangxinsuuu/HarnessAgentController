@@ -404,6 +404,7 @@ class Tau3NativeTest(unittest.TestCase):
                 candidate_retry_backoff=0.25,
                 adaptive_search=True,
                 min_candidate_count=2,
+                enable_candidate_diversity=True,
                 max_steps=123,
             )
             with patch("tau2.runner.run_domain", side_effect=fake_run_domain):
@@ -419,6 +420,7 @@ class Tau3NativeTest(unittest.TestCase):
         self.assertEqual(args["cgr_candidate_retry_backoff"], 0.25)
         self.assertTrue(args["cgr_adaptive_search"])
         self.assertEqual(args["cgr_min_candidate_count"], 2)
+        self.assertTrue(args["cgr_enable_candidate_diversity"])
         self.assertEqual(args["cgr_max_turns"], 123)
         self.assertEqual(args["cgr_max_tool_budget"], 123)
         self.assertTrue(str(args["cgr_controller_trace_path"]).endswith("tau3_controller_trace.jsonl"))
@@ -490,14 +492,15 @@ class Tau3NativeTest(unittest.TestCase):
                         "search_budget": 4,
                         "adaptive_search_enabled": True,
                         "search_budget_reason": "adaptive_high_risk:previous_failure",
+                        "candidate_diversity_enabled": True,
                         "oracle_visible_to_controller": False,
                         "oracle_used_for_candidate_generation": False,
                         "oracle_used_for_filtering": False,
                         "tool_names_used_as_features": False,
                         "tool_name_use_policy": "coarse_action_type_normalization_only",
                         "candidate_scores": [
-                            {"candidate_index": 0, "score": 0.1, "action_type": "read"},
-                            {"candidate_index": 1, "score": 0.2, "action_type": "write"},
+                            {"candidate_index": 0, "candidate_generation_intent": "greedy", "score": 0.1, "action_type": "read"},
+                            {"candidate_index": 1, "candidate_generation_intent": "prefer_read", "score": 0.2, "action_type": "write"},
                         ],
                     }
                 )
@@ -542,6 +545,12 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertEqual(manifest["adaptive_search_enabled_events"], 1)
             self.assertAlmostEqual(manifest["mean_search_budget"], 4.0)
             self.assertIn("adaptive_high_risk", manifest["search_budget_reasons"])
+            self.assertEqual(manifest["candidate_diversity_enabled_events"], 1)
+            self.assertIn("greedy", manifest["candidate_generation_intents"])
+            self.assertIn("prefer_read", manifest["candidate_generation_intents"])
+            intent_rates = json.loads(manifest["candidate_intent_scored_rates"])
+            self.assertEqual(intent_rates["greedy"], 1.0)
+            self.assertEqual(intent_rates["prefer_read"], 1.0)
             self.assertFalse(manifest["oracle_visible_to_controller"])
             self.assertFalse(manifest["tool_names_used_as_features"])
             self.assertEqual(manifest["tool_name_use_policy"], "coarse_action_type_normalization_only")
@@ -560,6 +569,7 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("fallback_greedy_events", csv_text.splitlines()[0])
             self.assertIn("canonical_mean_known_mask_ratio", csv_text.splitlines()[0])
             self.assertIn("controller_opportunity_rate", csv_text.splitlines()[0])
+            self.assertIn("candidate_intent_scored_rates", csv_text.splitlines()[0])
             self.assertIn(",1,", csv_text)
 
     def test_audits_table10_tau3_readiness_with_canonical_trace(self) -> None:

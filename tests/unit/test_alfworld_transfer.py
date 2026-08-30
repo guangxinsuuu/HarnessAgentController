@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from cgr_exp.alfworld_transfer import (
+    audit_alfworld_dense_labels,
     alfworld_candidate_to_canonical,
     run_alfworld_dense_train,
     run_alfworld_dense_transfer,
@@ -281,6 +282,25 @@ class AlfworldTransferTest(unittest.TestCase):
             with (out / "alfworld_dense_action_labels.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
             self.assertGreater(len(rows), 0)
+
+    def test_audit_alfworld_dense_labels_reports_cost_variation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-audit"
+            manifest = audit_alfworld_dense_labels(
+                out,
+                episodes=2,
+                max_steps=4,
+                max_pairs_per_state=8,
+                max_frontier_actions=3,
+                counterfactual_rollout_steps=4,
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            self.assertTrue((out / "alfworld_dense_label_audit.csv").exists())
+            self.assertEqual(manifest["benchmark"], "alfworld_dense_frontier_label_audit")
+            self.assertGreater(manifest["label_summary"]["action_labels"], 0)
+            self.assertGreater(manifest["label_summary"]["states_with_cost_variation"], 0)
 
     def test_run_alfworld_dense_transfer_can_load_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

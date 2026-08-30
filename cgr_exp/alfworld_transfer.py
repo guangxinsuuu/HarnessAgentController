@@ -204,6 +204,61 @@ def run_alfworld_dense_transfer(
     return manifest
 
 
+def audit_alfworld_dense_labels(
+    out_dir: Path,
+    *,
+    seed: int = 0,
+    config_path: Path | None = None,
+    episodes: int = 5,
+    max_steps: int = 20,
+    max_pairs_per_state: int = 24,
+    max_frontier_actions: int = 16,
+    counterfactual_rollout_steps: int = 20,
+    perturbation_prob: float = 0.0,
+    warmup_random_steps: int = 0,
+    env_factory: Callable[..., Any] | None = None,
+) -> dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if env_factory is None:
+        _assert_alfworld_available()
+    _ranker, train_manifest, trace_rows, action_label_rows = train_alfworld_dense_ranker(
+        seed=seed,
+        config_path=config_path,
+        train_episodes=episodes,
+        max_steps=max_steps,
+        epochs=0,
+        max_pairs_per_state=max_pairs_per_state,
+        max_frontier_actions=max_frontier_actions,
+        counterfactual_rollout_steps=counterfactual_rollout_steps,
+        perturbation_prob=perturbation_prob,
+        warmup_random_steps=warmup_random_steps,
+        env_factory=env_factory,
+    )
+    summary = _summarize_dense_label_rows(action_label_rows, train_manifest=train_manifest)
+    manifest = {
+        "benchmark": "alfworld_dense_frontier_label_audit",
+        "seed": seed,
+        "split": "train",
+        "episodes": episodes,
+        "max_steps": max_steps,
+        "training_source": "alfworld_train_replay_prefix_expert_rollout_frontier_labels",
+        "llm_rollout_trajectories_used": False,
+        "target_eval_trajectories_used_for_training": False,
+        "oracle_labels_in_inference_features": False,
+        "command_string_used_as_learned_feature": False,
+        "counterfactual_planner_cost_to_go": False,
+        "label_source": "replay_prefix_plus_expert_rollout_cost_proxy",
+        "contract": canonical_contract_manifest(),
+        "label_summary": summary,
+        "collection": train_manifest,
+    }
+    _write_csv(out_dir / "alfworld_dense_label_audit.csv", [summary])
+    _write_csv(out_dir / "alfworld_dense_training_trace.csv", trace_rows)
+    _write_csv(out_dir / "alfworld_dense_action_labels.csv", action_label_rows)
+    (out_dir / "alfworld_dense_label_audit.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
 def run_alfworld_dense_train(
     out_dir: Path,
     *,
@@ -801,6 +856,43 @@ def _dense_labels_to_pairs(
     if max_pairs > 0:
         raw_pairs = raw_pairs[:max_pairs]
     return raw_pairs
+
+
+def _summarize_dense_label_rows(action_label_rows: Sequence[Mapping[str, object]], *, train_manifest: Mapping[str, object]) -> dict[str, object]:
+    by_state: dict[tuple[int, int], list[int]] = {}
+    finite = 0
+    infinite = 0
+    costs: list[int] = []
+    for row in action_label_rows:
+        key = (int(row["episode"]), int(row["step"]))
+        cost = int(row["cost_to_success"])
+        reachable = int(row["reachable"])
+        by_state.setdefault(key, []).append(cost)
+        costs.append(cost)
+        if reachable:
+            finite += 1
+        else:
+            infinite += 1
+    varied_states = sum(1 for values in by_state.values() if len(set(values)) >= 2)
+    comparable_states = len(by_state)
+    return {
+        "states": comparable_states,
+        "action_labels": len(action_label_rows),
+        "finite_action_labels": finite,
+        "infinite_action_labels": infinite,
+        "reachable_action_frac": 0.0 if not action_label_rows else finite / len(action_label_rows),
+        "states_with_cost_variation": varied_states,
+        "cost_variation_rate": 0.0 if comparable_states == 0 else varied_states / comparable_states,
+        "unique_cost_values": len(set(costs)),
+        "min_cost": "" if not costs else min(costs),
+        "max_cost": "" if not costs else max(costs),
+        "train_pair_count": int(train_manifest.get("train_pair_count", 0)),
+        "expert_monotone_checks": int(train_manifest.get("expert_monotone_checks", 0)),
+        "expert_monotone_failures": int(train_manifest.get("expert_monotone_failures", 0)),
+        "expert_monotone_failure_rate": float(train_manifest.get("expert_monotone_failure_rate", 0.0)),
+        "label_source": str(train_manifest.get("label_source", "")),
+        "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
+    }
 
 
 def _expert_rollout_cost_from_prefix(

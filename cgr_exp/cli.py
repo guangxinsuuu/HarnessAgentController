@@ -6,6 +6,7 @@ from pathlib import Path
 from dataclasses import replace
 
 from cgr_exp.alfworld_transfer import (
+    audit_alfworld_dense_labels,
     run_alfworld_dense_train,
     run_alfworld_dense_transfer,
     run_alfworld_expert_train,
@@ -122,6 +123,7 @@ COMMANDS = [
     "build-current-experiment-status",
     "run-workflow-source-validation",
     "run-structured-workflow-transfer",
+    "audit-alfworld-dense-labels",
     "run-alfworld-transfer",
     "run-alfworld-dense-train",
     "run-alfworld-dense-transfer",
@@ -282,6 +284,15 @@ def main() -> None:
             p.add_argument("--target-families", default="academic,banking,farm,support")
             p.add_argument("--source-difficulty", choices=("v1", "v2"), default="v2")
             p.add_argument("--target-difficulty", choices=("v1", "v2"), default="v2")
+        if name == "audit-alfworld-dense-labels":
+            p.add_argument("--config-path", type=Path, default=None)
+            p.add_argument("--episodes", type=int, default=5)
+            p.add_argument("--max-steps", type=int, default=20)
+            p.add_argument("--max-pairs-per-state", type=int, default=24)
+            p.add_argument("--max-frontier-actions", type=int, default=16)
+            p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
+            p.add_argument("--perturbation-prob", type=float, default=0.0)
+            p.add_argument("--warmup-random-steps", type=int, default=0)
         if name == "run-alfworld-transfer":
             p.add_argument("--split", default="eval_out_of_distribution")
             p.add_argument("--config-path", type=Path, default=None)
@@ -1803,6 +1814,41 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'structured_workflow_transfer_table.csv'}")
+            return
+        if args.command == "audit-alfworld-dense-labels":
+            manifest = audit_alfworld_dense_labels(
+                args.output_dir,
+                seed=args.seed,
+                config_path=args.config_path,
+                episodes=args.episodes,
+                max_steps=args.max_steps,
+                max_pairs_per_state=args.max_pairs_per_state,
+                max_frontier_actions=args.max_frontier_actions,
+                counterfactual_rollout_steps=args.counterfactual_rollout_steps,
+                perturbation_prob=args.perturbation_prob,
+                warmup_random_steps=args.warmup_random_steps,
+            )
+            command_manifest = {
+                "command": args.command,
+                "seed": args.seed,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "benchmark": manifest["benchmark"],
+                "split": manifest["split"],
+                "episodes": manifest["episodes"],
+                "training_source": manifest["training_source"],
+                "label_source": manifest["label_source"],
+                "counterfactual_planner_cost_to_go": manifest["counterfactual_planner_cost_to_go"],
+                "llm_rollout_trajectories_used": manifest["llm_rollout_trajectories_used"],
+                "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],
+                "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
+                "command_string_used_as_learned_feature": manifest["command_string_used_as_learned_feature"],
+                "label_summary": manifest["label_summary"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'alfworld_dense_label_audit.csv'}")
             return
         if args.command == "run-alfworld-transfer":
             policies = tuple(item.strip() for item in args.policies.split(",") if item.strip())

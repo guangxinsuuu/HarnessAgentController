@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
-from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
+from cgr_exp.harness_contract import audit_canonical_contract_manifest, canonical_contract_manifest, canonical_feature_names
 from cgr_exp.q4_tau_source_evidence import TAU2_BENCH_SOURCE_URL, q4_tau_source_evidence
 from cgr_exp.tau3_contract_adapter import tau3_adapter_manifest
 
@@ -42,6 +42,7 @@ TRACE_AUDIT_COLUMNS = [
     "oracle_used_for_candidate_generation",
     "oracle_used_for_filtering",
     "tool_names_used_as_features",
+    "tool_name_use_policy",
     "canonical_contract",
     "canonical_feature_schema_hash",
     "canonical_feature_schema_match",
@@ -490,6 +491,10 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
     contract_coverage = data.get("contract_coverage_stress")
     if not isinstance(contract_coverage, Mapping):
         contract_coverage = {}
+    contract_audit = data.get("contract_audit")
+    if not isinstance(contract_audit, Mapping):
+        contract_data = data.get("contract")
+        contract_audit = audit_canonical_contract_manifest(contract_data) if isinstance(contract_data, Mapping) else {}
     protocol.update(
         {
             "benchmark": data.get("benchmark", ""),
@@ -509,6 +514,10 @@ def _source_controller_protocol(checkpoint: Optional[Path]) -> Dict[str, object]
             "tool_identity_generalization_top1_delta": tool_identity.get("top1_absolute_delta", ""),
             "contract_coverage_stress_ready": _as_bool(contract_coverage.get("ready")),
             "contract_coverage_black_box_top1_delta_from_full": contract_coverage.get("black_box_contract_top1_delta_from_full", ""),
+            "contract_audit_ready": _as_bool(contract_audit.get("ready")),
+            "contract_audit_blockers": "; ".join(str(item) for item in contract_audit.get("blockers", []))
+            if isinstance(contract_audit.get("blockers"), list)
+            else str(contract_audit.get("blockers", "")),
             "train_count": data.get("train_count", ""),
             "validation_count": data.get("validation_count", ""),
             "seed": data.get("seed", ""),
@@ -627,6 +636,9 @@ def audit_table10_tau3_readiness(out_dir: Path, row_dirs: Sequence[Path], expect
                 blockers.append("source controller used tau3 train trajectories")
             if source_protocol.get("oracle_labels_in_inference_features"):
                 blockers.append("source controller leaks oracle labels")
+            if source_protocol.get("contract_audit_ready") is False:
+                detail = source_protocol.get("contract_audit_blockers") or "contract audit failed"
+                blockers.append(f"source contract audit failed: {detail}")
             if source_protocol.get("tool_names_used_as_features"):
                 blockers.append("source controller uses tool names as features")
             if not source_protocol.get("controller_checkpoint_frozen"):
@@ -1266,6 +1278,8 @@ def _table10_audit_row(
         "tool_identity_generalization_top1_delta": source_protocol.get("tool_identity_generalization_top1_delta", ""),
         "contract_coverage_stress_ready": source_protocol.get("contract_coverage_stress_ready", ""),
         "contract_coverage_black_box_top1_delta_from_full": source_protocol.get("contract_coverage_black_box_top1_delta_from_full", ""),
+        "source_contract_audit_ready": source_protocol.get("contract_audit_ready", ""),
+        "source_contract_audit_blockers": source_protocol.get("contract_audit_blockers", ""),
         "tau3_adapter": adapter_protocol.get("adapter", ""),
         "tau3_adapter_train_trajectories_hidden": adapter_protocol.get("uses_tau3_train_trajectories", "") is False,
         "tau3_adapter_oracle_hidden": adapter_protocol.get("oracle_visible_to_controller", "") is False,

@@ -574,6 +574,8 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertTrue(canonical_row["source_generator_anonymized_tools"])
             self.assertTrue(canonical_row["tool_identity_generalization_ready"])
             self.assertTrue(canonical_row["contract_coverage_stress_ready"])
+            self.assertTrue(canonical_row["source_contract_audit_ready"])
+            self.assertEqual(canonical_row["source_contract_audit_blockers"], "")
             self.assertEqual(canonical_row["tau3_adapter"], "Tau3AdapterV1")
             self.assertTrue(canonical_row["tau3_adapter_train_trajectories_hidden"])
             self.assertTrue(canonical_row["tau3_adapter_oracle_hidden"])
@@ -1261,6 +1263,8 @@ def _write_source_manifest(path: Path, *, tau3_train_trajectories_used: bool) ->
                 "oracle_labels_in_inference_features": False,
                 "learned_score_authorizes_pruning": False,
                 "tool_names_used_as_features": False,
+                "contract": canonical_contract_manifest(),
+                "contract_audit": {"ready": True, "blockers": []},
                 "source_generator": {
                     "tau3_trajectories_used": False,
                     "tau3_heldout_test_seen_before_freeze": False,
@@ -1304,6 +1308,8 @@ def _source_protocol_fields() -> dict:
         "tool_identity_generalization_top1_delta": 0.0,
         "contract_coverage_stress_ready": True,
         "contract_coverage_black_box_top1_delta_from_full": 0.0,
+        "contract_audit_ready": True,
+        "contract_audit_blockers": "",
     }
 
 

@@ -56,6 +56,7 @@ class HarnessContractTest(unittest.TestCase):
             self.assertTrue(saved["controller_checkpoint_frozen"])
             self.assertTrue(saved["source_generator"]["source_generator_distribution_fixed_before_target_test_evaluation"])
             self.assertFalse(saved["source_generator"]["tau3_heldout_test_seen_before_freeze"])
+            self.assertTrue(saved["contract_audit"]["ready"], saved["contract_audit"]["blockers"])
             self.assertTrue(saved["tool_identity_generalization"]["ready"])
             self.assertEqual(saved["tool_identity_generalization"]["top1_absolute_delta"], 0.0)
             self.assertTrue(saved["contract_coverage_stress"]["ready"])

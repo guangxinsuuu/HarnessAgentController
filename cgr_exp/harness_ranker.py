@@ -7,7 +7,7 @@ import random
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
-from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
+from cgr_exp.harness_contract import audit_canonical_contract_manifest, canonical_contract_manifest, canonical_feature_names
 from cgr_exp.workflow_oracle import collect_workflow_oracle_records, make_workflow_ranking_pairs, rank_actions_by_oracle
 from cgr_exp.workflow_source_generator import (
     WorkflowTask,
@@ -225,6 +225,7 @@ def run_workflow_source_validation(
             "decision_count": black_box_contract_eval_metrics["decision_count"],
         },
     ]
+    contract_manifest = canonical_contract_manifest()
     manifest = {
         "benchmark": "canonical_harness_source_workflow_validation",
         "seed": seed,
@@ -253,7 +254,8 @@ def run_workflow_source_validation(
             "black_box_contract_top1_delta_from_full": float(eval_metrics["top1_accuracy"]) - float(black_box_contract_eval_metrics["top1_accuracy"]),
             "stress_protocol": "evaluate the frozen source-trained controller under explicit known-mask degradation without changing labels, tasks, or ranker weights",
         },
-        "contract": canonical_contract_manifest(),
+        "contract": contract_manifest,
+        "contract_audit": audit_canonical_contract_manifest(contract_manifest),
         "source_generator": source_generator_manifest(seed, train_count),
         "controller_checkpoint_frozen": True,
         "adapter_changes_checkpoint_stays_frozen": True,

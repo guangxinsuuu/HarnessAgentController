@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cgr_exp.alfworld_transfer import alfworld_candidate_to_canonical, run_alfworld_expert_transfer, run_alfworld_transfer
+from cgr_exp.alfworld_transfer import alfworld_candidate_to_canonical, run_alfworld_expert_train, run_alfworld_expert_transfer, run_alfworld_transfer
 from cgr_exp.harness_contract import canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessRanker
 
@@ -144,6 +144,41 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertFalse(manifest["target_eval_trajectories_used_for_training"])
         self.assertGreater(manifest["train"]["train_pair_count"], 0)
         self.assertEqual({row["policy"] for row in rows}, {"Random", "ALFWorld expert-ranker"})
+
+    def test_run_alfworld_expert_train_writes_reusable_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "train"
+            manifest = run_alfworld_expert_train(
+                out,
+                train_episodes=4,
+                max_steps=5,
+                epochs=3,
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                env_factory=lambda **_kwargs: FakeExpertAlfworldEnv(),
+            )
+            checkpoint = out / "alfworld_expert_ranker.json"
+            self.assertTrue(checkpoint.exists())
+            self.assertTrue((out / "alfworld_expert_training_trace.csv").exists())
+            self.assertEqual(manifest["benchmark"], "alfworld_expert_frontier_controller_train")
+            self.assertGreater(manifest["train"]["train_pair_count"], 0)
+
+    def test_run_alfworld_expert_transfer_can_load_checkpoint_without_retraining(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            checkpoint.write_text(GenericHarnessRanker([0.0 for _name in canonical_feature_names()]).to_json(), encoding="utf-8")
+            out = Path(tmp) / "eval"
+            manifest = run_alfworld_expert_transfer(
+                out,
+                ranker_checkpoint=checkpoint,
+                eval_episodes=2,
+                max_steps=5,
+                policies=("ALFWorld expert-ranker",),
+                env_factory=lambda **_kwargs: FakeExpertAlfworldEnv(),
+            )
+            self.assertFalse(manifest["train"]["trained_in_this_run"])
+            self.assertEqual(manifest["train"]["checkpoint"], str(checkpoint))
+            self.assertTrue((out / "alfworld_expert_ranker.json").exists())
 
 
 if __name__ == "__main__":

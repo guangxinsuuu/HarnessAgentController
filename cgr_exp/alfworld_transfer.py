@@ -115,23 +115,33 @@ def run_alfworld_expert_transfer(
     max_pairs_per_state: int = 24,
     perturbation_prob: float = 0.15,
     warmup_random_steps: int = 5,
+    ranker_checkpoint: Path | None = None,
     policies: Sequence[str] = ("Random", "Hand heuristic", "ALFWorld expert-ranker"),
     env_factory: Callable[..., Any] | None = None,
 ) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     if env_factory is None:
         _assert_alfworld_available()
-    ranker, train_manifest, train_rows = train_alfworld_expert_ranker(
-        seed=seed,
-        config_path=config_path,
-        train_episodes=train_episodes,
-        max_steps=max_steps,
-        epochs=epochs,
-        max_pairs_per_state=max_pairs_per_state,
-        perturbation_prob=perturbation_prob,
-        warmup_random_steps=warmup_random_steps,
-        env_factory=env_factory,
-    )
+    if ranker_checkpoint is not None:
+        ranker = GenericHarnessRanker.from_json(ranker_checkpoint.read_text(encoding="utf-8"))
+        train_manifest = {
+            "trained_in_this_run": False,
+            "checkpoint": str(ranker_checkpoint),
+            "counterfactual_planner_cost_to_go": False,
+        }
+        train_rows: list[dict[str, object]] = []
+    else:
+        ranker, train_manifest, train_rows = train_alfworld_expert_ranker(
+            seed=seed,
+            config_path=config_path,
+            train_episodes=train_episodes,
+            max_steps=max_steps,
+            epochs=epochs,
+            max_pairs_per_state=max_pairs_per_state,
+            perturbation_prob=perturbation_prob,
+            warmup_random_steps=warmup_random_steps,
+            env_factory=env_factory,
+        )
     all_results: list[AlfworldEpisodeResult] = []
     for policy in policies:
         env = _make_alfworld_env(split=eval_split, config_path=config_path, env_factory=env_factory)
@@ -172,6 +182,54 @@ def run_alfworld_expert_transfer(
     _write_csv(out_dir / "alfworld_expert_transfer_per_episode.csv", [row.__dict__ for row in all_results])
     _write_csv(out_dir / "alfworld_expert_training_trace.csv", train_rows)
     (out_dir / "alfworld_expert_transfer.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
+def run_alfworld_expert_train(
+    out_dir: Path,
+    *,
+    seed: int = 0,
+    config_path: Path | None = None,
+    train_episodes: int = 200,
+    max_steps: int = 50,
+    epochs: int = 20,
+    max_pairs_per_state: int = 24,
+    perturbation_prob: float = 0.15,
+    warmup_random_steps: int = 5,
+    env_factory: Callable[..., Any] | None = None,
+) -> dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if env_factory is None:
+        _assert_alfworld_available()
+    ranker, train_manifest, train_rows = train_alfworld_expert_ranker(
+        seed=seed,
+        config_path=config_path,
+        train_episodes=train_episodes,
+        max_steps=max_steps,
+        epochs=epochs,
+        max_pairs_per_state=max_pairs_per_state,
+        perturbation_prob=perturbation_prob,
+        warmup_random_steps=warmup_random_steps,
+        env_factory=env_factory,
+    )
+    manifest = {
+        "benchmark": "alfworld_expert_frontier_controller_train",
+        "seed": seed,
+        "train_split": "train",
+        "train_episodes": train_episodes,
+        "max_steps": max_steps,
+        "training_source": "alfworld_train_expert_plan_frontier_labels",
+        "llm_rollout_trajectories_used": False,
+        "target_eval_trajectories_used_for_training": False,
+        "oracle_labels_in_inference_features": False,
+        "command_string_used_as_learned_feature": False,
+        "contract": canonical_contract_manifest(),
+        "train": train_manifest,
+        "ranker_checkpoint": str(out_dir / "alfworld_expert_ranker.json"),
+    }
+    (out_dir / "alfworld_expert_ranker.json").write_text(ranker.to_json(), encoding="utf-8")
+    _write_csv(out_dir / "alfworld_expert_training_trace.csv", train_rows)
+    (out_dir / "alfworld_expert_train.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
 
 
@@ -249,6 +307,8 @@ def train_alfworld_expert_ranker(
             if bool(_first(dones, False)):
                 break
         trace_rows.append({"episode": episode, "pairs": episode_pairs, "steps": _action_count(history), "final_score": final_score})
+    if not pairs:
+        raise RuntimeError("ALFWorld expert training produced zero ranking pairs; check expert_plan and admissible_commands availability.")
     ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
     ranker.train(pairs, epochs=epochs, lr=0.03, seed=seed)
     manifest = {

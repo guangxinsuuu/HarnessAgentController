@@ -9,6 +9,7 @@ from pathlib import Path
 
 from cgr_exp.alfworld_transfer import (
     ALFWORLD_ADAPTER_VERSION,
+    AlfworldDenseActionLabel,
     audit_alfworld_dense_labels,
     alfworld_candidate_to_canonical,
     run_alfworld_dense_train,
@@ -21,6 +22,7 @@ from cgr_exp.alfworld_transfer import (
     _alfworld_env_method_for_policy,
     _alfworld_ranker_weight_diagnostics,
     _alfworld_diagnostic_action_from_info,
+    _dense_labels_to_pairs,
     _label_frontier_by_planner_cost,
     _label_frontier_by_walkthrough_suffix,
     _load_alfworld_dense_state_label_cache,
@@ -358,6 +360,26 @@ class AlfworldTransferTest(unittest.TestCase):
         )
         self.assertEqual(labels[0].reachable, 0)
         self.assertEqual(labels[0].label_status, "planner_no_plan")
+
+    def test_dense_pairs_exclude_timeout_censored_labels(self) -> None:
+        labels = [
+            AlfworldDenseActionLabel(0, 0, "take apple", 2, 1, 0.0, 2, "textworld_pddl_replan_cost_to_go", "planner_replanned"),
+            AlfworldDenseActionLabel(0, 0, "open fridge", 5, 1, 0.0, 5, "textworld_pddl_replan_cost_to_go", "planner_replanned"),
+            AlfworldDenseActionLabel(0, 0, "go to sink", 99, 0, 0.0, 0, "textworld_pddl_replan_cost_to_go", "planner_timeout"),
+        ]
+        pairs = _dense_labels_to_pairs(
+            labels=labels,
+            observation="You see an apple and a table.",
+            objective="put apple on table",
+            history=["obs:You see an apple and a table."],
+            admissible_commands=[label.command for label in labels],
+            max_steps=10,
+            max_pairs=10,
+            rng=random.Random(0),
+            episode=0,
+            step=0,
+        )
+        self.assertEqual(len(pairs), 1)
 
     def test_planner_labels_use_snapshot_fast_path_when_available(self) -> None:
         env = FakeCopyablePlannerAlfworldEnv()
@@ -1089,7 +1111,10 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertGreater(replan_count, 0)
         self.assertGreater(manifest["train"]["planner_path_cost_monotone_checks"], 0)
         self.assertEqual(manifest["train"]["planner_path_cost_monotone_failures"], 0)
+        self.assertEqual(manifest["train"]["planner_path_cost_monotone_inconclusive"], 0)
         self.assertEqual(manifest["train"]["planner_path_cost_monotone_failure_rate"], 0.0)
+        self.assertIn("pairwise_usable_action_labels", manifest["train"])
+        self.assertIn("censored_action_label_rate", manifest["train"])
 
     def test_run_alfworld_dense_train_can_resume_pair_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1280,6 +1305,9 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("planner_label_cache_loaded_entries", manifest["label_summary"])
             self.assertIn("new_planner_label_cache_hits", manifest["label_summary"])
             self.assertIn("planner_path_cost_monotone_checks", manifest["label_summary"])
+            self.assertIn("planner_path_cost_monotone_inconclusive", manifest["label_summary"])
+            self.assertIn("pairwise_usable_action_labels", manifest["label_summary"])
+            self.assertIn("usable_cost_variation_rate", manifest["label_summary"])
 
     def test_run_alfworld_dense_transfer_can_load_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

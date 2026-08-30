@@ -767,7 +767,7 @@ def summarize_table10_tau3_progress(out_dir: Path, *, base_dir: Path, expected_t
                 "tokens": q4_row.get("tokens", total_tokens / max(len(sims), 1) if token_observed and sims else ""),
                 "wall_clock_seconds": q4_row.get("wall_clock_seconds", total_wall / max(len(sims), 1) if sims else ""),
                 "official_results": "" if result_path is None else str(result_path),
-                "note": "pending artifact only; rerun same row after setting API key" if pending_without_results else "",
+                "note": _table10_progress_note(q4_row, pending_without_results),
             }
         )
     csv_path = out_dir / "table10_tau3_progress.csv"
@@ -1640,6 +1640,15 @@ def _table10_progress_markdown(manifest: Mapping[str, object]) -> str:
         lines.append("| " + " | ".join(cells) + " |")
     lines.append("")
     return "\n".join(lines)
+
+
+def _table10_progress_note(row: Mapping[str, object], pending_without_results: bool) -> str:
+    note = str(row.get("notes", "")).strip()
+    if note:
+        return note
+    if pending_without_results:
+        return "pending artifact only; rerun same row after setting API key"
+    return ""
 
 
 def _progress_fraction(value: int, expected: int) -> float:

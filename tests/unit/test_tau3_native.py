@@ -1148,6 +1148,24 @@ class Tau3NativeTest(unittest.TestCase):
             text = (root / "progress" / "table10_tau3_progress.md").read_text(encoding="utf-8")
             self.assertIn("pending artifact only", text)
 
+    def test_progress_surfaces_failed_tau3_row_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            solver = base / "solver_retail"
+            solver.mkdir(parents=True)
+            _write_row(solver, "retail", method="Solver-derived controller", task_count=0, status="tau2_failed:7")
+            row = json.loads((solver / "q4_tau_row.json").read_text(encoding="utf-8"))
+            row["notes"] = "tau2 official run failed; see tau3_native_stderr.log"
+            (solver / "q4_tau_row.json").write_text(json.dumps(row), encoding="utf-8")
+            manifest = summarize_table10_tau3_progress(root / "progress", base_dir=base, expected_test_count=4, best_of_n=4)
+            rows = {(row["Domain"], row["Method"]): row for row in manifest["rows"]}
+            solver_row = rows[("retail", "Solver-derived controller")]
+            self.assertEqual(solver_row["status"], "tau2_failed:7")
+            self.assertIn("tau3_native_stderr.log", solver_row["note"])
+            text = (root / "progress" / "table10_tau3_progress.md").read_text(encoding="utf-8")
+            self.assertIn("tau3_native_stderr.log", text)
+
 
 def _sim(task_id: str, trial: int, reward: float) -> dict:
     return {

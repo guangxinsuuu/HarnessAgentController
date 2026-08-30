@@ -771,7 +771,8 @@ def train_alfworld_dense_ranker(
             "[alfworld-dense-train] "
             f"{episode + 1}/{train_episodes} episodes, "
             f"states={labeled_states}, pairs={len(pairs)}, "
-            f"finite_labels={finite_action_labels}, inf_labels={infinite_action_labels}"
+            f"finite_labels={finite_action_labels}, inf_labels={infinite_action_labels}",
+            flush=True,
         )
     if not pairs:
         raise RuntimeError("ALFWorld dense training produced zero ranking pairs; check replay-prefix labels and expert availability.")
@@ -936,14 +937,31 @@ def _label_frontier_by_expert_rollout(
     max_rollout_steps: int,
 ) -> list[AlfworldDenseActionLabel]:
     labels = []
+    replayed_state: Any | None = None
+    try:
+        replayed_state, _observation, _info, _score, _done = _replay_prefix(env, gamefile=gamefile, prefix=prefix)
+    except Exception:
+        replayed_state = None
     for command in commands:
-        cost, reachable, score, rollout_steps = _expert_rollout_cost_from_prefix(
-            env,
-            gamefile=gamefile,
-            prefix=prefix,
-            candidate=command,
-            max_rollout_steps=max_rollout_steps,
-        )
+        cost: int
+        reachable: bool
+        score: float
+        rollout_steps: int
+        state_copy = _copy_env_state(replayed_state)
+        if state_copy is not None:
+            cost, reachable, score, rollout_steps = _expert_rollout_cost_from_current_state(
+                state_copy,
+                candidate=command,
+                max_rollout_steps=max_rollout_steps,
+            )
+        else:
+            cost, reachable, score, rollout_steps = _expert_rollout_cost_from_prefix(
+                env,
+                gamefile=gamefile,
+                prefix=prefix,
+                candidate=command,
+                max_rollout_steps=max_rollout_steps,
+            )
         labels.append(
             AlfworldDenseActionLabel(
                 episode=-1,
@@ -957,6 +975,15 @@ def _label_frontier_by_expert_rollout(
             )
         )
     return labels
+
+
+def _copy_env_state(env: Any | None) -> Any | None:
+    if env is None or not hasattr(env, "copy"):
+        return None
+    try:
+        return env.copy()
+    except Exception:
+        return None
 
 
 def _dense_labels_to_pairs(
@@ -1043,7 +1070,19 @@ def _expert_rollout_cost_from_prefix(
 ) -> tuple[int, bool, float, int]:
     try:
         target, observation, info, score, done = _replay_prefix(env, gamefile=gamefile, prefix=prefix)
-        observation, score, done, info = _step_any(target, candidate)
+        return _expert_rollout_cost_from_current_state(target, candidate=candidate, max_rollout_steps=max_rollout_steps)
+    except Exception:
+        return 1 + max_rollout_steps + 1, False, 0.0, 0
+
+
+def _expert_rollout_cost_from_current_state(
+    env: Any,
+    *,
+    candidate: str,
+    max_rollout_steps: int,
+) -> tuple[int, bool, float, int]:
+    try:
+        observation, score, done, info = _step_any(env, candidate)
         if done and score > 0:
             return 1, True, score, 1
         for step in range(max_rollout_steps):
@@ -1051,7 +1090,7 @@ def _expert_rollout_cost_from_prefix(
             admissible = _filtered_admissible_commands(_admissible_from_info(info))
             if expert not in admissible:
                 return 1 + max_rollout_steps + 1, False, score, step + 1
-            observation, score, done, info = _step_any(target, str(expert))
+            observation, score, done, info = _step_any(env, str(expert))
             if done and score > 0:
                 return step + 2, True, score, step + 2
         return 1 + max_rollout_steps + 1, False, score, max_rollout_steps + 1

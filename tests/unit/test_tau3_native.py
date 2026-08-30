@@ -1015,6 +1015,24 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("source controller checkpoint feature dimension mismatch", groups["source_controller"]["blockers"])
             self.assertEqual(manifest["recommended_next_run_group"], "source_controller")
 
+    def test_table10_preflight_rejects_bad_source_contract_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base = root / "runs"
+            source = base / "source_controller_seed0"
+            source.mkdir(parents=True)
+            _write_source_manifest(source, tau3_train_trajectories_used=False)
+            manifest_path = source / "canonical_harness_source_validation.json"
+            source_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            source_manifest["contract_audit"] = {"ready": False, "blockers": ["training-only labels appear in runtime features: success"]}
+            manifest_path.write_text(json.dumps(source_manifest), encoding="utf-8")
+            manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
+            groups = {row["run_group"]: row for row in manifest["rows"]}
+            self.assertFalse(groups["source_controller"]["ready"])
+            self.assertIn("source contract audit failed", groups["source_controller"]["blockers"])
+            self.assertIn("training-only labels appear in runtime features: success", groups["source_controller"]["blockers"])
+            self.assertEqual(manifest["recommended_next_run_group"], "source_controller")
+
     def test_table10_preflight_recommends_certified_smoke_after_canonical_smoke_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

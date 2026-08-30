@@ -1474,6 +1474,9 @@ def _table10_source_controller_preflight_row(base_dir: Path, *, seed: int = 0) -
         blockers.append("source controller used tau3 train trajectories")
     if protocol.get("oracle_labels_in_inference_features"):
         blockers.append("source controller leaks oracle labels")
+    if protocol.get("manifest_found") and protocol.get("contract_audit_ready") is False:
+        detail = protocol.get("contract_audit_blockers") or "contract audit failed"
+        blockers.append(f"source contract audit failed: {detail}")
     if protocol.get("tool_names_used_as_features"):
         blockers.append("source controller uses tool names as features")
     if protocol.get("source_generator_uses_tau3_trajectories"):

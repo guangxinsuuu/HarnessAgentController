@@ -1515,6 +1515,8 @@ def _table10_source_controller_preflight_row(base_dir: Path, *, seed: int = 0) -
         "blockers": "; ".join(blockers),
         "source_controller_checkpoint": str(checkpoint),
         "source_controller_protocol": protocol.get("manifest", ""),
+        "source_generator_distribution_hash": protocol.get("source_generator_distribution_hash", ""),
+        "source_contract_audit_ready": protocol.get("contract_audit_ready", ""),
     }
 
 
@@ -1652,6 +1654,14 @@ def _table10_preflight_markdown(manifest: Mapping[str, object]) -> str:
                 f"Estimated API rows: `{row.get('estimated_api_rows', 0)}`",
                 f"Estimated tau2 simulations: `{row.get('estimated_tau2_simulations', 0)}`",
                 f"Solver candidate worker multiplier: `{row.get('candidate_worker_multiplier', 0)}`",
+                *(
+                    [
+                        f"Source generator hash: `{row.get('source_generator_distribution_hash')}`",
+                        f"Source contract audit ready: `{row.get('source_contract_audit_ready')}`",
+                    ]
+                    if row.get("source_generator_distribution_hash") or row.get("source_contract_audit_ready") != ""
+                    else []
+                ),
                 f"Methods: {row['methods']}",
                 "",
                 "```bash",

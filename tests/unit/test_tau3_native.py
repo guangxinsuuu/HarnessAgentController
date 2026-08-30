@@ -986,6 +986,8 @@ class Tau3NativeTest(unittest.TestCase):
                 manifest = build_table10_tau3_run_preflight(root / "preflight", base_dir=base, expected_test_count=3)
             groups = {row["run_group"]: row for row in manifest["rows"]}
             self.assertTrue(groups["source_controller"]["ready"])
+            self.assertEqual(groups["source_controller"]["source_generator_distribution_hash"], "source-hash")
+            self.assertTrue(groups["source_controller"]["source_contract_audit_ready"])
             self.assertEqual(manifest["recommended_next_run_group"], "solver_canonical_smoke")
             self.assertEqual(manifest["recommended_next_summary"]["recommended_next_run_group"], "solver_canonical_smoke")
             self.assertEqual(manifest["recommended_next_summary"]["estimated_tau2_simulations"], 16)
@@ -1002,6 +1004,8 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("Warning: recommended next run needs one of `OPENAI_API_KEY, CGR_LLM_API_KEY`", text)
             self.assertIn("Resume policy:", text)
             self.assertIn("`--force` is the opt-in switch", text)
+            self.assertIn("Source generator hash: `source-hash`", text)
+            self.assertIn("Source contract audit ready: `True`", text)
 
     def test_table10_preflight_rejects_bad_source_checkpoint_dimension(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

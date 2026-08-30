@@ -247,6 +247,8 @@ class Tau3NativeTest(unittest.TestCase):
             self.assertIn("LLM calls", tex_text)
             self.assertIn("Wall-clock", tex_text)
             self.assertFalse(manifest["all_rows_result_ready"])
+            self.assertIn("readiness/table10_tau3_readiness.csv", manifest["produced_artifacts"])
+            self.assertIn("readiness/table10_tau3_readiness.json", manifest["produced_artifacts"])
             self.assertTrue((root / "table" / "readiness" / "table10_tau3_readiness.csv").exists())
 
     def test_build_table10_blocks_canonical_row_without_readiness(self) -> None:

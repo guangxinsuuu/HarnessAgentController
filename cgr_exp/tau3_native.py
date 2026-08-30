@@ -600,7 +600,7 @@ def build_table10_tau3_results(out_dir: Path, row_dirs: Sequence[Path], expected
         "readiness_dir": str(out_dir / "readiness"),
         "row_dirs": [str(path) for path in row_dirs],
         "rows": rows,
-        "produced_artifacts": [csv_path.name, tex_path.name],
+        "produced_artifacts": [csv_path.name, tex_path.name, "readiness/table10_tau3_readiness.csv", "readiness/table10_tau3_readiness.json"],
     }
     (out_dir / "table10_tau3_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest

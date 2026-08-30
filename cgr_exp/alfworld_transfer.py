@@ -21,7 +21,7 @@ HELP_VERBS = ("help",)
 MOVE_VERBS = ("go",)
 OPEN_VERBS = ("open", "close")
 TAKE_VERBS = ("take", "pick")
-PUT_VERBS = ("put", "place", "insert")
+PUT_VERBS = ("put", "place", "insert", "move")
 USE_VERBS = ("toggle", "heat", "cool", "clean", "slice", "pour", "turn", "use")
 TERMINATE_VERBS = ("done", "finish", "stop")
 TRANSFORM_VERBS = ("cool", "heat", "clean", "slice")
@@ -47,6 +47,7 @@ class AlfworldStepTrace:
     episode: int
     step: int
     command: str
+    objective: str
     command_type: str
     score: float | str
     second_best_score: float | str
@@ -59,9 +60,18 @@ class AlfworldStepTrace:
     uncertainty_score: float
     declared_observation_gain: float
     declared_requirement_gain: float
+    references_goal_object: float
+    references_goal_receptacle: float
+    matches_unsatisfied_transform: float
+    goal_object_held: float
+    goal_receptacle_observed: float
+    placement_ready: float
+    completes_goal_placement: float
     precondition_satisfied: float
     policy_risk: float
     duplicates_previous_action: float
+    top_ranked_commands: str
+    candidate_score_summary: str
     success_after_step: int
 
 
@@ -142,6 +152,9 @@ def run_alfworld_transfer(
         "max_steps": max_steps,
         "policies": list(policies),
         "uses_admissible_commands": True,
+        "meta_commands_filtered_from_frontier": True,
+        "zero_gain_write_filtered_from_frontier": True,
+        "repeated_zero_gain_read_filtered_from_frontier": True,
         "target_trajectory_training_used": False,
         "alfworld_train_trajectories_used": False,
         "oracle_labels_in_inference_features": False,
@@ -239,6 +252,9 @@ def run_alfworld_dense_transfer(
         "max_steps": max_steps,
         "policies": list(policies),
         "uses_admissible_commands": True,
+        "meta_commands_filtered_from_frontier": True,
+        "zero_gain_write_filtered_from_frontier": True,
+        "repeated_zero_gain_read_filtered_from_frontier": True,
         "training_source": "alfworld_train_replay_prefix_expert_rollout_frontier_labels",
         "llm_rollout_trajectories_used": False,
         "target_eval_trajectories_used_for_training": False,
@@ -300,6 +316,9 @@ def audit_alfworld_dense_labels(
         "episodes": episodes,
         "max_steps": max_steps,
         "training_source": "alfworld_train_replay_prefix_expert_rollout_frontier_labels",
+        "meta_commands_filtered_from_frontier": True,
+        "zero_gain_write_filtered_from_frontier": True,
+        "repeated_zero_gain_read_filtered_from_frontier": True,
         "llm_rollout_trajectories_used": False,
         "target_eval_trajectories_used_for_training": False,
         "oracle_labels_in_inference_features": False,
@@ -358,6 +377,9 @@ def run_alfworld_dense_train(
         "train_episodes": train_episodes,
         "max_steps": max_steps,
         "training_source": "alfworld_train_replay_prefix_expert_rollout_frontier_labels",
+        "meta_commands_filtered_from_frontier": True,
+        "zero_gain_write_filtered_from_frontier": True,
+        "repeated_zero_gain_read_filtered_from_frontier": True,
         "llm_rollout_trajectories_used": False,
         "target_eval_trajectories_used_for_training": False,
         "oracle_labels_in_inference_features": False,
@@ -448,6 +470,9 @@ def run_alfworld_expert_transfer(
         "max_steps": max_steps,
         "policies": list(policies),
         "uses_admissible_commands": True,
+        "meta_commands_filtered_from_frontier": True,
+        "zero_gain_write_filtered_from_frontier": True,
+        "repeated_zero_gain_read_filtered_from_frontier": True,
         "training_source": "alfworld_train_expert_plan_frontier_labels",
         "llm_rollout_trajectories_used": False,
         "target_eval_trajectories_used_for_training": False,
@@ -504,6 +529,9 @@ def run_alfworld_expert_train(
         "train_episodes": train_episodes,
         "max_steps": max_steps,
         "training_source": "alfworld_train_expert_plan_frontier_labels",
+        "meta_commands_filtered_from_frontier": True,
+        "zero_gain_write_filtered_from_frontier": True,
+        "repeated_zero_gain_read_filtered_from_frontier": True,
         "llm_rollout_trajectories_used": False,
         "target_eval_trajectories_used_for_training": False,
         "oracle_labels_in_inference_features": False,
@@ -547,7 +575,13 @@ def train_alfworld_expert_ranker(
         episode_pairs = 0
         final_score = 0.0
         for step in range(max_steps):
-            admissible = _admissible_from_info(info)
+            admissible = _contract_filtered_admissible_commands(
+                _admissible_from_info(info),
+                observation=observation,
+                objective=objective,
+                history=history,
+                max_steps=max_steps,
+            )
             expert = _expert_action_from_info(info)
             if not admissible:
                 break
@@ -650,7 +684,13 @@ def train_alfworld_dense_ranker(
         episode_labels = 0
         final_score = 0.0
         for step in range(max_steps):
-            admissible = _admissible_from_info(info)
+            admissible = _contract_filtered_admissible_commands(
+                _admissible_from_info(info),
+                observation=observation,
+                objective=objective,
+                history=history,
+                max_steps=max_steps,
+            )
             expert = _expert_action_from_info(info)
             if not admissible:
                 break
@@ -857,6 +897,13 @@ def alfworld_action_features(
         argument_completeness=1.0 if command.strip() else 0.0,
         references_observed_entity=1.0 if references_observed else 0.0,
         references_unverified_entity=1.0 if command_terms and target_related and not references_observed else 0.0,
+        references_goal_object=relation["references_goal_object"],
+        references_goal_receptacle=relation["references_goal_receptacle"],
+        matches_unsatisfied_transform=relation["matches_unsatisfied_transform"],
+        goal_object_held=relation["goal_object_held"],
+        goal_receptacle_observed=relation["goal_receptacle_observed"],
+        placement_ready=relation["placement_ready"],
+        completes_goal_placement=relation["completes_goal_placement"],
         declared_observation_gain=relation["observation_gain"],
         declared_requirement_gain=relation["requirement_gain"],
         expected_tool_cost_frac=1.0 / max(1, max_steps),
@@ -1001,7 +1048,7 @@ def _expert_rollout_cost_from_prefix(
             return 1, True, score, 1
         for step in range(max_rollout_steps):
             expert = _expert_action_from_info(info)
-            admissible = _admissible_from_info(info)
+            admissible = _filtered_admissible_commands(_admissible_from_info(info))
             if expert not in admissible:
                 return 1 + max_rollout_steps + 1, False, score, step + 1
             observation, score, done, info = _step_any(target, str(expert))
@@ -1184,7 +1231,13 @@ def _run_episode(
     steps = 0
     done = False
     for step in range(max_steps):
-        admissible = _admissible_from_info(info)
+        admissible = _contract_filtered_admissible_commands(
+            _admissible_from_info(info),
+            observation=observation,
+            objective=objective,
+            history=history,
+            max_steps=max_steps,
+        )
         if not admissible:
             break
         admissible_counts.append(len(admissible))
@@ -1257,11 +1310,11 @@ def _select_command_with_trace(
 ) -> tuple[str, dict[str, object]]:
     if policy == "Random":
         command = rng.choice(list(admissible))
-        return command, {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 0}
+        return command, {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 0, "top_ranked_commands": "", "candidate_score_summary": ""}
     if policy == "ALFWorld expert-plan diagnostic":
         if expert in admissible:
-            return str(expert), {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 1}
-        return rng.choice(list(admissible)), {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 0}
+            return str(expert), {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 1, "top_ranked_commands": "", "candidate_score_summary": ""}
+        return rng.choice(list(admissible)), {"score": "", "second_best_score": "", "score_margin": "", "expert_available": 0, "top_ranked_commands": "", "candidate_score_summary": ""}
     if policy == "Hand heuristic":
         scored = [(_hand_score(command, observation, objective, history), -idx, command) for idx, command in enumerate(admissible)]
         scored.sort(reverse=True)
@@ -1280,6 +1333,8 @@ def _select_command_with_trace(
             "second_best_score": second,
             "score_margin": "" if second == "" else score - float(second),
             "expert_available": 0,
+            "top_ranked_commands": _ranked_command_summary(scored),
+            "candidate_score_summary": _candidate_score_summary(scored),
         }
     if policy in {"Source-trained controller", "ALFWorld expert-ranker", "ALFWorld dense-ranker"}:
         scored = []
@@ -1310,6 +1365,8 @@ def _select_command_with_trace(
             "second_best_score": second,
             "score_margin": "" if second == "" else score - float(second),
             "expert_available": 0,
+            "top_ranked_commands": _ranked_command_summary(scored),
+            "candidate_score_summary": _candidate_score_summary(scored),
         }
     raise ValueError(f"unknown ALFWorld policy: {policy}")
 
@@ -1326,9 +1383,18 @@ def _prefer_non_stagnating_selection(
     if len(scored) <= 1 or not _is_stagnating_noop(scored[0][2], observation=observation, objective=objective, history=history, admissible=admissible, max_steps=max_steps):
         return scored
     for idx in range(1, len(scored)):
-        if not _is_stagnating_noop(scored[idx][2], observation=observation, objective=objective, history=history, admissible=admissible, max_steps=max_steps):
+        _score, _tie_breaker, command = scored[idx]
+        if not _is_stagnating_noop(command, observation=observation, objective=objective, history=history, admissible=admissible, max_steps=max_steps):
             return [scored[idx], *scored[:idx], *scored[idx + 1 :]]
     return scored
+
+
+def _ranked_command_summary(scored: Sequence[tuple[float, int, str]], *, limit: int = 5) -> str:
+    return " | ".join(command for _score, _idx, command in list(scored)[:limit])
+
+
+def _candidate_score_summary(scored: Sequence[tuple[float, int, str]], *, limit: int = 8) -> str:
+    return " | ".join(f"{score:.4f}:{command}" for score, _idx, command in list(scored)[:limit])
 
 
 def _is_stagnating_noop(
@@ -1342,8 +1408,6 @@ def _is_stagnating_noop(
 ) -> bool:
     last_action = next((item[4:].strip() for item in reversed(history) if item.startswith("act:")), "")
     previous_actions = {item[4:].strip() for item in history if item.startswith("act:")}
-    if command != last_action and command not in previous_actions:
-        return False
     candidate = alfworld_candidate_to_canonical(
         candidate_id="alfworld-stagnation-check",
         observation=observation,
@@ -1353,6 +1417,10 @@ def _is_stagnating_noop(
         command=command,
         max_steps=max_steps,
     )
+    if candidate.action.action_is_write == 1.0 and candidate.action.declared_observation_gain == 0.0 and candidate.action.declared_requirement_gain == 0.0:
+        return True
+    if command != last_action and command not in previous_actions:
+        return False
     return candidate.action.declared_observation_gain == 0.0 and candidate.action.declared_requirement_gain == 0.0
 
 
@@ -1384,6 +1452,7 @@ def _step_trace_row(
         episode=episode,
         step=step,
         command=command,
+        objective=objective,
         command_type=_command_type(command),
         score=selection.get("score", ""),
         second_best_score=selection.get("second_best_score", ""),
@@ -1396,9 +1465,18 @@ def _step_trace_row(
         uncertainty_score=candidate.state.uncertainty_score,
         declared_observation_gain=candidate.action.declared_observation_gain,
         declared_requirement_gain=candidate.action.declared_requirement_gain,
+        references_goal_object=candidate.action.references_goal_object,
+        references_goal_receptacle=candidate.action.references_goal_receptacle,
+        matches_unsatisfied_transform=candidate.action.matches_unsatisfied_transform,
+        goal_object_held=candidate.action.goal_object_held,
+        goal_receptacle_observed=candidate.action.goal_receptacle_observed,
+        placement_ready=candidate.action.placement_ready,
+        completes_goal_placement=candidate.action.completes_goal_placement,
         precondition_satisfied=candidate.action.precondition_satisfied,
         policy_risk=candidate.action.policy_risk,
         duplicates_previous_action=candidate.action.duplicates_previous_action,
+        top_ranked_commands=str(selection.get("top_ranked_commands", "")),
+        candidate_score_summary=str(selection.get("candidate_score_summary", "")),
         success_after_step=success_after_step,
     )
     return trace.__dict__
@@ -1553,9 +1631,9 @@ def _held_terms(*, observation: str, history: Sequence[str]) -> set[str]:
     held = set()
     for action in [item[4:].strip().lower() for item in history if item.startswith("act:")]:
         if action.startswith(TAKE_VERBS):
-            held.update(_object_tokens(action))
+            held.update(_command_object_terms(action))
         if action.startswith(PUT_VERBS):
-            held.difference_update(_object_tokens(action))
+            held.difference_update(_command_object_terms(action))
     holding_text = " ".join(
         _strip_task_text(text)
         for text in [observation, *(item[4:] for item in history if item.startswith("obs:"))]
@@ -1614,12 +1692,18 @@ def _action_goal_relation(
 ) -> dict[str, float]:
     lowered = command.lower().strip()
     command_terms = _object_tokens(lowered)
+    action_object_terms = _command_object_terms(lowered)
+    action_receptacle_terms = _command_receptacle_terms(lowered)
     goal_object_ref = bool(command_terms & goal.object_terms) if goal.object_terms else False
     goal_receptacle_ref = bool(command_terms & goal.receptacle_terms) if goal.receptacle_terms else False
     transform_ref = bool(goal.transform_terms and any(lowered.startswith(term) for term in goal.transform_terms))
     object_observed = bool(goal.object_terms & observed_terms) if goal.object_terms else True
     object_held = bool(goal.object_terms & held_terms) if goal.object_terms else False
     receptacle_observed = bool(goal.receptacle_terms & observed_terms) if goal.receptacle_terms else True
+    action_object_goal_ref = bool(action_object_terms & goal.object_terms) if goal.object_terms else False
+    action_receptacle_goal_ref = bool(action_receptacle_terms & goal.receptacle_terms) if goal.receptacle_terms else False
+    placement_ready = action_type == "write" and action_object_goal_ref and action_receptacle_goal_ref and object_held and receptacle_observed
+    productive_repeated_goal_navigation = action_type == "move" and object_held and goal_receptacle_ref
 
     observation_gain = 0.0
     requirement_gain = 0.0
@@ -1633,8 +1717,13 @@ def _action_goal_relation(
     if action_type in {"read", "move"}:
         missing_object = goal.object_terms and not object_observed
         missing_receptacle = goal.receptacle_terms and not receptacle_observed
-        if not repeats and (missing_object or missing_receptacle or goal_receptacle_ref or goal_object_ref):
-            observation_gain = 1.0
+        if not repeats and (missing_object or missing_receptacle):
+            if goal_object_ref or goal_receptacle_ref:
+                observation_gain = 1.0
+            elif lowered in {"look", "inventory"}:
+                observation_gain = 0.5
+        if action_type == "move" and object_held and goal_receptacle_ref:
+            requirement_gain = max(requirement_gain, 0.5)
 
     if action_type == "help":
         precondition = 0.0
@@ -1642,8 +1731,10 @@ def _action_goal_relation(
         requirement_gain = 1.0 if goal_object_ref and object_observed and not object_held and not repeats else 0.0
         precondition = 1.0 if object_observed else 0.0
     elif lowered.startswith(PUT_VERBS):
-        requirement_gain = 1.0 if goal_object_ref and goal_receptacle_ref and object_held and not repeats else 0.0
+        requirement_gain = 1.0 if placement_ready and not repeats else 0.0
         precondition = 1.0 if (object_held or not goal.object_terms) and (receptacle_observed or not goal.receptacle_terms) else 0.0
+        if goal.object_terms and goal.receptacle_terms and action_object_goal_ref and object_held and not action_receptacle_goal_ref:
+            risk += 0.4
     elif lowered.startswith(USE_VERBS):
         requirement_gain = 1.0 if (transform_ref or bool(command_terms & goal.transform_terms)) and (object_held or object_observed) and not repeats else 0.0
         precondition = 1.0 if object_held or object_observed or goal_object_ref else 0.0
@@ -1654,8 +1745,15 @@ def _action_goal_relation(
     if action_type == "write" and precondition == 0.0:
         risk += 0.3
     return {
+        "references_goal_object": 1.0 if action_object_goal_ref or goal_object_ref else 0.0,
+        "references_goal_receptacle": 1.0 if action_receptacle_goal_ref or goal_receptacle_ref else 0.0,
+        "matches_unsatisfied_transform": 1.0 if transform_ref else 0.0,
+        "goal_object_held": 1.0 if object_held else 0.0,
+        "goal_receptacle_observed": 1.0 if receptacle_observed else 0.0,
+        "placement_ready": 1.0 if placement_ready else 0.0,
+        "completes_goal_placement": 1.0 if placement_ready and not repeats else 0.0,
         "observation_gain": 0.0 if repeats else min(1.0, observation_gain),
-        "requirement_gain": 0.0 if repeats else min(1.0, requirement_gain),
+        "requirement_gain": 0.0 if repeats and not productive_repeated_goal_navigation else min(1.0, requirement_gain),
         "precondition_satisfied": min(1.0, max(0.0, precondition)),
         "policy_risk": min(1.0, max(0.0, risk)),
     }
@@ -1665,6 +1763,34 @@ def _goal_ready_to_finish(*, goal: AlfworldGoalSpec, observed_terms: set[str], h
     object_ok = not goal.object_terms or bool(goal.object_terms & (observed_terms | held_terms))
     receptacle_ok = not goal.receptacle_terms or bool(goal.receptacle_terms & observed_terms)
     return object_ok and receptacle_ok
+
+
+def _command_object_terms(command: str) -> set[str]:
+    lowered = command.lower().strip()
+    take_match = re.search(r"\b(?:take|pick up|pick)\b\s+(?P<object>.+?)\s+\bfrom\b\s+.+$", lowered)
+    if take_match:
+        return _object_tokens(take_match.group("object"))
+    put_match = re.search(r"\b(?:put|place|insert|move)\b\s+(?P<object>.+?)\s+\b(?:in|on|into|onto|to)\b\s+.+$", lowered)
+    if put_match:
+        return _object_tokens(put_match.group("object"))
+    transform_match = re.search(r"\b(?:cool|heat|clean|slice|toggle|pour|turn|use)\b\s+(?P<object>.+?)(?:\s+\b(?:with|using|in|on)\b\s+.+)?$", lowered)
+    if transform_match:
+        return _object_tokens(transform_match.group("object"))
+    return _object_tokens(lowered)
+
+
+def _command_receptacle_terms(command: str) -> set[str]:
+    lowered = command.lower().strip()
+    put_match = re.search(r"\b(?:put|place|insert|move)\b\s+.+?\s+\b(?:in|on|into|onto|to)\b\s+(?P<receptacle>.+)$", lowered)
+    if put_match:
+        return _object_tokens(put_match.group("receptacle"))
+    take_match = re.search(r"\b(?:take|pick up|pick)\b\s+.+?\s+\bfrom\b\s+(?P<receptacle>.+)$", lowered)
+    if take_match:
+        return _object_tokens(take_match.group("receptacle"))
+    go_match = re.search(r"\bgo\b\s+\bto\b\s+(?P<receptacle>.+)$", lowered)
+    if go_match:
+        return _object_tokens(go_match.group("receptacle"))
+    return set()
 
 
 def _object_tokens(text: str) -> set[str]:
@@ -1724,6 +1850,51 @@ def _admissible_from_info(info: Mapping[str, Any]) -> list[str]:
     if isinstance(commands, str):
         return [commands]
     return [str(command) for command in commands]
+
+
+def _filtered_admissible_commands(commands: Sequence[str]) -> list[str]:
+    deduped = list(dict.fromkeys(str(command).strip() for command in commands if str(command).strip()))
+    if len(deduped) <= 1:
+        return deduped
+    task_actions = [command for command in deduped if _command_type(command) != "help"]
+    return task_actions or deduped
+
+
+def _contract_filtered_admissible_commands(
+    commands: Sequence[str],
+    *,
+    observation: str,
+    objective: str,
+    history: Sequence[str],
+    max_steps: int,
+) -> list[str]:
+    filtered = _filtered_admissible_commands(commands)
+    if len(filtered) <= 1:
+        return filtered
+    candidates = [
+        (
+            command,
+            alfworld_candidate_to_canonical(
+                candidate_id=f"alfworld-filter:{idx}",
+                observation=observation,
+                objective=objective,
+                history=history,
+                admissible_commands=filtered,
+                command=command,
+                max_steps=max_steps,
+            ),
+        )
+        for idx, command in enumerate(filtered)
+    ]
+    kept = []
+    for command, candidate in candidates:
+        action = candidate.action
+        zero_gain = action.declared_observation_gain == 0.0 and action.declared_requirement_gain == 0.0
+        drop_zero_gain_write = action.action_is_write == 1.0 and zero_gain
+        drop_repeated_zero_gain_read = action.action_is_read == 1.0 and action.duplicates_previous_action == 1.0 and zero_gain
+        if not drop_zero_gain_write and not drop_repeated_zero_gain_read:
+            kept.append(command)
+    return kept if kept else filtered
 
 
 def _gamefile_from_info(info: Mapping[str, Any]) -> str | None:

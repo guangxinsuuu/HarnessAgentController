@@ -15,6 +15,7 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_expert_train,
     run_alfworld_expert_transfer,
     run_alfworld_transfer,
+    _contract_filtered_admissible_commands,
     _select_command,
 )
 from cgr_exp.harness_contract import canonical_feature_names
@@ -48,6 +49,30 @@ class FakeAlfworldEnv:
         if command == "put apple on table":
             return ["Done."], [1.0], [True], {"admissible_commands": [[]], "objective": ["put apple on table"]}
         return ["Nothing happens."], [0.0], [False], {"admissible_commands": [["look"]], "objective": ["put apple on table"]}
+
+
+class FakeHelpAlfworldEnv:
+    def __init__(self):
+        self.step_idx = 0
+
+    def reset(self):
+        self.step_idx = 0
+        return ["You see an apple and a table. Your task is to: put apple on table."], {
+            "admissible_commands": [["help", "take apple"]],
+            "objective": ["put apple on table"],
+        }
+
+    def step(self, commands):
+        self.step_idx += 1
+        command = commands[0]
+        if command == "take apple":
+            return ["You are holding an apple near a table."], [0.0], [False], {
+                "admissible_commands": [["help", "put apple on table"]],
+                "objective": ["put apple on table"],
+            }
+        if command == "put apple on table":
+            return ["Done."], [1.0], [True], {"admissible_commands": [[]], "objective": ["put apple on table"]}
+        return ["Help is not useful."], [0.0], [False], {"admissible_commands": [["help"]], "objective": ["put apple on table"]}
 
 
 class FakeExpertAlfworldEnv(FakeAlfworldEnv):
@@ -184,6 +209,140 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(after.action.declared_requirement_gain, 1.0)
         self.assertGreater(after.state.verified_progress_frac, before.state.verified_progress_frac)
 
+    def test_move_object_to_receptacle_counts_as_placement(self) -> None:
+        candidate = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You are holding an apple near a table.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on a table.",
+                "act:take apple",
+                "obs:You are holding an apple near a table.",
+            ],
+            admissible_commands=["move apple to table", "look"],
+            command="move apple to table",
+            max_steps=10,
+        )
+        self.assertEqual(candidate.action.action_is_write, 1.0)
+        self.assertEqual(candidate.action.declared_requirement_gain, 1.0)
+        self.assertEqual(candidate.action.precondition_satisfied, 1.0)
+        self.assertEqual(candidate.action.references_goal_object, 1.0)
+        self.assertEqual(candidate.action.references_goal_receptacle, 1.0)
+        self.assertEqual(candidate.action.goal_object_held, 1.0)
+        self.assertEqual(candidate.action.goal_receptacle_observed, 1.0)
+        self.assertEqual(candidate.action.placement_ready, 1.0)
+        self.assertEqual(candidate.action.completes_goal_placement, 1.0)
+
+    def test_navigation_to_goal_receptacle_gets_partial_requirement_gain_when_holding_object(self) -> None:
+        candidate = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You are holding an apple near a countertop and a table.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on a countertop and a table.",
+                "act:take apple from countertop",
+                "obs:You are holding an apple near a countertop and a table.",
+            ],
+            admissible_commands=["go to table", "go to countertop"],
+            command="go to table",
+            max_steps=10,
+        )
+        self.assertEqual(candidate.action.references_goal_receptacle, 1.0)
+        self.assertEqual(candidate.action.goal_object_held, 1.0)
+        self.assertEqual(candidate.action.declared_requirement_gain, 0.5)
+
+    def test_repeated_goal_navigation_is_not_noop_after_object_is_held(self) -> None:
+        candidate = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You are holding an apple near a countertop.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on a countertop and a table.",
+                "act:go to table",
+                "obs:You are at the table.",
+                "act:go to countertop",
+                "obs:You see an apple on a countertop.",
+                "act:take apple from countertop",
+                "obs:You are holding an apple near a countertop.",
+            ],
+            admissible_commands=["go to table", "go to countertop"],
+            command="go to table",
+            max_steps=10,
+        )
+        self.assertEqual(candidate.action.declared_requirement_gain, 0.5)
+
+        command = _select_command(
+            "ALFWorld dense-ranker",
+            observation="You are holding an apple near a countertop.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on a countertop and a table.",
+                "act:go to table",
+                "obs:You are at the table.",
+                "act:go to countertop",
+                "obs:You see an apple on a countertop.",
+                "act:take apple from countertop",
+                "obs:You are holding an apple near a countertop.",
+            ],
+            admissible=["go to table", "go to countertop"],
+            ranker=GenericHarnessRanker([0.0 if name != "declared_requirement_gain" else 1.0 for name in canonical_feature_names()]),
+            rng=random.Random(0),
+            max_steps=10,
+        )
+        self.assertEqual(command, "go to table")
+
+    def test_move_to_wrong_receptacle_does_not_count_as_goal_placement(self) -> None:
+        candidate = alfworld_candidate_to_canonical(
+            candidate_id="c0",
+            observation="You are holding an apple near a table and a countertop.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on a countertop and a table.",
+                "act:take apple from countertop",
+                "obs:You are holding an apple near a table and a countertop.",
+            ],
+            admissible_commands=["move apple to countertop", "move apple to table"],
+            command="move apple to countertop",
+            max_steps=10,
+        )
+        self.assertEqual(candidate.action.references_goal_object, 1.0)
+        self.assertEqual(candidate.action.references_goal_receptacle, 0.0)
+        self.assertEqual(candidate.action.declared_requirement_gain, 0.0)
+        self.assertEqual(candidate.action.completes_goal_placement, 0.0)
+        self.assertGreaterEqual(candidate.action.policy_risk, 0.7)
+
+    def test_contract_filter_drops_zero_gain_write_but_keeps_exploration_move(self) -> None:
+        filtered = _contract_filtered_admissible_commands(
+            ["take creditcard from armchair", "go to cabinet", "go to table"],
+            observation="You are holding an apple near an armchair and a table.",
+            objective="put apple on table",
+            history=[
+                "obs:You see an apple on an armchair and a table.",
+                "act:take apple from armchair",
+                "obs:You are holding an apple near an armchair and a table.",
+            ],
+            max_steps=10,
+        )
+        self.assertNotIn("take creditcard from armchair", filtered)
+        self.assertIn("go to cabinet", filtered)
+        self.assertIn("go to table", filtered)
+
+    def test_contract_filter_drops_numbered_distractor_write_when_goal_read_exists(self) -> None:
+        filtered = _contract_filtered_admissible_commands(
+            ["take creditcard 1 from armchair 1", "examine armchair 1", "go to coffeetable 1"],
+            observation="You are at armchair 1. On the armchair 1, you see creditcard 1.",
+            objective="put some remotecontrol on armchair",
+            history=[
+                "obs:You are in a room. Your task is to: put some remotecontrol on armchair.",
+                "act:go to armchair 1",
+                "obs:You are at armchair 1. On the armchair 1, you see creditcard 1.",
+            ],
+            max_steps=20,
+        )
+        self.assertNotIn("take creditcard 1 from armchair 1", filtered)
+        self.assertIn("examine armchair 1", filtered)
+        self.assertIn("go to coffeetable 1", filtered)
+
     def test_relational_adapter_matches_transform_subgoal(self) -> None:
         related = alfworld_candidate_to_canonical(
             candidate_id="c0",
@@ -236,6 +395,7 @@ class AlfworldTransferTest(unittest.TestCase):
         names = canonical_feature_names()
         weights = [0.0 for _name in names]
         weights[names.index("action_is_read")] = 5.0
+        weights[names.index("declared_requirement_gain")] = 4.8
         ranker = GenericHarnessRanker(weights)
         command = _select_command(
             "ALFWorld dense-ranker",
@@ -253,6 +413,7 @@ class AlfworldTransferTest(unittest.TestCase):
         names = canonical_feature_names()
         weights = [0.0 for _name in names]
         weights[names.index("action_is_read")] = 5.0
+        weights[names.index("declared_requirement_gain")] = 4.8
         ranker = GenericHarnessRanker(weights)
         command = _select_command(
             "ALFWorld dense-ranker",
@@ -325,6 +486,30 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual({row["policy"] for row in rows}, {"Random", "Source-trained controller"})
         self.assertGreater(len(trace_rows), 0)
         self.assertIn("declared_requirement_gain", trace_rows[0])
+        self.assertIn("candidate_score_summary", trace_rows[0])
+
+    def test_transfer_filters_help_from_shared_frontier(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            checkpoint = Path(tmp) / "ranker.json"
+            weights = [0.0 for _name in canonical_feature_names()]
+            names = canonical_feature_names()
+            weights[names.index("action_is_write")] = 2.0
+            weights[names.index("declared_requirement_gain")] = 3.0
+            checkpoint.write_text(GenericHarnessRanker(weights).to_json(), encoding="utf-8")
+            manifest = run_alfworld_transfer(
+                out,
+                episodes=1,
+                max_steps=4,
+                ranker_checkpoint=checkpoint,
+                policies=("Source-trained controller",),
+                env_factory=lambda **_kwargs: FakeHelpAlfworldEnv(),
+            )
+            with (out / "alfworld_transfer_step_trace.csv").open() as handle:
+                trace_rows = list(csv.DictReader(handle))
+        self.assertTrue(manifest["meta_commands_filtered_from_frontier"])
+        self.assertNotIn("help", {row["command"] for row in trace_rows})
+        self.assertEqual(trace_rows[-1]["success_after_step"], "1")
 
     def test_run_alfworld_expert_transfer_trains_from_frontier_expert_labels(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -41,6 +41,13 @@ ACTION_FEATURE_NAMES = [
     "argument_completeness",
     "references_observed_entity",
     "references_unverified_entity",
+    "references_goal_object",
+    "references_goal_receptacle",
+    "matches_unsatisfied_transform",
+    "goal_object_held",
+    "goal_receptacle_observed",
+    "placement_ready",
+    "completes_goal_placement",
     "declared_observation_gain",
     "declared_requirement_gain",
     "expected_tool_cost_frac",
@@ -110,6 +117,13 @@ class ActionFeatures:
     argument_completeness: float
     references_observed_entity: float
     references_unverified_entity: float
+    references_goal_object: float
+    references_goal_receptacle: float
+    matches_unsatisfied_transform: float
+    goal_object_held: float
+    goal_receptacle_observed: float
+    placement_ready: float
+    completes_goal_placement: float
     declared_observation_gain: float
     declared_requirement_gain: float
     expected_tool_cost_frac: float

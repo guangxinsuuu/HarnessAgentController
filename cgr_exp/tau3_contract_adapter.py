@@ -165,6 +165,13 @@ def tau3_action_features(*, candidate: object, message_history: Sequence[object]
     raw_argument_completeness = _raw_float(raw_data, "cgr_argument_completeness")
     raw_references_observed = _raw_float(raw_data, "cgr_references_observed_entity")
     raw_references_unverified = _raw_float(raw_data, "cgr_references_unverified_entity")
+    raw_references_goal_object = _raw_float(raw_data, "cgr_references_goal_object")
+    raw_references_goal_receptacle = _raw_float(raw_data, "cgr_references_goal_receptacle")
+    raw_matches_unsatisfied_transform = _raw_float(raw_data, "cgr_matches_unsatisfied_transform")
+    raw_goal_object_held = _raw_float(raw_data, "cgr_goal_object_held")
+    raw_goal_receptacle_observed = _raw_float(raw_data, "cgr_goal_receptacle_observed")
+    raw_placement_ready = _raw_float(raw_data, "cgr_placement_ready")
+    raw_completes_goal_placement = _raw_float(raw_data, "cgr_completes_goal_placement")
     raw_declared_observation_gain = _raw_float(raw_data, "cgr_declared_observation_gain")
     raw_declared_requirement_gain = _raw_float(raw_data, "cgr_declared_requirement_gain")
     raw_precondition = _raw_float(raw_data, "cgr_precondition_satisfied")
@@ -178,6 +185,13 @@ def tau3_action_features(*, candidate: object, message_history: Sequence[object]
         argument_completeness=raw_argument_completeness if raw_argument_completeness is not None else _argument_completeness(args),
         references_observed_entity=raw_references_observed if raw_references_observed is not None else (1.0 if references_observed else 0.0),
         references_unverified_entity=raw_references_unverified if raw_references_unverified is not None else (1.0 if references_unverified else 0.0),
+        references_goal_object=raw_references_goal_object if raw_references_goal_object is not None else 0.0,
+        references_goal_receptacle=raw_references_goal_receptacle if raw_references_goal_receptacle is not None else 0.0,
+        matches_unsatisfied_transform=raw_matches_unsatisfied_transform if raw_matches_unsatisfied_transform is not None else 0.0,
+        goal_object_held=raw_goal_object_held if raw_goal_object_held is not None else 0.0,
+        goal_receptacle_observed=raw_goal_receptacle_observed if raw_goal_receptacle_observed is not None else 0.0,
+        placement_ready=raw_placement_ready if raw_placement_ready is not None else 0.0,
+        completes_goal_placement=raw_completes_goal_placement if raw_completes_goal_placement is not None else 0.0,
         declared_observation_gain=raw_declared_observation_gain if raw_declared_observation_gain is not None else (0.5 if action_type == "read" else 0.0),
         declared_requirement_gain=raw_declared_requirement_gain if raw_declared_requirement_gain is not None else (0.5 if action_type == "write" else 0.0),
         expected_tool_cost_frac=1.0 / max(1, max_tool_budget) if tool_calls else 0.0,

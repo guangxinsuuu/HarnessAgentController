@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from cgr_exp.harness_contract import canonical_contract_manifest, canonical_feature_names
 from cgr_exp.cli import COMMANDS
 
 
@@ -164,6 +165,50 @@ class CliQ4TauTest(unittest.TestCase):
             manifest = json.loads((out / "table10_tau3_smoke_gate.json").read_text(encoding="utf-8"))
             self.assertFalse(manifest["all_smoke_rows_ready"])
             self.assertTrue((out / "table10_tau3_smoke_gate.csv").exists())
+
+    def test_tau3_trace_audit_cli_manifest_reports_scoring_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trace = root / "trace.jsonl"
+            out = root / "audit"
+            contract = canonical_contract_manifest()
+            rows = [
+                {
+                    "scoring_mode": mode,
+                    "canonical_contract": contract["contract"],
+                    "canonical_feature_schema_hash": contract["feature_schema_hash"],
+                    "canonical_feature_count": len(canonical_feature_names()),
+                    "ranker_checkpoint_loaded": True,
+                    "candidate_scores": [{"candidate_index": 0, "score": score}],
+                }
+                for mode, score in (
+                    ("canonical_ranker", 1.0),
+                    ("greedy_content_passthrough", None),
+                    ("fallback_greedy", None),
+                )
+            ]
+            trace.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cgr_exp.cli",
+                    "audit-tau3-controller-trace",
+                    "--output-dir",
+                    str(out),
+                    "--trace-path",
+                    str(trace),
+                    "--overwrite",
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out / "command_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["canonical_ranker_events"], 1)
+            self.assertEqual(manifest["greedy_content_passthrough_events"], 1)
+            self.assertEqual(manifest["fallback_greedy_events"], 1)
 
 
 def _read_csv(path: Path):

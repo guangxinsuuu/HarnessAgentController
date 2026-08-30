@@ -1393,6 +1393,8 @@ def main() -> None:
                 "event_count": manifest["event_count"],
                 "canonical_ranker_events": manifest["canonical_ranker_events"],
                 "heuristic_events": manifest["heuristic_events"],
+                "greedy_content_passthrough_events": manifest["greedy_content_passthrough_events"],
+                "fallback_greedy_events": manifest["fallback_greedy_events"],
                 "certified_filter_enabled_events": manifest["certified_filter_enabled_events"],
                 "certified_pruned_candidates": manifest["certified_pruned_candidates"],
                 "oracle_visible_to_controller": manifest["oracle_visible_to_controller"],

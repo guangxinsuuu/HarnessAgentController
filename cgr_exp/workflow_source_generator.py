@@ -41,6 +41,7 @@ class WorkflowTool:
     irreversible: bool = False
     policy_risk: float = 0.0
     cost: int = 1
+    decoy: bool = False
 
 
 @dataclass(frozen=True)
@@ -153,19 +154,27 @@ def generate_workflow_source_tasks(
     seed: int = 0,
     anonymize_tools: bool = True,
     families: Sequence[str] | None = None,
+    difficulty: str = "v1",
 ) -> List[WorkflowTask]:
     rng = random.Random(seed)
     family_list = list(families or WORKFLOW_FAMILIES)
     if not family_list:
         raise ValueError("at least one workflow family is required")
+    if difficulty not in ("v1", "v2"):
+        raise ValueError(f"unknown workflow difficulty: {difficulty}")
     tasks = []
     for idx in range(count):
         family = family_list[idx % len(family_list)]
-        fact_count = rng.randint(2, 5)
-        requirement_count = rng.randint(2, 5)
-        turn_budget = requirement_count + fact_count + rng.randint(1, 4)
+        if difficulty == "v2":
+            fact_count = rng.randint(3, 4)
+            requirement_count = rng.randint(2, 3)
+            turn_budget = requirement_count + fact_count + rng.randint(0, 1)
+        else:
+            fact_count = rng.randint(2, 5)
+            requirement_count = rng.randint(2, 5)
+            turn_budget = requirement_count + fact_count + rng.randint(1, 4)
         tool_budget = turn_budget
-        tools = _make_tools(rng, idx, family, fact_count, requirement_count, anonymize_tools)
+        tools = _make_tools(rng, idx, family, fact_count, requirement_count, anonymize_tools, difficulty=difficulty)
         tasks.append(
             WorkflowTask(
                 task_id=f"workflow-{seed}-{idx}",
@@ -222,6 +231,8 @@ def workflow_action_features(task: WorkflowTask, state: WorkflowState, action: W
         argument_completeness=1.0,
         references_observed_entity=1.0 if references_observed else 0.0,
         references_unverified_entity=1.0 if references_unverified else 0.0,
+        declared_observation_gain=1.0 if tool.reveals_fact is not None and not state.observed_facts[tool.reveals_fact] else 0.0,
+        declared_requirement_gain=1.0 if tool.completes_requirement is not None and not state.completed_requirements[tool.completes_requirement] else 0.0,
         expected_tool_cost_frac=tool.cost / max(1, task.tool_budget),
         action_irreversible=1.0 if tool.irreversible else 0.0,
         precondition_satisfied=1.0 if precondition_ok else 0.0,
@@ -246,6 +257,8 @@ def workflow_action_intent_features(task: WorkflowTask, state: WorkflowState, ac
         argument_completeness=0.0,
         references_observed_entity=1.0 if references_observed else 0.0,
         references_unverified_entity=1.0 if references_unverified else 0.0,
+        declared_observation_gain=1.0 if tool.reveals_fact is not None and not state.observed_facts[tool.reveals_fact] else 0.0,
+        declared_requirement_gain=1.0 if tool.completes_requirement is not None and not state.completed_requirements[tool.completes_requirement] else 0.0,
         expected_tool_cost_frac=tool.cost / max(1, task.tool_budget),
         action_irreversible=1.0 if tool.irreversible else 0.0,
         precondition_satisfied=1.0 if precondition_ok else 0.0,
@@ -257,14 +270,21 @@ def workflow_action_intent_features(task: WorkflowTask, state: WorkflowState, ac
     )
 
 
-def source_generator_manifest(seed: int, count: int, anonymize_tools: bool = True, families: Sequence[str] | None = None) -> Dict[str, object]:
+def source_generator_manifest(
+    seed: int,
+    count: int,
+    anonymize_tools: bool = True,
+    families: Sequence[str] | None = None,
+    difficulty: str = "v1",
+) -> Dict[str, object]:
     family_list = list(families or WORKFLOW_FAMILIES)
-    distribution = _source_generator_distribution(anonymize_tools, family_list)
+    distribution = _source_generator_distribution(anonymize_tools, family_list, difficulty)
     return {
         "source": "PolicyConstrainedWorkflowGeneratorV1",
         "seed": seed,
         "task_count": count,
         "families": family_list,
+        "difficulty": difficulty,
         "distribution_hash": hashlib.sha256(json.dumps(distribution, sort_keys=True).encode("utf-8")).hexdigest(),
         "anonymized_tool_names": anonymize_tools,
         "tau3_trajectories_used": False,
@@ -274,15 +294,30 @@ def source_generator_manifest(seed: int, count: int, anonymize_tools: bool = Tru
     }
 
 
-def _source_generator_distribution(anonymize_tools: bool, families: Sequence[str] | None = None) -> Dict[str, object]:
+def _source_generator_distribution(anonymize_tools: bool, families: Sequence[str] | None = None, difficulty: str = "v1") -> Dict[str, object]:
     family_list = list(families or WORKFLOW_FAMILIES)
-    return {
+    common = {
         "fact_count": "uniform_int[2,5]",
         "requirement_count": "uniform_int[2,5]",
         "turn_budget": "requirements + facts + uniform_int[1,4]",
         "families": {"schedule": "round_robin", "values": family_list},
         "tool_names": "anonymous source_tool_{task}_{index}" if anonymize_tools else "family_action_{index}",
     }
+    if difficulty == "v1":
+        return common
+    if difficulty == "v2":
+        return {
+            **common,
+            "fact_count": "uniform_int[3,4]",
+            "requirement_count": "uniform_int[2,3]",
+            "turn_budget": "requirements + facts + uniform_int[0,1]",
+            "chained_read_probability": 0.55,
+            "decoy_read_count": 1,
+            "decoy_write_count": "max(1, requirement_count // 2)",
+            "write_precondition_probability": 0.95,
+            "purpose": "harder action-control benchmark with tighter budgets, distractor actions, and multi-step information dependencies",
+        }
+    raise ValueError(f"unknown workflow difficulty: {difficulty}")
 
 
 def _make_tools(
@@ -292,19 +327,35 @@ def _make_tools(
     fact_count: int,
     requirement_count: int,
     anonymize: bool,
+    difficulty: str = "v1",
 ) -> List[WorkflowTool]:
     tools: List[WorkflowTool] = []
     for fact in range(fact_count):
+        read_precondition = fact - 1 if difficulty == "v2" and fact > 0 and rng.random() < 0.55 else None
         tools.append(
             WorkflowTool(
                 name=_tool_name(task_idx, len(tools), family, "read", anonymize),
                 action_type="read",
                 reveals_fact=fact,
+                precondition_fact=read_precondition,
                 policy_risk=0.0,
             )
         )
+    if difficulty == "v2":
+        for _ in range(1):
+            tools.append(
+                WorkflowTool(
+                    name=_tool_name(task_idx, len(tools), family, "read", anonymize),
+                    action_type="read",
+                    reveals_fact=None,
+                    precondition_fact=rng.randrange(fact_count) if rng.random() < 0.5 else None,
+                    policy_risk=0.05,
+                    decoy=True,
+                )
+            )
     for req in range(requirement_count):
-        needs_fact = rng.randrange(fact_count) if rng.random() < 0.75 else None
+        needs_fact_probability = 0.95 if difficulty == "v2" else 0.75
+        needs_fact = rng.randrange(fact_count) if rng.random() < needs_fact_probability else None
         tools.append(
             WorkflowTool(
                 name=_tool_name(task_idx, len(tools), family, "write", anonymize),
@@ -315,6 +366,19 @@ def _make_tools(
                 policy_risk=0.1 + 0.4 * rng.random(),
             )
         )
+    if difficulty == "v2":
+        for _ in range(max(1, requirement_count // 2)):
+            tools.append(
+                WorkflowTool(
+                    name=_tool_name(task_idx, len(tools), family, "write", anonymize),
+                    action_type="write",
+                    completes_requirement=None,
+                    precondition_fact=rng.randrange(fact_count),
+                    irreversible=rng.random() < 0.5,
+                    policy_risk=0.05 + 0.25 * rng.random(),
+                    decoy=True,
+                )
+            )
     tools.append(WorkflowTool(name=_tool_name(task_idx, len(tools), family, "ask", anonymize), action_type="ask"))
     tools.append(WorkflowTool(name=_tool_name(task_idx, len(tools), family, "respond", anonymize), action_type="respond"))
     tools.append(WorkflowTool(name=_tool_name(task_idx, len(tools), family, "terminate", anonymize), action_type="terminate"))

@@ -268,6 +268,8 @@ def main() -> None:
             p.add_argument("--action-intent-training", action="store_true", default=True)
             p.add_argument("--source-families", default="approval,incident,procurement")
             p.add_argument("--target-families", default="academic,banking,farm,support")
+            p.add_argument("--source-difficulty", choices=("v1", "v2"), default="v2")
+            p.add_argument("--target-difficulty", choices=("v1", "v2"), default="v2")
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -1712,6 +1714,8 @@ def main() -> None:
                 action_intent_training=args.action_intent_training,
                 source_families=source_families,
                 target_families=target_families,
+                source_difficulty=args.source_difficulty,
+                target_difficulty=args.target_difficulty,
             )
             command_manifest = {
                 "command": args.command,
@@ -1722,6 +1726,8 @@ def main() -> None:
                 "benchmark": manifest["benchmark"],
                 "source_families": manifest["source_families"],
                 "target_families": manifest["target_families"],
+                "source_difficulty": manifest["source_difficulty"],
+                "target_difficulty": manifest["target_difficulty"],
                 "source_target_family_overlap": manifest["source_target_family_overlap"],
                 "target_trajectory_training_used": manifest["target_trajectory_training_used"],
                 "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],

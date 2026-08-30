@@ -47,6 +47,13 @@ class HarnessContractTest(unittest.TestCase):
         self.assertGreater(len(records), 0)
         self.assertGreater(len(pairs), 0)
 
+    def test_workflow_v2_adds_decoys_and_chained_preconditions(self) -> None:
+        tasks = generate_workflow_source_tasks(12, seed=11, anonymize_tools=True, difficulty="v2")
+        tools = [tool for task in tasks for tool in task.tools]
+        self.assertTrue(any(tool.decoy for tool in tools))
+        self.assertTrue(any(tool.precondition_fact is not None and tool.action_type == "read" for tool in tools))
+        self.assertTrue(any(tool.decoy and tool.action_type == "write" for tool in tools))
+
     def test_workflow_source_validation_writes_frozen_zero_target_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
@@ -106,6 +113,8 @@ class HarnessContractTest(unittest.TestCase):
                 max_states_per_task=60,
                 source_families=("approval", "incident"),
                 target_families=("farm", "support"),
+                source_difficulty="v2",
+                target_difficulty="v2",
             )
             saved = json.loads((out / "structured_workflow_transfer.json").read_text(encoding="utf-8"))
             rows = (out / "structured_workflow_transfer_table.csv").read_text(encoding="utf-8")
@@ -114,6 +123,8 @@ class HarnessContractTest(unittest.TestCase):
             self.assertFalse(saved["target_trajectory_training_used"])
             self.assertFalse(saved["oracle_labels_in_inference_features"])
             self.assertFalse(saved["tool_names_used_as_features"])
+            self.assertEqual(saved["source_difficulty"], "v2")
+            self.assertEqual(saved["target_difficulty"], "v2")
             self.assertEqual(len(saved["rows"]), 4)
             self.assertIn("Source-trained controller", rows)
             self.assertIn("Oracle", rows)

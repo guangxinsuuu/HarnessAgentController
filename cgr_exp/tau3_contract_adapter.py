@@ -165,6 +165,8 @@ def tau3_action_features(*, candidate: object, message_history: Sequence[object]
     raw_argument_completeness = _raw_float(raw_data, "cgr_argument_completeness")
     raw_references_observed = _raw_float(raw_data, "cgr_references_observed_entity")
     raw_references_unverified = _raw_float(raw_data, "cgr_references_unverified_entity")
+    raw_declared_observation_gain = _raw_float(raw_data, "cgr_declared_observation_gain")
+    raw_declared_requirement_gain = _raw_float(raw_data, "cgr_declared_requirement_gain")
     raw_precondition = _raw_float(raw_data, "cgr_precondition_satisfied")
     raw_policy_risk = _raw_float(raw_data, "cgr_policy_risk")
     return ActionFeatures(
@@ -176,6 +178,8 @@ def tau3_action_features(*, candidate: object, message_history: Sequence[object]
         argument_completeness=raw_argument_completeness if raw_argument_completeness is not None else _argument_completeness(args),
         references_observed_entity=raw_references_observed if raw_references_observed is not None else (1.0 if references_observed else 0.0),
         references_unverified_entity=raw_references_unverified if raw_references_unverified is not None else (1.0 if references_unverified else 0.0),
+        declared_observation_gain=raw_declared_observation_gain if raw_declared_observation_gain is not None else (0.5 if action_type == "read" else 0.0),
+        declared_requirement_gain=raw_declared_requirement_gain if raw_declared_requirement_gain is not None else (0.5 if action_type == "write" else 0.0),
         expected_tool_cost_frac=1.0 / max(1, max_tool_budget) if tool_calls else 0.0,
         action_irreversible=1.0 if action_type == "write" else 0.0,
         precondition_satisfied=raw_precondition if raw_precondition is not None else (0.0 if references_unverified else 1.0),

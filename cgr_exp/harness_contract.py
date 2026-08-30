@@ -41,6 +41,8 @@ ACTION_FEATURE_NAMES = [
     "argument_completeness",
     "references_observed_entity",
     "references_unverified_entity",
+    "declared_observation_gain",
+    "declared_requirement_gain",
     "expected_tool_cost_frac",
     "action_irreversible",
     "precondition_satisfied",
@@ -108,6 +110,8 @@ class ActionFeatures:
     argument_completeness: float
     references_observed_entity: float
     references_unverified_entity: float
+    declared_observation_gain: float
+    declared_requirement_gain: float
     expected_tool_cost_frac: float
     action_irreversible: float
     precondition_satisfied: float

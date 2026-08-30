@@ -73,10 +73,16 @@ class GenericHarnessRanker:
         return cls(weights, float(data.get("bias", 0.0)))
 
 
-def train_generic_harness_ranker(tasks: Sequence[WorkflowTask], epochs: int = 20, seed: int = 0, action_intent_training: bool = False) -> tuple[GenericHarnessRanker, List[Pair]]:
+def train_generic_harness_ranker(
+    tasks: Sequence[WorkflowTask],
+    epochs: int = 20,
+    seed: int = 0,
+    action_intent_training: bool = False,
+    max_states_per_task: int = 200,
+) -> tuple[GenericHarnessRanker, List[Pair]]:
     records = []
     for task in tasks:
-        records.extend(collect_workflow_oracle_records(task, action_intent_features=action_intent_training))
+        records.extend(collect_workflow_oracle_records(task, max_states=max_states_per_task, action_intent_features=action_intent_training))
     pairs = make_workflow_ranking_pairs(records)
     ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
     ranker.train(pairs, epochs=epochs, lr=0.03, seed=seed)
@@ -221,7 +227,13 @@ def run_workflow_source_validation(
     train_tasks = generate_workflow_source_tasks(train_count, seed=seed, anonymize_tools=True)
     validation_tasks = generate_workflow_source_tasks(validation_count, seed=seed + 10000, anonymize_tools=True)
     named_tool_validation_tasks = generate_workflow_source_tasks(validation_count, seed=seed + 10000, anonymize_tools=False)
-    ranker, train_pairs = train_generic_harness_ranker(train_tasks, epochs=epochs, seed=seed, action_intent_training=action_intent_training)
+    ranker, train_pairs = train_generic_harness_ranker(
+        train_tasks,
+        epochs=epochs,
+        seed=seed,
+        action_intent_training=action_intent_training,
+        max_states_per_task=max_states_per_task,
+    )
     validation_records = []
     for task in validation_tasks:
         validation_records.extend(collect_workflow_oracle_records(task, max_states=max_states_per_task, action_intent_features=action_intent_training))
@@ -374,16 +386,24 @@ def run_structured_workflow_transfer(
     action_intent_training: bool = True,
     source_families: Sequence[str] = SOURCE_WORKFLOW_FAMILIES,
     target_families: Sequence[str] = TARGET_WORKFLOW_FAMILIES,
+    source_difficulty: str = "v2",
+    target_difficulty: str = "v2",
 ) -> Dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     source_families = tuple(source_families)
     target_families = tuple(target_families)
     if set(source_families) & set(target_families):
         raise ValueError("source and target workflow families must be disjoint for transfer evaluation")
-    train_tasks = generate_workflow_source_tasks(train_count, seed=seed, anonymize_tools=True, families=source_families)
-    validation_tasks = generate_workflow_source_tasks(validation_count, seed=seed + 10000, anonymize_tools=True, families=source_families)
-    target_tasks = generate_workflow_source_tasks(test_count, seed=seed + 20000, anonymize_tools=True, families=target_families)
-    ranker, train_pairs = train_generic_harness_ranker(train_tasks, epochs=epochs, seed=seed, action_intent_training=action_intent_training)
+    train_tasks = generate_workflow_source_tasks(train_count, seed=seed, anonymize_tools=True, families=source_families, difficulty=source_difficulty)
+    validation_tasks = generate_workflow_source_tasks(validation_count, seed=seed + 10000, anonymize_tools=True, families=source_families, difficulty=source_difficulty)
+    target_tasks = generate_workflow_source_tasks(test_count, seed=seed + 20000, anonymize_tools=True, families=target_families, difficulty=target_difficulty)
+    ranker, train_pairs = train_generic_harness_ranker(
+        train_tasks,
+        epochs=epochs,
+        seed=seed,
+        action_intent_training=action_intent_training,
+        max_states_per_task=max_states_per_task,
+    )
     validation_metrics = evaluate_workflow_ranker(
         validation_tasks,
         ranker,
@@ -418,12 +438,14 @@ def run_structured_workflow_transfer(
         "action_intent_training": action_intent_training,
         "source_families": list(source_families),
         "target_families": list(target_families),
+        "source_difficulty": source_difficulty,
+        "target_difficulty": target_difficulty,
         "source_target_family_overlap": sorted(set(source_families) & set(target_families)),
         "train_pair_count": len(train_pairs),
         "source_validation_top1_accuracy": validation_metrics["top1_accuracy"],
         "source_validation_random_expected_top1": validation_metrics["random_expected_top1"],
-        "source_generator": source_generator_manifest(seed, train_count, families=source_families),
-        "target_generator": source_generator_manifest(seed + 20000, test_count, families=target_families),
+        "source_generator": source_generator_manifest(seed, train_count, families=source_families, difficulty=source_difficulty),
+        "target_generator": source_generator_manifest(seed + 20000, test_count, families=target_families, difficulty=target_difficulty),
         "contract": canonical_contract_manifest(),
         "controller_checkpoint_frozen": True,
         "target_trajectory_training_used": False,
@@ -521,16 +543,16 @@ def _select_workflow_action(
 
 def _hand_heuristic_workflow_score(task: WorkflowTask, state: WorkflowState, action: WorkflowAction) -> float:
     tool = task.tools[action.tool_index]
-    completed = all(state.completed_requirements)
+    runtime = workflow_runtime_features(task, state)
+    completed = runtime.remaining_requirement_frac <= 0.0
     if tool.action_type in ("respond", "terminate"):
         return 10.0 if completed else -10.0
     if tool.action_type == "read":
-        return 3.0 if tool.reveals_fact is not None and not state.observed_facts[tool.reveals_fact] else -2.0
+        return 3.0 if runtime.uncertainty_score > 0.0 else -2.0
     if tool.action_type == "ask":
-        return 2.0 if any(not fact for fact in state.observed_facts) else -3.0
+        return 2.0 if runtime.uncertainty_score > 0.0 and runtime.observed_fact_frac >= 0.5 else -3.0
     if tool.action_type == "write":
-        precondition_ok = tool.precondition_fact is None or state.observed_facts[tool.precondition_fact]
-        return 5.0 - tool.policy_risk if precondition_ok else -8.0
+        return 4.0 if runtime.observed_fact_frac >= 0.6 else -4.0
     return 0.0
 
 

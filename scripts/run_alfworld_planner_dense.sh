@@ -29,6 +29,8 @@ fi
 COUNTERFACTUAL_ROLLOUT_STEPS="${COUNTERFACTUAL_ROLLOUT_STEPS:-30}"
 PLANNER_TIMEOUT_SECONDS="${PLANNER_TIMEOUT_SECONDS:-3}"
 MAX_EPISODE_LABEL_SECONDS="${MAX_EPISODE_LABEL_SECONDS:-60}"
+PERTURBATION_PROB="${PERTURBATION_PROB:-0.0}"
+WARMUP_RANDOM_STEPS="${WARMUP_RANDOM_STEPS:-0}"
 LABEL_SOURCE="${LABEL_SOURCE:-planner}"
 EVAL_SPLIT="${EVAL_SPLIT:-eval_in_distribution}"
 OUT_ROOT="${OUT_ROOT:-runs/alfworld_planner_dense_seed${SEED}}"
@@ -55,6 +57,7 @@ Common environment overrides:
   TRAIN_EPISODES=50 EVAL_EPISODES=20 MAX_STEPS=40 EPOCHS=20
   MAX_FRONTIER_ACTIONS=6 PLANNER_TIMEOUT_SECONDS=3
   MAX_EPISODE_LABEL_SECONDS=60
+  PERTURBATION_PROB=0.15 WARMUP_RANDOM_STEPS=2
   LABEL_SOURCE=planner     # exact TextWorld/PDDL cost-to-go labels
   LABEL_SOURCE=walkthrough # fast proxy labels; manifest marks planner labels false
   RESUME=1       # default; reuses existing dense label cache if present
@@ -80,8 +83,8 @@ run_audit() {
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
     --label-source "${LABEL_SOURCE}" \
-    --warmup-random-steps 0 \
-    --perturbation-prob 0.0 \
+    --warmup-random-steps "${WARMUP_RANDOM_STEPS}" \
+    --perturbation-prob "${PERTURBATION_PROB}" \
     --overwrite
 }
 
@@ -102,8 +105,8 @@ run_train() {
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
     --label-source "${LABEL_SOURCE}" \
-    --warmup-random-steps 0 \
-    --perturbation-prob 0.0 \
+    --warmup-random-steps "${WARMUP_RANDOM_STEPS}" \
+    --perturbation-prob "${PERTURBATION_PROB}" \
     "${resume_args[@]}"
 }
 
@@ -127,6 +130,8 @@ run_eval() {
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
     --label-source "${LABEL_SOURCE}" \
+    --warmup-random-steps "${WARMUP_RANDOM_STEPS}" \
+    --perturbation-prob "${PERTURBATION_PROB}" \
     --ranker-checkpoint "${RANKER_CHECKPOINT}" \
     --policies "${POLICIES}" \
     --overwrite

@@ -739,6 +739,62 @@ def run_alfworld_llm_shortlist_transfer(
     return manifest
 
 
+def summarize_alfworld_llm_shortlist_run(out_dir: Path, *, source_dir: Path) -> dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    table_path = _first_existing_path(
+        source_dir / "alfworld_llm_shortlist_table.csv",
+        source_dir / "alfworld_llm_shortlist_partial_table.csv",
+    )
+    per_episode_path = _first_existing_path(
+        source_dir / "alfworld_llm_shortlist_per_episode.csv",
+        source_dir / "alfworld_llm_shortlist_partial_per_episode.csv",
+    )
+    step_trace_path = _first_existing_path(
+        source_dir / "alfworld_llm_shortlist_step_trace.csv",
+        source_dir / "alfworld_llm_shortlist_partial_step_trace.csv",
+    )
+    manifest_path = _first_existing_path(
+        source_dir / "alfworld_llm_shortlist.json",
+        source_dir / "command_manifest.json",
+        source_dir / "alfworld_llm_shortlist_progress.json",
+    )
+    if table_path is None:
+        raise RuntimeError(f"missing ALFWorld LLM-shortlist table in {source_dir}")
+    table_rows = _read_csv_rows(table_path)
+    episode_rows = _read_csv_rows(per_episode_path)
+    step_trace_rows = _read_csv_rows(step_trace_path)
+    run_manifest = {}
+    if manifest_path is not None:
+        try:
+            run_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            run_manifest = {}
+    diagnosis_rows = [_alfworld_llm_shortlist_policy_diagnosis(row) for row in table_rows]
+    paired_rows = _alfworld_llm_shortlist_paired_rows(episode_rows)
+    summary = {
+        "benchmark": "alfworld_llm_shortlist_diagnosis",
+        "source_dir": str(source_dir),
+        "table_path": "" if table_path is None else str(table_path),
+        "per_episode_path": "" if per_episode_path is None else str(per_episode_path),
+        "step_trace_path": "" if step_trace_path is None else str(step_trace_path),
+        "manifest_path": "" if manifest_path is None else str(manifest_path),
+        "source_status": str(run_manifest.get("status", run_manifest.get("benchmark", ""))),
+        "source_progress_complete": _alfworld_source_progress_complete(source_dir, run_manifest),
+        "policy_count": len(diagnosis_rows),
+        "episode_row_count": len(episode_rows),
+        "step_trace_row_count": len(step_trace_rows),
+        "best_success_policy": _best_policy_by_metric(diagnosis_rows, "success", higher_is_better=True),
+        "best_recall_policy": _best_policy_by_metric(diagnosis_rows, "proposal_recall_at_k", higher_is_better=True),
+        "lowest_parse_fallback_policy": _best_policy_by_metric(diagnosis_rows, "llm_parse_fallback_rate", higher_is_better=False),
+        "diagnosis_rows": diagnosis_rows,
+        "paired_rows": paired_rows,
+    }
+    _write_csv(out_dir / "alfworld_llm_shortlist_diagnosis.csv", diagnosis_rows)
+    _write_csv(out_dir / "alfworld_llm_shortlist_paired_policy_comparison.csv", paired_rows)
+    (out_dir / "alfworld_llm_shortlist_diagnosis.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    return summary
+
+
 def audit_alfworld_dense_labels(
     out_dir: Path,
     *,
@@ -4843,6 +4899,119 @@ def _load_alfworld_llm_shortlist_resume_state(
         if (policy, episode) in completed_keys:
             trace_rows.append(row)
     return list(results_by_key.values()), trace_rows
+
+
+def _first_existing_path(*paths: Path) -> Path | None:
+    for path in paths:
+        if path.exists() and path.stat().st_size > 0:
+            return path
+    return None
+
+
+def _alfworld_llm_shortlist_policy_diagnosis(row: Mapping[str, object]) -> dict[str, object]:
+    policy = str(row.get("policy", ""))
+    success = _coerce_float(row.get("success"), 0.0)
+    episodes = _coerce_int(row.get("episodes"), 0)
+    recall = _coerce_float(row.get("proposal_recall_at_k"), 0.0)
+    diagnostic_available = _coerce_float(row.get("diagnostic_available_rate"), 0.0)
+    diagnostic_match = _coerce_float(row.get("diagnostic_match_rate"), 0.0)
+    parse_fallback = _coerce_float(row.get("llm_parse_fallback_rate"), 0.0)
+    explicit_top_k = _coerce_float(row.get("mean_llm_explicit_top_k_count"), 0.0)
+    shortlist_size = _coerce_float(row.get("mean_llm_shortlist_size"), 0.0)
+    invalid_items = _coerce_float(row.get("mean_llm_invalid_ranked_items"), 0.0)
+    hint = "inspect_episode_trace"
+    if episodes < 5:
+        hint = "small_sample_only"
+    elif parse_fallback > 0.05 or invalid_items > 0.25:
+        hint = "llm_index_parse_or_fallback_problem"
+    elif diagnostic_available > 0.05 and recall < 0.30:
+        hint = "semantic_shortlist_low_oracle_recall"
+    elif "Dense-ranker" in policy and recall >= 0.50 and diagnostic_match < recall * 0.60:
+        hint = "controller_rerank_bottleneck_given_shortlist"
+    elif explicit_top_k < max(1.0, shortlist_size * 0.75):
+        hint = "llm_returned_too_few_explicit_candidates"
+    elif success <= 0.05:
+        hint = "end_to_end_failure_trace_needed"
+    return {
+        "policy": policy,
+        "episodes": episodes,
+        "success": success,
+        "final_score": _coerce_float(row.get("final_score"), 0.0),
+        "steps": _coerce_float(row.get("steps"), 0.0),
+        "tokens": _coerce_int(row.get("tokens"), 0),
+        "llm_calls": _coerce_int(row.get("llm_calls"), 0),
+        "new_tokens": _coerce_int(row.get("new_tokens"), 0),
+        "new_llm_calls": _coerce_int(row.get("new_llm_calls"), 0),
+        "cache_hits": _coerce_int(row.get("cache_hits"), 0),
+        "proposal_recall_at_k": recall,
+        "diagnostic_available_rate": diagnostic_available,
+        "diagnostic_match_rate": diagnostic_match,
+        "mean_llm_shortlist_size": shortlist_size,
+        "mean_llm_explicit_top_k_count": explicit_top_k,
+        "mean_llm_fallback_filled_count": _coerce_float(row.get("mean_llm_fallback_filled_count"), 0.0),
+        "llm_parse_fallback_rate": parse_fallback,
+        "llm_one_based_index_fix_rate": _coerce_float(row.get("llm_one_based_index_fix_rate"), 0.0),
+        "mean_llm_invalid_ranked_items": invalid_items,
+        "failure_mode_hint": hint,
+    }
+
+
+def _alfworld_llm_shortlist_paired_rows(rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    by_policy_episode: dict[str, dict[int, int]] = {}
+    for row in rows:
+        policy = str(row.get("policy", ""))
+        episode = _coerce_int(row.get("episode"), -1)
+        if episode < 0:
+            continue
+        by_policy_episode.setdefault(policy, {})[episode] = _coerce_int(row.get("success"), 0)
+    base_policy = "Frozen LLM top-1"
+    base = by_policy_episode.get(base_policy, {})
+    paired = []
+    for policy, episode_success in sorted(by_policy_episode.items()):
+        if policy == base_policy:
+            continue
+        shared = sorted(set(base).intersection(episode_success))
+        both_success = sum(1 for episode in shared if base[episode] and episode_success[episode])
+        compare_only = sum(1 for episode in shared if not base[episode] and episode_success[episode])
+        base_only = sum(1 for episode in shared if base[episode] and not episode_success[episode])
+        both_fail = sum(1 for episode in shared if not base[episode] and not episode_success[episode])
+        n = len(shared)
+        paired.append(
+            {
+                "base_policy": base_policy,
+                "compare_policy": policy,
+                "shared_episodes": n,
+                "base_success": 0.0 if n == 0 else sum(base[episode] for episode in shared) / n,
+                "compare_success": 0.0 if n == 0 else sum(episode_success[episode] for episode in shared) / n,
+                "delta_success": 0.0 if n == 0 else (sum(episode_success[episode] for episode in shared) - sum(base[episode] for episode in shared)) / n,
+                "compare_only_success": compare_only,
+                "base_only_success": base_only,
+                "both_success": both_success,
+                "both_fail": both_fail,
+            }
+        )
+    return paired
+
+
+def _alfworld_source_progress_complete(source_dir: Path, manifest: Mapping[str, object]) -> bool:
+    progress_path = source_dir / "alfworld_llm_shortlist_progress.json"
+    if progress_path.exists():
+        try:
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return False
+        return str(progress.get("status", "")) == "complete" and _coerce_int(progress.get("completed_policy_episodes"), -1) == _coerce_int(
+            progress.get("total_policy_episodes"), -2
+        )
+    return str(manifest.get("status", "")) == "complete"
+
+
+def _best_policy_by_metric(rows: Sequence[Mapping[str, object]], metric: str, *, higher_is_better: bool) -> str:
+    if not rows:
+        return ""
+    scored = [(row, _coerce_float(row.get(metric), 0.0)) for row in rows]
+    best_row, _best = max(scored, key=lambda item: item[1]) if higher_is_better else min(scored, key=lambda item: item[1])
+    return str(best_row.get("policy", ""))
 
 
 def _alfworld_llm_shortlist_run_config(

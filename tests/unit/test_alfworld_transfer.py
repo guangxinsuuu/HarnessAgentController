@@ -19,6 +19,7 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_expert_transfer,
     run_alfworld_llm_shortlist_transfer,
     run_alfworld_transfer,
+    summarize_alfworld_llm_shortlist_run,
     _contract_filtered_admissible_commands,
     _command_type,
     _alfworld_env_method_for_policy,
@@ -1680,6 +1681,40 @@ class AlfworldTransferTest(unittest.TestCase):
                     policies=("Frozen LLM top-1",),
                     env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
                 )
+
+    def test_summarize_alfworld_llm_shortlist_run_writes_diagnosis(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            checkpoint.write_text(GenericHarnessRanker([0.0 for _name in canonical_feature_names()]).to_json(), encoding="utf-8")
+            source = Path(tmp) / "llm-shortlist"
+            run_alfworld_llm_shortlist_transfer(
+                source,
+                client=ScriptedAlfworldShortlistClient(input_tokens=11, output_tokens=3),
+                model="mock-shortlist",
+                ranker_checkpoint=checkpoint,
+                episodes=1,
+                max_steps=3,
+                shortlist_k=2,
+                policies=("Frozen LLM top-1", "Frozen LLM shortlist + Dense-ranker"),
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            out = Path(tmp) / "diagnosis"
+            manifest = summarize_alfworld_llm_shortlist_run(out, source_dir=source)
+            self.assertEqual(manifest["benchmark"], "alfworld_llm_shortlist_diagnosis")
+            self.assertTrue(manifest["source_progress_complete"])
+            self.assertEqual(manifest["policy_count"], 2)
+            self.assertTrue((out / "alfworld_llm_shortlist_diagnosis.csv").exists())
+            self.assertTrue((out / "alfworld_llm_shortlist_paired_policy_comparison.csv").exists())
+            with (out / "alfworld_llm_shortlist_diagnosis.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(len(rows), 2)
+            self.assertIn("failure_mode_hint", rows[0])
+            self.assertIn("mean_llm_explicit_top_k_count", rows[0])
+            with (out / "alfworld_llm_shortlist_paired_policy_comparison.csv").open() as handle:
+                paired = list(csv.DictReader(handle))
+            self.assertEqual(len(paired), 1)
+            self.assertEqual(paired[0]["base_policy"], "Frozen LLM top-1")
+            self.assertEqual(paired[0]["compare_policy"], "Frozen LLM shortlist + Dense-ranker")
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]

@@ -15,6 +15,7 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_llm_shortlist_transfer,
     run_alfworld_llm_shortlist_transfer_from_env,
     run_alfworld_transfer,
+    summarize_alfworld_llm_shortlist_run,
 )
 from cgr_exp.analysis.statistics import write_seed_aggregate
 from cgr_exp.certification_authority_audit import audit_certification_authority_source
@@ -131,6 +132,7 @@ COMMANDS = [
     "run-alfworld-dense-train",
     "run-alfworld-dense-transfer",
     "run-alfworld-llm-shortlist-transfer",
+    "summarize-alfworld-llm-shortlist",
     "run-alfworld-expert-train",
     "run-alfworld-expert-transfer",
 ]
@@ -399,6 +401,8 @@ def main() -> None:
             )
             p.add_argument("--resume", action="store_true", default=False)
             p.add_argument("--mock", action="store_true", default=False)
+        if name == "summarize-alfworld-llm-shortlist":
+            p.add_argument("--source-dir", type=Path, required=True)
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -2233,6 +2237,27 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'alfworld_llm_shortlist_table.csv'}")
+            return
+        if args.command == "summarize-alfworld-llm-shortlist":
+            manifest = summarize_alfworld_llm_shortlist_run(args.output_dir, source_dir=args.source_dir)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "benchmark": manifest["benchmark"],
+                "source_dir": manifest["source_dir"],
+                "source_progress_complete": manifest["source_progress_complete"],
+                "policy_count": manifest["policy_count"],
+                "episode_row_count": manifest["episode_row_count"],
+                "step_trace_row_count": manifest["step_trace_row_count"],
+                "best_success_policy": manifest["best_success_policy"],
+                "best_recall_policy": manifest["best_recall_policy"],
+                "lowest_parse_fallback_policy": manifest["lowest_parse_fallback_policy"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'alfworld_llm_shortlist_diagnosis.csv'}")
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

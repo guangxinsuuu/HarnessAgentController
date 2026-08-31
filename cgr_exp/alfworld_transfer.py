@@ -569,6 +569,7 @@ def run_alfworld_llm_shortlist_transfer(
     if shortlist_cache_path is None:
         shortlist_cache_path = out_dir / "alfworld_llm_shortlist_cache.jsonl"
     shortlist_cache_loaded = shortlist_cache_path.exists()
+    progress_path = out_dir / "alfworld_llm_shortlist_progress.json"
     shortlister = AlfworldLLMShortlistCache(
         client,
         model=model,
@@ -579,6 +580,18 @@ def run_alfworld_llm_shortlist_transfer(
     )
     all_results: list[AlfworldEpisodeResult] = []
     step_trace_rows: list[dict[str, object]] = []
+    total_policy_episodes = len(policies) * episodes
+    completed_policy_episodes = 0
+    _write_alfworld_llm_shortlist_progress(
+        progress_path,
+        status="running",
+        completed_policy_episodes=completed_policy_episodes,
+        total_policy_episodes=total_policy_episodes,
+        policy="",
+        episode=-1,
+        shortlister=shortlister,
+        shortlist_cache_path=shortlist_cache_path,
+    )
     for policy in policies:
         env = _make_alfworld_env(
             split=eval_split,
@@ -587,17 +600,34 @@ def run_alfworld_llm_shortlist_transfer(
             training_method=_alfworld_env_method_for_policy(policy),
         )
         for episode in range(episodes):
-            all_results.append(
-                _run_llm_shortlist_episode(
-                    env,
-                    policy=policy,
-                    ranker=ranker,
-                    shortlister=shortlister,
-                    seed=seed * 100000 + episode,
-                    episode=episode,
-                    max_steps=max_steps,
-                    step_trace_rows=step_trace_rows,
-                )
+            result = _run_llm_shortlist_episode(
+                env,
+                policy=policy,
+                ranker=ranker,
+                shortlister=shortlister,
+                seed=seed * 100000 + episode,
+                episode=episode,
+                max_steps=max_steps,
+                step_trace_rows=step_trace_rows,
+            )
+            all_results.append(result)
+            completed_policy_episodes += 1
+            _write_alfworld_llm_shortlist_progress(
+                progress_path,
+                status="running",
+                completed_policy_episodes=completed_policy_episodes,
+                total_policy_episodes=total_policy_episodes,
+                policy=policy,
+                episode=episode,
+                shortlister=shortlister,
+                shortlist_cache_path=shortlist_cache_path,
+            )
+            print(
+                f"[alfworld-llm-shortlist] {completed_policy_episodes}/{total_policy_episodes} policy-episodes, "
+                f"policy={policy}, episode={episode}, success={result.success}, "
+                f"new_llm_calls={shortlister.new_calls}, cache_keys_used={shortlister.calls}, "
+                f"tokens={shortlister.tokens}",
+                flush=True,
             )
     rows = _with_step_trace_diagnostics(
         [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies],
@@ -631,6 +661,7 @@ def run_alfworld_llm_shortlist_transfer(
         "new_llm_calls": shortlister.new_calls,
         "shortlist_cache_path": str(shortlist_cache_path),
         "shortlist_cache_loaded": shortlist_cache_loaded,
+        "progress_path": str(progress_path),
         "contract": canonical_contract_manifest(),
         "rows": rows,
     }
@@ -639,6 +670,16 @@ def run_alfworld_llm_shortlist_transfer(
     _write_csv(out_dir / "alfworld_llm_shortlist_step_trace.csv", step_trace_rows)
     _write_csv(out_dir / "alfworld_llm_shortlist_calls.csv", shortlister.records)
     (out_dir / "alfworld_llm_shortlist.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    _write_alfworld_llm_shortlist_progress(
+        progress_path,
+        status="complete",
+        completed_policy_episodes=completed_policy_episodes,
+        total_policy_episodes=total_policy_episodes,
+        policy="",
+        episode=-1,
+        shortlister=shortlister,
+        shortlist_cache_path=shortlist_cache_path,
+    )
     return manifest
 
 
@@ -4572,6 +4613,38 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
         row["proposal_recall_at_k"] = 0.0 if available == 0.0 else stats["in_shortlist"] / available
         row["mean_llm_shortlist_size"] = 0.0 if steps == 0.0 else stats["shortlist_size"] / steps
     return rows
+
+
+def _write_alfworld_llm_shortlist_progress(
+    path: Path,
+    *,
+    status: str,
+    completed_policy_episodes: int,
+    total_policy_episodes: int,
+    policy: str,
+    episode: int,
+    shortlister: AlfworldLLMShortlistCache,
+    shortlist_cache_path: Path,
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "status": status,
+                "completed_policy_episodes": completed_policy_episodes,
+                "total_policy_episodes": total_policy_episodes,
+                "last_policy": policy,
+                "last_episode": episode,
+                "new_llm_calls": shortlister.new_calls,
+                "cache_keys_used": shortlister.calls,
+                "tokens": shortlister.tokens,
+                "shortlist_cache_path": str(shortlist_cache_path),
+                "updated_at_unix": time.time(),
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
 
 
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:

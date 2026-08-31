@@ -1519,6 +1519,11 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertFalse(manifest["target_eval_trajectories_used_for_training"])
             self.assertFalse(manifest["llm_rollout_trajectories_used_for_training"])
             self.assertGreater(manifest["actual_unique_llm_calls"], 0)
+            progress_path = Path(str(manifest["progress_path"]))
+            self.assertTrue(progress_path.exists())
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+            self.assertEqual(progress["status"], "complete")
+            self.assertEqual(progress["completed_policy_episodes"], progress["total_policy_episodes"])
             with (out / "alfworld_llm_shortlist_table.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
             self.assertEqual(len(rows), 4)

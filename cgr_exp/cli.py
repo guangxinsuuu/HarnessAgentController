@@ -2221,6 +2221,7 @@ def main() -> None:
                 "new_llm_calls": manifest["new_llm_calls"],
                 "shortlist_cache_path": manifest["shortlist_cache_path"],
                 "shortlist_cache_loaded": manifest["shortlist_cache_loaded"],
+                "progress_path": manifest["progress_path"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")

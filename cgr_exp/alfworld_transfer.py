@@ -877,12 +877,17 @@ def merge_alfworld_llm_shortlist_shards(out_dir: Path, *, source_dirs: Sequence[
         [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies],
         all_step_rows,
     )
+    episode_ids = sorted({row.episode for row in all_results})
     manifest = {
         "benchmark": "alfworld_llm_shortlist_shard_merge",
         "status": "complete",
         "source_dirs": [str(path) for path in source_dirs],
         "shard_summaries": shard_summaries,
         "policy_count": len(policies),
+        "episodes": len(episode_ids),
+        "episode_start": episode_ids[0] if episode_ids else "",
+        "episode_end_exclusive": episode_ids[-1] + 1 if episode_ids else "",
+        "episode_ids": episode_ids,
         "episode_row_count": len(all_results),
         "step_trace_row_count": len(all_step_rows),
         "call_row_count": len(all_call_rows),

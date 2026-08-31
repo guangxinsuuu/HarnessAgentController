@@ -4,6 +4,7 @@ set -euo pipefail
 MODE="${1:-smoke}"
 PYTHON_BIN="${PYTHON_BIN:-/opt/anaconda3/envs/cgr-alfworld/bin/python}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
+ALFWORLD_DATA="${ALFWORLD_DATA:-${PROJECT_ROOT}/data/alfworld}"
 SEED="${SEED:-0}"
 OUT_ROOT="${OUT_ROOT:-runs/alfworld_final_seed${SEED}}"
 
@@ -38,6 +39,7 @@ MAX_EPISODE_LABEL_SECONDS="${MAX_EPISODE_LABEL_SECONDS:-60}"
 COUNTERFACTUAL_ROLLOUT_STEPS="${COUNTERFACTUAL_ROLLOUT_STEPS:-30}"
 LABEL_SOURCE="${LABEL_SOURCE:-planner}"
 EVAL_SPLIT="${EVAL_SPLIT:-eval_in_distribution}"
+CONFIG_PATH="${CONFIG_PATH:-}"
 
 DENSE_TRAIN_DIR="${DENSE_TRAIN_DIR:-${OUT_ROOT}_dense_train}"
 DENSE_AUDIT_DIR="${DENSE_AUDIT_DIR:-${OUT_ROOT}_dense_audit}"
@@ -47,8 +49,12 @@ FINAL_SUMMARY_DIR="${FINAL_SUMMARY_DIR:-${OUT_ROOT}_summary}"
 
 SHORTLIST_K="${SHORTLIST_K:-4}"
 LLM_EPISODE_START="${LLM_EPISODE_START:-0}"
+LLM_SHARDS="${LLM_SHARDS:-1}"
+LLM_SHARD_SIZE="${LLM_SHARD_SIZE:-}"
 MODEL="${MODEL:-${CGR_LLM_MODEL:-gpt-4o-mini}}"
 TIMEOUT="${TIMEOUT:-120}"
+TEMPERATURE="${TEMPERATURE:-0.0}"
+TOP_P="${TOP_P:-1.0}"
 LLM_OUT_DIR="${LLM_OUT_DIR:-${OUT_ROOT}_llm_shortlist}"
 LLM_SUMMARY_DIR="${LLM_SUMMARY_DIR:-${LLM_OUT_DIR}_diagnosis}"
 SHORTLIST_CACHE_PATH="${SHORTLIST_CACHE_PATH:-${LLM_OUT_DIR}/alfworld_llm_shortlist_cache.jsonl}"
@@ -94,6 +100,10 @@ Modes:
 Default non-smoke settings reproduce the current ALFWorld pilot shape:
   TRAIN_EPISODES=20 AGGREGATION_ROUNDS=1 AGGREGATION_EPISODES=20
   EVAL_EPISODES=10 LLM_EPISODES=20 RANKER_MODEL=mlp FRONTIER_STRATEGY=score-diverse
+
+Set LLM_SHARDS>1 for parallel real/mock LLM-shortlist evaluation. Sharded
+runs write shard dirs next to LLM_OUT_DIR, merge into LLM_OUT_DIR, and write
+diagnostics into LLM_SUMMARY_DIR.
 EOF
 }
 
@@ -107,6 +117,36 @@ run_llm_shortlist() {
     print -u2 "run symbolic first or set RANKER_CHECKPOINT=/path/to/alfworld_dense_ranker.json"
     exit 2
   fi
+  if (( LLM_SHARDS > 1 )); then
+    local shard_size_args=()
+    if [[ -n "${LLM_SHARD_SIZE}" ]]; then
+      shard_size_args=("SHARD_SIZE=${LLM_SHARD_SIZE}")
+    fi
+    env \
+      MOCK="${1}" \
+      TOTAL_EPISODES="${LLM_EPISODES}" \
+      SHARDS="${LLM_SHARDS}" \
+      EPISODE_START="${LLM_EPISODE_START}" \
+      OUT_ROOT="${LLM_OUT_DIR}" \
+      MERGED_DIR="${LLM_OUT_DIR}" \
+      MERGED_DIAGNOSIS_DIR="${LLM_SUMMARY_DIR}" \
+      ALFWORLD_DATA="${ALFWORLD_DATA}" \
+      EVAL_SPLIT="${EVAL_SPLIT}" \
+      CONFIG_PATH="${CONFIG_PATH}" \
+      MAX_STEPS="${MAX_STEPS}" \
+      SHORTLIST_K="${SHORTLIST_K}" \
+      MODEL="${MODEL}" \
+      TIMEOUT="${TIMEOUT}" \
+      TEMPERATURE="${TEMPERATURE}" \
+      TOP_P="${TOP_P}" \
+      RANKER_CHECKPOINT="${RANKER_CHECKPOINT}" \
+      POLICIES="${LLM_POLICIES}" \
+      RESUME="${RESUME:-1}" \
+      OVERWRITE="${OVERWRITE:-0}" \
+      "${shard_size_args[@]}" \
+      scripts/run_alfworld_llm_shortlist_shards.sh
+    return
+  fi
   local mock_flag="${1}"
   MOCK="${mock_flag}" \
   EPISODES="${LLM_EPISODES}" \
@@ -117,6 +157,8 @@ run_llm_shortlist() {
   EPISODE_START="${LLM_EPISODE_START}" \
   MODEL="${MODEL}" \
   TIMEOUT="${TIMEOUT}" \
+  TEMPERATURE="${TEMPERATURE}" \
+  TOP_P="${TOP_P}" \
   POLICIES="${LLM_POLICIES}" \
   RANKER_CHECKPOINT="${RANKER_CHECKPOINT}" \
   RESUME="${RESUME:-1}" \

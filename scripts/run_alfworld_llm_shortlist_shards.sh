@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
 set -euo pipefail
+unsetopt bg_nice 2>/dev/null || true
 
 PYTHON_BIN="${PYTHON_BIN:-/opt/anaconda3/envs/cgr-alfworld/bin/python}"
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
@@ -10,6 +11,7 @@ CONFIG_PATH="${CONFIG_PATH:-}"
 TOTAL_EPISODES="${TOTAL_EPISODES:-20}"
 SHARDS="${SHARDS:-2}"
 SHARD_SIZE="${SHARD_SIZE:-$(( (TOTAL_EPISODES + SHARDS - 1) / SHARDS ))}"
+BASE_EPISODE_START="${EPISODE_START:-0}"
 OUT_ROOT="${OUT_ROOT:-runs/alfworld_llm_shortlist_sharded_seed${SEED}}"
 MERGED_DIR="${MERGED_DIR:-${OUT_ROOT}_merged}"
 MERGED_DIAGNOSIS_DIR="${MERGED_DIAGNOSIS_DIR:-${MERGED_DIR}_diagnosis}"
@@ -32,13 +34,14 @@ export SEED
 shard_dirs=()
 pids=()
 for shard in $(seq 0 $((SHARDS - 1))); do
-  start=$((shard * SHARD_SIZE))
+  offset=$((shard * SHARD_SIZE))
+  start=$((BASE_EPISODE_START + offset))
   count="${SHARD_SIZE}"
-  if (( start >= TOTAL_EPISODES )); then
+  if (( offset >= TOTAL_EPISODES )); then
     continue
   fi
-  if (( start + count > TOTAL_EPISODES )); then
-    count=$((TOTAL_EPISODES - start))
+  if (( offset + count > TOTAL_EPISODES )); then
+    count=$((TOTAL_EPISODES - offset))
   fi
   shard_dir="${OUT_ROOT}_shard${shard}"
   shard_dirs+=("${shard_dir}")

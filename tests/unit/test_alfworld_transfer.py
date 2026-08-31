@@ -1772,6 +1772,9 @@ class AlfworldTransferTest(unittest.TestCase):
             merged = root / "merged"
             manifest = merge_alfworld_llm_shortlist_shards(merged, source_dirs=(shard0, shard1))
             self.assertEqual(manifest["benchmark"], "alfworld_llm_shortlist_shard_merge")
+            self.assertEqual(manifest["episodes"], 2)
+            self.assertEqual(manifest["episode_start"], 0)
+            self.assertEqual(manifest["episode_end_exclusive"], 2)
             self.assertEqual(manifest["episode_row_count"], 2)
             with (merged / "alfworld_llm_shortlist_per_episode.csv").open() as handle:
                 rows = list(csv.DictReader(handle))

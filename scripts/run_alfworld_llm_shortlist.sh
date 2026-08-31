@@ -20,6 +20,8 @@ POLICIES="${POLICIES:-Frozen LLM top-1,Frozen LLM shortlist + Random,Frozen LLM 
 MOCK="${MOCK:-0}"
 RESUME="${RESUME:-0}"
 OVERWRITE="${OVERWRITE:-1}"
+SUMMARIZE="${SUMMARIZE:-1}"
+SUMMARY_DIR="${SUMMARY_DIR:-${OUT_DIR}_diagnosis}"
 
 export ALFWORLD_DATA
 export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
@@ -49,3 +51,10 @@ fi
   --shortlist-cache-path "${SHORTLIST_CACHE_PATH}" \
   --policies "${POLICIES}" \
   "${args[@]}"
+
+if [[ "${SUMMARIZE}" == "1" ]]; then
+  "${PYTHON_BIN}" -m cgr_exp.cli summarize-alfworld-llm-shortlist \
+    --output-dir "${SUMMARY_DIR}" \
+    --source-dir "${OUT_DIR}" \
+    --overwrite
+fi

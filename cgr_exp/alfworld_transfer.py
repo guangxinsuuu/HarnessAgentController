@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from cgr_exp.harness_contract import ActionFeatures, CanonicalCandidate, RuntimeFeatures, canonical_contract_manifest, canonical_feature_names
-from cgr_exp.harness_ranker import GenericHarnessRanker, train_generic_harness_ranker
+from cgr_exp.harness_ranker import GenericHarnessMLPRanker, GenericHarnessRanker, load_generic_harness_ranker, train_generic_harness_ranker
 from cgr_exp.workflow_source_generator import SOURCE_WORKFLOW_FAMILIES, generate_workflow_source_tasks, source_generator_manifest
 
 
@@ -36,6 +36,9 @@ ALFWORLD_DENSE_LABEL_SOURCES = {ALFWORLD_DENSE_LABEL_REPLAY, ALFWORLD_DENSE_LABE
 ALFWORLD_FRONTIER_STRATEGY_PRIORITY = "priority"
 ALFWORLD_FRONTIER_STRATEGY_SCORE_DIVERSE = "score-diverse"
 ALFWORLD_FRONTIER_STRATEGIES = {ALFWORLD_FRONTIER_STRATEGY_PRIORITY, ALFWORLD_FRONTIER_STRATEGY_SCORE_DIVERSE}
+ALFWORLD_RANKER_MODEL_LINEAR = "linear"
+ALFWORLD_RANKER_MODEL_MLP = "mlp"
+ALFWORLD_RANKER_MODELS = {ALFWORLD_RANKER_MODEL_LINEAR, ALFWORLD_RANKER_MODEL_MLP}
 ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS = 8.0
 ALFWORLD_CONTRACT_SIGN_EXPECTATIONS = {
     "declared_requirement_gain": "positive",
@@ -217,6 +220,8 @@ def run_alfworld_dense_transfer(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
+    ranker_model: str = ALFWORLD_RANKER_MODEL_LINEAR,
+    rank_hidden_dim: int = 32,
     rank_lr: float = 0.03,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
@@ -232,10 +237,12 @@ def run_alfworld_dense_transfer(
     if env_factory is None:
         _assert_alfworld_available()
     if ranker_checkpoint is not None:
-        ranker = GenericHarnessRanker.from_json(ranker_checkpoint.read_text(encoding="utf-8"))
+        ranker = load_generic_harness_ranker(ranker_checkpoint.read_text(encoding="utf-8"))
         train_manifest = {
             "trained_in_this_run": False,
             "checkpoint": str(ranker_checkpoint),
+            "ranker_model": _alfworld_ranker_model_name(ranker),
+            "rank_hidden_dim": getattr(ranker, "hidden_dim", 0),
             "counterfactual_planner_cost_to_go": False,
             "label_source": "loaded_checkpoint",
         }
@@ -251,6 +258,8 @@ def run_alfworld_dense_transfer(
             max_pairs_per_state=max_pairs_per_state,
             max_frontier_actions=max_frontier_actions,
             frontier_strategy=frontier_strategy,
+            ranker_model=ranker_model,
+            rank_hidden_dim=rank_hidden_dim,
             rank_lr=rank_lr,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
@@ -336,6 +345,8 @@ def audit_alfworld_dense_labels(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
+    ranker_model: str = ALFWORLD_RANKER_MODEL_LINEAR,
+    rank_hidden_dim: int = 32,
     rank_lr: float = 0.03,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
@@ -371,6 +382,8 @@ def audit_alfworld_dense_labels(
             max_pairs_per_state=max_pairs_per_state,
             max_frontier_actions=max_frontier_actions,
             frontier_strategy=frontier_strategy,
+            ranker_model=ranker_model,
+            rank_hidden_dim=rank_hidden_dim,
             rank_lr=rank_lr,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
@@ -425,6 +438,8 @@ def run_alfworld_dense_train(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
+    ranker_model: str = ALFWORLD_RANKER_MODEL_LINEAR,
+    rank_hidden_dim: int = 32,
     rank_lr: float = 0.03,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
@@ -457,6 +472,8 @@ def run_alfworld_dense_train(
         max_pairs_per_state=max_pairs_per_state,
         max_frontier_actions=max_frontier_actions,
         frontier_strategy=frontier_strategy,
+        ranker_model=ranker_model,
+        rank_hidden_dim=rank_hidden_dim,
         rank_lr=rank_lr,
         counterfactual_rollout_steps=counterfactual_rollout_steps,
         planner_timeout_seconds=planner_timeout_seconds,
@@ -762,6 +779,8 @@ def train_alfworld_dense_ranker(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
+    ranker_model: str = ALFWORLD_RANKER_MODEL_LINEAR,
+    rank_hidden_dim: int = 32,
     rank_lr: float = 0.03,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
@@ -1166,7 +1185,11 @@ def train_alfworld_dense_ranker(
         raise RuntimeError("ALFWorld dense training produced zero ranking pairs; check replay-prefix labels and expert availability.")
     if cache_dir is not None:
         dense_feature_cache_manifest_compatible = _alfworld_dense_cache_manifest_compatible(cache_dir / "alfworld_dense_cache_manifest.json")
-    ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
+    ranker_model = _normalize_alfworld_ranker_model(ranker_model)
+    if ranker_model == ALFWORLD_RANKER_MODEL_MLP:
+        ranker = GenericHarnessMLPRanker(len(canonical_feature_names()), hidden_dim=rank_hidden_dim, seed=seed)
+    else:
+        ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
     ranker.train(pairs, epochs=epochs, lr=rank_lr, seed=seed)
     pre_projection_train_diagnostics = _alfworld_pairwise_ranker_diagnostics(ranker, pairs)
     ranker_pre_projection_diagnostics = _alfworld_ranker_weight_diagnostics(ranker)
@@ -1221,6 +1244,8 @@ def train_alfworld_dense_ranker(
         "usable_mean_cost_gap_to_best": 0.0 if not usable_cost_gaps else sum(usable_cost_gaps) / len(usable_cost_gaps),
         "usable_max_cost_gap_to_best": "" if not usable_cost_gaps else max(usable_cost_gaps),
         "epochs": epochs,
+        "ranker_model": ranker_model,
+        "rank_hidden_dim": rank_hidden_dim if ranker_model == ALFWORLD_RANKER_MODEL_MLP else 0,
         "rank_lr": rank_lr,
         "max_pairs_per_state": max_pairs_per_state,
         "max_frontier_actions": max_frontier_actions,
@@ -1485,6 +1510,19 @@ def _normalize_alfworld_frontier_strategy(strategy: str) -> str:
     if normalized not in ALFWORLD_FRONTIER_STRATEGIES:
         raise ValueError(f"unknown ALFWorld frontier strategy: {strategy}")
     return normalized
+
+
+def _normalize_alfworld_ranker_model(model: str) -> str:
+    normalized = str(model or ALFWORLD_RANKER_MODEL_LINEAR).strip().lower().replace("_", "-")
+    if normalized not in ALFWORLD_RANKER_MODELS:
+        raise ValueError(f"unknown ALFWorld ranker model: {model}")
+    return normalized
+
+
+def _alfworld_ranker_model_name(ranker: object) -> str:
+    if isinstance(ranker, GenericHarnessMLPRanker):
+        return ALFWORLD_RANKER_MODEL_MLP
+    return ALFWORLD_RANKER_MODEL_LINEAR
 
 
 def _append_unique_command(selected: list[str], command: str, *, max_frontier_actions: int) -> bool:
@@ -2227,6 +2265,13 @@ def _alfworld_dense_label_row_pairwise_usable(row: Mapping[str, object]) -> bool
 
 
 def _alfworld_ranker_weight_diagnostics(ranker: GenericHarnessRanker, *, tolerance: float = 0.02) -> dict[str, object]:
+    if not hasattr(ranker, "weights"):
+        return {
+            "direct_feature_weights": {},
+            "contract_sign_violations": [],
+            "contract_sign_violation_count": 0,
+            "contract_sign_tolerance": tolerance,
+        }
     names = canonical_feature_names()
     direct_feature_names = list(ALFWORLD_CONTRACT_SIGN_EXPECTATIONS)
     weights = {
@@ -2252,6 +2297,14 @@ def _alfworld_ranker_weight_diagnostics(ranker: GenericHarnessRanker, *, toleran
 
 
 def _project_alfworld_ranker_contract_signs(ranker: GenericHarnessRanker) -> dict[str, object]:
+    if not hasattr(ranker, "weights"):
+        return {
+            "applied": False,
+            "scope": "direct_contract_action_features",
+            "reason": "ranker_has_no_direct_linear_weights",
+            "projected_weight_count": 0,
+            "projected_features": [],
+        }
     names = canonical_feature_names()
     projected_features: list[str] = []
     for feature, expected in ALFWORLD_CONTRACT_SIGN_EXPECTATIONS.items():

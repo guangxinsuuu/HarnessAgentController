@@ -73,6 +73,121 @@ class GenericHarnessRanker:
         return cls(weights, float(data.get("bias", 0.0)))
 
 
+class GenericHarnessMLPRanker:
+    def __init__(self, dim: int, hidden_dim: int = 32, seed: int = 0):
+        rng = random.Random(seed)
+        self.dim = dim
+        self.hidden_dim = hidden_dim
+        self.mean = [0.0] * dim
+        self.scale = [1.0] * dim
+        self.w1 = [[rng.uniform(-0.1, 0.1) for _ in range(dim)] for _ in range(hidden_dim)]
+        self.b1 = [0.0] * hidden_dim
+        self.w2 = [rng.uniform(-0.1, 0.1) for _ in range(hidden_dim)]
+        self.b2 = 0.0
+
+    def fit_normalizer(self, xs: Sequence[Sequence[float]]) -> None:
+        if not xs:
+            return
+        self.mean = [sum(float(x[i]) for x in xs) / len(xs) for i in range(self.dim)]
+        self.scale = []
+        for i in range(self.dim):
+            var = sum((float(x[i]) - self.mean[i]) ** 2 for x in xs) / len(xs)
+            self.scale.append(max(1e-6, math.sqrt(var)))
+
+    def score(self, features: Sequence[float]) -> float:
+        _z, _h, score = self._forward(features)
+        return score
+
+    def train(self, pairs: Sequence[Pair], epochs: int = 20, lr: float = 0.02, seed: int = 0) -> None:
+        pairs = list(pairs)
+        if not pairs:
+            return
+        self.fit_normalizer([features for pair in pairs for features in pair])
+        rng = random.Random(seed)
+        order = list(range(len(pairs)))
+        for _epoch in range(epochs):
+            rng.shuffle(order)
+            for idx in order:
+                self._train_pair(pairs[idx][0], pairs[idx][1], lr)
+
+    def ranking_error(self, pairs: Sequence[Pair]) -> float:
+        if not pairs:
+            return 0.0
+        wrong = sum(1 for positive, negative in pairs if self.score(positive) <= self.score(negative))
+        return wrong / len(pairs)
+
+    def to_json(self) -> str:
+        return json.dumps(
+            {
+                "ranker": "generic_harness_mlp",
+                "dim": self.dim,
+                "hidden_dim": self.hidden_dim,
+                "mean": self.mean,
+                "scale": self.scale,
+                "w1": self.w1,
+                "b1": self.b1,
+                "w2": self.w2,
+                "b2": self.b2,
+                "feature_names": canonical_feature_names(),
+            },
+            sort_keys=True,
+        )
+
+    @classmethod
+    def from_json(cls, text: str) -> "GenericHarnessMLPRanker":
+        data = json.loads(text)
+        expected_dim = len(canonical_feature_names())
+        dim = int(data["dim"])
+        if dim != expected_dim:
+            raise ValueError(f"ranker weight dimension mismatch: {dim} != {expected_dim}")
+        feature_names = data.get("feature_names")
+        if feature_names is not None and list(feature_names) != canonical_feature_names():
+            raise ValueError("ranker feature schema mismatch")
+        ranker = cls(dim=dim, hidden_dim=int(data["hidden_dim"]), seed=0)
+        ranker.mean = [float(value) for value in data["mean"]]
+        ranker.scale = [float(value) for value in data["scale"]]
+        ranker.w1 = [[float(value) for value in row] for row in data["w1"]]
+        ranker.b1 = [float(value) for value in data["b1"]]
+        ranker.w2 = [float(value) for value in data["w2"]]
+        ranker.b2 = float(data["b2"])
+        return ranker
+
+    def _forward(self, features: Sequence[float]) -> tuple[List[float], List[float], float]:
+        z = self._norm(features)
+        hidden = [math.tanh(sum(weight * value for weight, value in zip(row, z)) + bias) for row, bias in zip(self.w1, self.b1)]
+        score = sum(weight * value for weight, value in zip(self.w2, hidden)) + self.b2
+        return z, hidden, score
+
+    def _train_pair(self, positive: Sequence[float], negative: Sequence[float], lr: float) -> None:
+        zp, hp, sp = self._forward(positive)
+        zn, hn, sn = self._forward(negative)
+        margin = sp - sn
+        grad = -1.0 / (1.0 + math.exp(max(-40.0, min(40.0, margin))))
+        self._backward(zp, hp, grad, lr)
+        self._backward(zn, hn, -grad, lr)
+
+    def _backward(self, z: Sequence[float], hidden: Sequence[float], grad_score: float, lr: float) -> None:
+        old_w2 = list(self.w2)
+        for j in range(self.hidden_dim):
+            self.w2[j] -= lr * grad_score * hidden[j]
+        self.b2 -= lr * grad_score
+        for j in range(self.hidden_dim):
+            grad_hidden = grad_score * old_w2[j] * (1.0 - hidden[j] * hidden[j])
+            for i in range(self.dim):
+                self.w1[j][i] -= lr * grad_hidden * z[i]
+            self.b1[j] -= lr * grad_hidden
+
+    def _norm(self, features: Sequence[float]) -> List[float]:
+        return [(float(features[i]) - self.mean[i]) / self.scale[i] for i in range(self.dim)]
+
+
+def load_generic_harness_ranker(text: str) -> GenericHarnessRanker | GenericHarnessMLPRanker:
+    data = json.loads(text)
+    if data.get("ranker") == "generic_harness_mlp":
+        return GenericHarnessMLPRanker.from_json(text)
+    return GenericHarnessRanker.from_json(text)
+
+
 def train_generic_harness_ranker(
     tasks: Sequence[WorkflowTask],
     epochs: int = 20,

@@ -292,6 +292,8 @@ def main() -> None:
             p.add_argument("--max-pairs-per-state", type=int, default=24)
             p.add_argument("--max-frontier-actions", type=int, default=16)
             p.add_argument("--frontier-strategy", choices=("priority", "score-diverse"), default="priority")
+            p.add_argument("--ranker-model", choices=("linear", "mlp"), default="linear")
+            p.add_argument("--rank-hidden-dim", type=int, default=32)
             p.add_argument("--rank-lr", type=float, default=0.03)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
             p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
@@ -338,6 +340,8 @@ def main() -> None:
             p.add_argument("--max-pairs-per-state", type=int, default=24)
             p.add_argument("--max-frontier-actions", type=int, default=16)
             p.add_argument("--frontier-strategy", choices=("priority", "score-diverse"), default="priority")
+            p.add_argument("--ranker-model", choices=("linear", "mlp"), default="linear")
+            p.add_argument("--rank-hidden-dim", type=int, default=32)
             p.add_argument("--rank-lr", type=float, default=0.03)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
             p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
@@ -356,6 +360,8 @@ def main() -> None:
             p.add_argument("--max-pairs-per-state", type=int, default=24)
             p.add_argument("--max-frontier-actions", type=int, default=16)
             p.add_argument("--frontier-strategy", choices=("priority", "score-diverse"), default="priority")
+            p.add_argument("--ranker-model", choices=("linear", "mlp"), default="linear")
+            p.add_argument("--rank-hidden-dim", type=int, default=32)
             p.add_argument("--rank-lr", type=float, default=0.03)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
             p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
@@ -1843,6 +1849,8 @@ def main() -> None:
                 max_pairs_per_state=args.max_pairs_per_state,
                 max_frontier_actions=args.max_frontier_actions,
                 frontier_strategy=args.frontier_strategy,
+                ranker_model=args.ranker_model,
+                rank_hidden_dim=args.rank_hidden_dim,
                 rank_lr=args.rank_lr,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
                 planner_timeout_seconds=args.planner_timeout_seconds,
@@ -1863,6 +1871,8 @@ def main() -> None:
                 "training_source": manifest["training_source"],
                 "label_source": manifest["label_source"],
                 "frontier_strategy": manifest["frontier_strategy"],
+                "ranker_model": args.ranker_model,
+                "rank_hidden_dim": args.rank_hidden_dim,
                 "rank_lr": args.rank_lr,
                 "meta_commands_filtered_from_frontier": manifest["meta_commands_filtered_from_frontier"],
                 "counterfactual_planner_cost_to_go": manifest["counterfactual_planner_cost_to_go"],
@@ -2012,6 +2022,8 @@ def main() -> None:
                 max_pairs_per_state=args.max_pairs_per_state,
                 max_frontier_actions=args.max_frontier_actions,
                 frontier_strategy=args.frontier_strategy,
+                ranker_model=args.ranker_model,
+                rank_hidden_dim=args.rank_hidden_dim,
                 rank_lr=args.rank_lr,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
                 planner_timeout_seconds=args.planner_timeout_seconds,
@@ -2033,6 +2045,8 @@ def main() -> None:
                 "training_source": manifest["training_source"],
                 "label_source": manifest["label_source"],
                 "frontier_strategy": manifest["frontier_strategy"],
+                "ranker_model": manifest["train"]["ranker_model"],
+                "rank_hidden_dim": manifest["train"]["rank_hidden_dim"],
                 "rank_lr": manifest["train"]["rank_lr"],
                 "counterfactual_planner_cost_to_go": manifest["train"]["counterfactual_planner_cost_to_go"],
                 "meta_commands_filtered_from_frontier": manifest["meta_commands_filtered_from_frontier"],
@@ -2064,6 +2078,8 @@ def main() -> None:
                 max_pairs_per_state=args.max_pairs_per_state,
                 max_frontier_actions=args.max_frontier_actions,
                 frontier_strategy=args.frontier_strategy,
+                ranker_model=args.ranker_model,
+                rank_hidden_dim=args.rank_hidden_dim,
                 rank_lr=args.rank_lr,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
                 planner_timeout_seconds=args.planner_timeout_seconds,
@@ -2089,6 +2105,8 @@ def main() -> None:
                 "training_source": manifest["training_source"],
                 "label_source": manifest["label_source"],
                 "frontier_strategy": manifest["frontier_strategy"],
+                "ranker_model": manifest["train"].get("ranker_model", args.ranker_model),
+                "rank_hidden_dim": manifest["train"].get("rank_hidden_dim", args.rank_hidden_dim),
                 "rank_lr": args.rank_lr,
                 "counterfactual_planner_cost_to_go": manifest["train"]["counterfactual_planner_cost_to_go"],
                 "meta_commands_filtered_from_frontier": manifest["meta_commands_filtered_from_frontier"],

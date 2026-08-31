@@ -6,7 +6,13 @@ import unittest
 from pathlib import Path
 
 from cgr_exp.harness_contract import audit_canonical_contract_manifest, canonical_contract_manifest, canonical_feature_names
-from cgr_exp.harness_ranker import GenericHarnessRanker, run_structured_workflow_transfer, run_workflow_source_validation
+from cgr_exp.harness_ranker import (
+    GenericHarnessMLPRanker,
+    GenericHarnessRanker,
+    load_generic_harness_ranker,
+    run_structured_workflow_transfer,
+    run_workflow_source_validation,
+)
 from cgr_exp.tau3_contract_adapter import tau3_adapter_manifest, tau3_candidate_to_canonical
 from cgr_exp.workflow_oracle import collect_workflow_oracle_records, make_workflow_ranking_pairs
 from cgr_exp.workflow_source_generator import generate_workflow_source_tasks, source_generator_manifest
@@ -133,6 +139,15 @@ class HarnessContractTest(unittest.TestCase):
     def test_generic_harness_ranker_rejects_bad_checkpoint_dimension(self) -> None:
         with self.assertRaisesRegex(ValueError, "weight dimension mismatch"):
             GenericHarnessRanker.from_json(json.dumps({"weights": [0.0], "bias": 0.0, "feature_names": canonical_feature_names()}))
+
+    def test_generic_harness_mlp_ranker_round_trips_through_loader(self) -> None:
+        dim = len(canonical_feature_names())
+        ranker = GenericHarnessMLPRanker(dim=dim, hidden_dim=4, seed=0)
+        pairs = [(([1.0] + [0.0] * (dim - 1)), ([0.0] * dim))]
+        ranker.train(pairs, epochs=2, lr=0.01, seed=0)
+        loaded = load_generic_harness_ranker(ranker.to_json())
+        self.assertIsInstance(loaded, GenericHarnessMLPRanker)
+        self.assertAlmostEqual(loaded.score(pairs[0][0]), ranker.score(pairs[0][0]))
 
     def test_tau3_adapter_outputs_canonical_features_without_oracle_or_tool_identity(self) -> None:
         class Tool:

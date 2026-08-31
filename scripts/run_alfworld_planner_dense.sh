@@ -20,6 +20,8 @@ else
   MAX_STEPS="${MAX_STEPS:-40}"
 fi
 EPOCHS="${EPOCHS:-10}"
+RANKER_MODEL="${RANKER_MODEL:-linear}"
+RANK_HIDDEN_DIM="${RANK_HIDDEN_DIM:-32}"
 RANK_LR="${RANK_LR:-0.03}"
 MAX_PAIRS_PER_STATE="${MAX_PAIRS_PER_STATE:-16}"
 if [[ "${MODE}" == "smoke" ]]; then
@@ -57,6 +59,8 @@ It does not use an LLM or API key.
 
 Common environment overrides:
   TRAIN_EPISODES=50 EVAL_EPISODES=20 MAX_STEPS=40 EPOCHS=20
+  RANKER_MODEL=linear     # or mlp
+  RANK_HIDDEN_DIM=32
   RANK_LR=0.03
   MAX_FRONTIER_ACTIONS=6 PLANNER_TIMEOUT_SECONDS=3
   FRONTIER_STRATEGY=score-diverse
@@ -84,6 +88,8 @@ run_audit() {
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
     --frontier-strategy "${FRONTIER_STRATEGY}" \
+    --ranker-model "${RANKER_MODEL}" \
+    --rank-hidden-dim "${RANK_HIDDEN_DIM}" \
     --rank-lr "${RANK_LR}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
@@ -108,6 +114,8 @@ run_train() {
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
     --frontier-strategy "${FRONTIER_STRATEGY}" \
+    --ranker-model "${RANKER_MODEL}" \
+    --rank-hidden-dim "${RANK_HIDDEN_DIM}" \
     --rank-lr "${RANK_LR}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
@@ -135,6 +143,8 @@ run_eval() {
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
     --frontier-strategy "${FRONTIER_STRATEGY}" \
+    --ranker-model "${RANKER_MODEL}" \
+    --rank-hidden-dim "${RANK_HIDDEN_DIM}" \
     --rank-lr "${RANK_LR}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \

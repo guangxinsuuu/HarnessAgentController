@@ -38,7 +38,7 @@ from cgr_exp.alfworld_transfer import (
     _walkthrough_training_rollout_command,
 )
 from cgr_exp.harness_contract import canonical_feature_names
-from cgr_exp.harness_ranker import GenericHarnessRanker
+from cgr_exp.harness_ranker import GenericHarnessMLPRanker, GenericHarnessRanker
 
 
 class FakeAlfworldEnv:
@@ -993,9 +993,51 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(manifest["benchmark"], "alfworld_dense_frontier_controller_train")
             self.assertEqual(manifest["train"]["label_source"], "replay_prefix_plus_expert_rollout_cost_proxy")
             self.assertGreater(manifest["train"]["train_pair_count"], 0)
+            self.assertEqual(manifest["train"]["ranker_model"], "linear")
+            self.assertIn("ranker_post_projection_train_diagnostics", manifest["train"])
             with (out / "alfworld_dense_action_labels.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
             self.assertGreater(len(rows), 0)
+
+    def test_run_alfworld_dense_train_can_use_mlp_ranker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-train"
+            manifest = run_alfworld_dense_train(
+                out,
+                train_episodes=2,
+                max_steps=4,
+                epochs=2,
+                max_pairs_per_state=8,
+                max_frontier_actions=3,
+                ranker_model="mlp",
+                rank_hidden_dim=4,
+                rank_lr=0.01,
+                counterfactual_rollout_steps=4,
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            checkpoint = out / "alfworld_dense_ranker.json"
+            loaded = GenericHarnessMLPRanker.from_json(checkpoint.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["train"]["ranker_model"], "mlp")
+        self.assertEqual(manifest["train"]["rank_hidden_dim"], 4)
+        self.assertEqual(loaded.hidden_dim, 4)
+
+    def test_run_alfworld_dense_transfer_can_load_mlp_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            checkpoint.write_text(GenericHarnessMLPRanker(len(canonical_feature_names()), hidden_dim=4, seed=0).to_json(), encoding="utf-8")
+            out = Path(tmp) / "dense-eval"
+            manifest = run_alfworld_dense_transfer(
+                out,
+                ranker_checkpoint=checkpoint,
+                eval_episodes=1,
+                max_steps=4,
+                policies=("ALFWorld dense-ranker",),
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+        self.assertFalse(manifest["train"]["trained_in_this_run"])
+        self.assertEqual(manifest["train"]["ranker_model"], "mlp")
 
     def test_walkthrough_suffix_labels_rank_future_plan_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -19,6 +19,7 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_expert_transfer,
     run_alfworld_llm_shortlist_transfer,
     run_alfworld_transfer,
+    summarize_alfworld_final_pipeline,
     summarize_alfworld_llm_shortlist_run,
     _contract_filtered_admissible_commands,
     _command_type,
@@ -1734,6 +1735,108 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("dense_ranker_first_selected_shortlist_rank", matrix[0])
             self.assertIn("dense_ranker_first_diagnostic_shortlist_rank", matrix[0])
             self.assertIn("dense_ranker_missed_diagnostic_in_shortlist_rate", matrix[0])
+
+    def test_summarize_alfworld_final_pipeline_combines_symbolic_and_llm_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dense_train = root / "dense-train"
+            dense_audit = root / "dense-audit"
+            dense_eval = root / "dense-eval"
+            llm = root / "llm"
+            llm_diag = root / "llm-diagnosis"
+            out = root / "summary"
+            for path in (dense_train, dense_audit, dense_eval, llm, llm_diag):
+                path.mkdir()
+            (dense_train / "command_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "train_episodes": 2,
+                        "label_source": "textworld_pddl_replan_cost_to_go",
+                        "counterfactual_planner_cost_to_go": True,
+                        "target_eval_trajectories_used_for_training": False,
+                        "llm_rollout_trajectories_used": False,
+                        "training_source": "alfworld_train_textworld_pddl_planner_frontier_labels",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (dense_audit / "command_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "episodes": 2,
+                        "label_source": "textworld_pddl_replan_cost_to_go",
+                        "counterfactual_planner_cost_to_go": True,
+                        "target_eval_trajectories_used_for_training": False,
+                        "llm_rollout_trajectories_used": False,
+                        "label_summary": {
+                            "censored_action_label_rate": 0.0,
+                            "planner_path_cost_monotone_failure_rate": 0.0,
+                            "usable_cost_variation_rate": 1.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (dense_eval / "command_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "eval_episodes": 1,
+                        "label_source": "planner",
+                        "counterfactual_planner_cost_to_go": True,
+                        "target_eval_trajectories_used_for_training": False,
+                        "llm_rollout_trajectories_used": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (dense_eval / "alfworld_dense_transfer_table.csv").open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["policy", "success"])
+                writer.writeheader()
+                writer.writerow({"policy": "ALFWorld dense-ranker", "success": "1.0"})
+            (llm / "command_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "complete",
+                        "episodes": 1,
+                        "target_eval_trajectories_used_for_training": False,
+                        "llm_rollout_trajectories_used_for_training": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (llm_diag / "command_manifest.json").write_text(json.dumps({"status": "complete", "source_progress_complete": True}), encoding="utf-8")
+            with (llm_diag / "alfworld_llm_shortlist_diagnosis.csv").open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["policy", "success", "proposal_recall_at_k", "missed_diagnostic_in_shortlist_rate", "llm_parse_fallback_rate"])
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "policy": "Frozen LLM shortlist + Dense-ranker",
+                        "success": "0.5",
+                        "proposal_recall_at_k": "0.8",
+                        "missed_diagnostic_in_shortlist_rate": "0.1",
+                        "llm_parse_fallback_rate": "0.0",
+                    }
+                )
+
+            manifest = summarize_alfworld_final_pipeline(
+                out,
+                dense_train_dir=dense_train,
+                dense_audit_dir=dense_audit,
+                dense_eval_dir=dense_eval,
+                llm_shortlist_dir=llm,
+                llm_diagnosis_dir=llm_diag,
+            )
+            self.assertEqual(manifest["benchmark"], "alfworld_final_pipeline_summary")
+            self.assertTrue((out / "alfworld_final_pipeline_summary.csv").exists())
+            self.assertTrue((out / "alfworld_final_pipeline_policy_table.csv").exists())
+            with (out / "alfworld_final_pipeline_summary.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual([row["stage"] for row in rows], ["dense_train", "dense_label_audit", "symbolic_dense_eval", "llm_shortlist_eval"])
+            self.assertEqual(rows[1]["diagnostic"], "dense_labels_audited")
+            self.assertEqual(rows[3]["best_policy"], "Frozen LLM shortlist + Dense-ranker")
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]

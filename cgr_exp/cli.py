@@ -15,6 +15,7 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_llm_shortlist_transfer,
     run_alfworld_llm_shortlist_transfer_from_env,
     run_alfworld_transfer,
+    summarize_alfworld_final_pipeline,
     summarize_alfworld_llm_shortlist_run,
 )
 from cgr_exp.analysis.statistics import write_seed_aggregate
@@ -133,6 +134,7 @@ COMMANDS = [
     "run-alfworld-dense-transfer",
     "run-alfworld-llm-shortlist-transfer",
     "summarize-alfworld-llm-shortlist",
+    "summarize-alfworld-final-pipeline",
     "run-alfworld-expert-train",
     "run-alfworld-expert-transfer",
 ]
@@ -403,6 +405,12 @@ def main() -> None:
             p.add_argument("--mock", action="store_true", default=False)
         if name == "summarize-alfworld-llm-shortlist":
             p.add_argument("--source-dir", type=Path, required=True)
+        if name == "summarize-alfworld-final-pipeline":
+            p.add_argument("--dense-train-dir", type=Path, required=True)
+            p.add_argument("--dense-audit-dir", type=Path, required=True)
+            p.add_argument("--dense-eval-dir", type=Path, required=True)
+            p.add_argument("--llm-shortlist-dir", type=Path, default=None)
+            p.add_argument("--llm-diagnosis-dir", type=Path, default=None)
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -2258,6 +2266,35 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'alfworld_llm_shortlist_diagnosis.csv'}")
+            return
+        if args.command == "summarize-alfworld-final-pipeline":
+            manifest = summarize_alfworld_final_pipeline(
+                args.output_dir,
+                dense_train_dir=args.dense_train_dir,
+                dense_audit_dir=args.dense_audit_dir,
+                dense_eval_dir=args.dense_eval_dir,
+                llm_shortlist_dir=args.llm_shortlist_dir,
+                llm_diagnosis_dir=args.llm_diagnosis_dir,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "benchmark": manifest["benchmark"],
+                "dense_train_dir": manifest["dense_train_dir"],
+                "dense_audit_dir": manifest["dense_audit_dir"],
+                "dense_eval_dir": manifest["dense_eval_dir"],
+                "llm_shortlist_dir": manifest["llm_shortlist_dir"],
+                "llm_diagnosis_dir": manifest["llm_diagnosis_dir"],
+                "dense_train_status": manifest["dense_train_status"],
+                "dense_audit_status": manifest["dense_audit_status"],
+                "dense_eval_status": manifest["dense_eval_status"],
+                "llm_shortlist_status": manifest["llm_shortlist_status"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'alfworld_final_pipeline_summary.csv'}")
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

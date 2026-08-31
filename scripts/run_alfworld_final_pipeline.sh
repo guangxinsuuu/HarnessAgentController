@@ -43,6 +43,7 @@ DENSE_TRAIN_DIR="${DENSE_TRAIN_DIR:-${OUT_ROOT}_dense_train}"
 DENSE_AUDIT_DIR="${DENSE_AUDIT_DIR:-${OUT_ROOT}_dense_audit}"
 DENSE_EVAL_DIR="${DENSE_EVAL_DIR:-${OUT_ROOT}_dense_eval}"
 RANKER_CHECKPOINT="${RANKER_CHECKPOINT:-${DENSE_TRAIN_DIR}/alfworld_dense_ranker.json}"
+FINAL_SUMMARY_DIR="${FINAL_SUMMARY_DIR:-${OUT_ROOT}_summary}"
 
 SHORTLIST_K="${SHORTLIST_K:-4}"
 MODEL="${MODEL:-${CGR_LLM_MODEL:-gpt-4o-mini}}"
@@ -122,23 +123,43 @@ run_llm_shortlist() {
   scripts/run_alfworld_llm_shortlist.sh
 }
 
+run_final_summary() {
+  local include_llm="${1}"
+  local llm_args=()
+  if [[ "${include_llm}" == "1" ]]; then
+    llm_args=("--llm-shortlist-dir" "${LLM_OUT_DIR}" "--llm-diagnosis-dir" "${LLM_SUMMARY_DIR}")
+  fi
+  "${PYTHON_BIN}" -m cgr_exp.cli summarize-alfworld-final-pipeline \
+    --output-dir "${FINAL_SUMMARY_DIR}" \
+    --dense-train-dir "${DENSE_TRAIN_DIR}" \
+    --dense-audit-dir "${DENSE_AUDIT_DIR}" \
+    --dense-eval-dir "${DENSE_EVAL_DIR}" \
+    "${llm_args[@]}" \
+    --overwrite
+}
+
 case "${MODE}" in
   smoke)
     run_symbolic
     run_llm_shortlist 1
+    run_final_summary 1
     ;;
   symbolic|symbolic-smoke)
     run_symbolic
+    run_final_summary 0
     ;;
   llm-mock|all-mock)
     run_llm_shortlist 1
+    run_final_summary 1
     ;;
   llm-real)
     run_llm_shortlist 0
+    run_final_summary 1
     ;;
   all-real)
     run_symbolic
     run_llm_shortlist 0
+    run_final_summary 1
     ;;
   help|-h|--help)
     usage

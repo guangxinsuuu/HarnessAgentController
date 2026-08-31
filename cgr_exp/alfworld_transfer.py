@@ -798,6 +798,121 @@ def summarize_alfworld_llm_shortlist_run(out_dir: Path, *, source_dir: Path) -> 
     return summary
 
 
+def summarize_alfworld_final_pipeline(
+    out_dir: Path,
+    *,
+    dense_train_dir: Path,
+    dense_audit_dir: Path,
+    dense_eval_dir: Path,
+    llm_shortlist_dir: Path | None = None,
+    llm_diagnosis_dir: Path | None = None,
+) -> dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dense_train_manifest = _read_json_object(dense_train_dir / "command_manifest.json")
+    dense_audit_manifest = _read_json_object(dense_audit_dir / "command_manifest.json")
+    dense_eval_manifest = _read_json_object(dense_eval_dir / "command_manifest.json")
+    llm_manifest = _read_json_object(llm_shortlist_dir / "command_manifest.json") if llm_shortlist_dir is not None else {}
+    llm_diagnosis_manifest = _read_json_object(llm_diagnosis_dir / "command_manifest.json") if llm_diagnosis_dir is not None else {}
+
+    dense_eval_rows = _read_csv_rows(dense_eval_dir / "alfworld_dense_transfer_table.csv")
+    llm_rows = _read_csv_rows(llm_diagnosis_dir / "alfworld_llm_shortlist_diagnosis.csv") if llm_diagnosis_dir is not None else []
+    audit_summary = {}
+    if isinstance(dense_audit_manifest.get("label_summary"), Mapping):
+        audit_summary = dict(dense_audit_manifest["label_summary"])
+
+    summary_rows = [
+        {
+            "stage": "dense_train",
+            "status": dense_train_manifest.get("status", "missing"),
+            "evidence_path": str(dense_train_dir / "command_manifest.json"),
+            "episodes": dense_train_manifest.get("train_episodes", ""),
+            "policy_count": "",
+            "best_policy": "",
+            "best_success": "",
+            "label_source": dense_train_manifest.get("label_source", ""),
+            "counterfactual_planner_cost_to_go": dense_train_manifest.get("counterfactual_planner_cost_to_go", ""),
+            "target_eval_trajectories_used_for_training": dense_train_manifest.get("target_eval_trajectories_used_for_training", ""),
+            "llm_rollout_trajectories_used": dense_train_manifest.get("llm_rollout_trajectories_used", ""),
+            "diagnostic": dense_train_manifest.get("training_source", ""),
+        },
+        {
+            "stage": "dense_label_audit",
+            "status": dense_audit_manifest.get("status", "missing"),
+            "evidence_path": str(dense_audit_dir / "command_manifest.json"),
+            "episodes": dense_audit_manifest.get("episodes", ""),
+            "policy_count": "",
+            "best_policy": "",
+            "best_success": "",
+            "label_source": dense_audit_manifest.get("label_source", ""),
+            "counterfactual_planner_cost_to_go": dense_audit_manifest.get("counterfactual_planner_cost_to_go", ""),
+            "target_eval_trajectories_used_for_training": dense_audit_manifest.get("target_eval_trajectories_used_for_training", ""),
+            "llm_rollout_trajectories_used": dense_audit_manifest.get("llm_rollout_trajectories_used", ""),
+            "diagnostic": _alfworld_final_audit_diagnostic(audit_summary),
+        },
+        {
+            "stage": "symbolic_dense_eval",
+            "status": dense_eval_manifest.get("status", "missing"),
+            "evidence_path": str(dense_eval_dir / "alfworld_dense_transfer_table.csv"),
+            "episodes": dense_eval_manifest.get("eval_episodes", ""),
+            "policy_count": len(dense_eval_rows),
+            "best_policy": _best_policy_by_metric(dense_eval_rows, "success", higher_is_better=True),
+            "best_success": _best_metric_value(dense_eval_rows, "success", higher_is_better=True),
+            "label_source": dense_eval_manifest.get("label_source", ""),
+            "counterfactual_planner_cost_to_go": dense_eval_manifest.get("counterfactual_planner_cost_to_go", ""),
+            "target_eval_trajectories_used_for_training": dense_eval_manifest.get("target_eval_trajectories_used_for_training", ""),
+            "llm_rollout_trajectories_used": dense_eval_manifest.get("llm_rollout_trajectories_used", ""),
+            "diagnostic": "planner-derived controller symbolic validation",
+        },
+    ]
+    if llm_shortlist_dir is not None or llm_diagnosis_dir is not None:
+        summary_rows.append(
+            {
+                "stage": "llm_shortlist_eval",
+                "status": llm_manifest.get("status", llm_diagnosis_manifest.get("status", "missing")),
+                "evidence_path": str((llm_diagnosis_dir or llm_shortlist_dir or out_dir) / "alfworld_llm_shortlist_diagnosis.csv"),
+                "episodes": llm_manifest.get("episodes", ""),
+                "policy_count": len(llm_rows),
+                "best_policy": _best_policy_by_metric(llm_rows, "success", higher_is_better=True),
+                "best_success": _best_metric_value(llm_rows, "success", higher_is_better=True),
+                "label_source": "",
+                "counterfactual_planner_cost_to_go": "",
+                "target_eval_trajectories_used_for_training": llm_manifest.get("target_eval_trajectories_used_for_training", ""),
+                "llm_rollout_trajectories_used": llm_manifest.get("llm_rollout_trajectories_used_for_training", ""),
+                "diagnostic": _alfworld_final_llm_diagnostic(llm_rows, llm_diagnosis_manifest),
+            }
+        )
+
+    policy_rows = []
+    for row in dense_eval_rows:
+        merged = {"protocol": "symbolic_dense_eval"}
+        merged.update(row)
+        policy_rows.append(merged)
+    for row in llm_rows:
+        merged = {"protocol": "llm_shortlist_eval"}
+        merged.update(row)
+        policy_rows.append(merged)
+
+    manifest = {
+        "benchmark": "alfworld_final_pipeline_summary",
+        "status": "complete",
+        "dense_train_dir": str(dense_train_dir),
+        "dense_audit_dir": str(dense_audit_dir),
+        "dense_eval_dir": str(dense_eval_dir),
+        "llm_shortlist_dir": "" if llm_shortlist_dir is None else str(llm_shortlist_dir),
+        "llm_diagnosis_dir": "" if llm_diagnosis_dir is None else str(llm_diagnosis_dir),
+        "dense_train_status": dense_train_manifest.get("status", "missing"),
+        "dense_audit_status": dense_audit_manifest.get("status", "missing"),
+        "dense_eval_status": dense_eval_manifest.get("status", "missing"),
+        "llm_shortlist_status": llm_manifest.get("status", "missing") if llm_shortlist_dir is not None else "not_requested",
+        "summary_rows": summary_rows,
+        "policy_rows": policy_rows,
+    }
+    _write_csv(out_dir / "alfworld_final_pipeline_summary.csv", summary_rows)
+    _write_csv(out_dir / "alfworld_final_pipeline_policy_table.csv", policy_rows)
+    (out_dir / "alfworld_final_pipeline_summary.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
 def audit_alfworld_dense_labels(
     out_dir: Path,
     *,
@@ -5157,6 +5272,59 @@ def _best_policy_by_metric(rows: Sequence[Mapping[str, object]], metric: str, *,
     scored = [(row, _coerce_float(row.get(metric), 0.0)) for row in rows]
     best_row, _best = max(scored, key=lambda item: item[1]) if higher_is_better else min(scored, key=lambda item: item[1])
     return str(best_row.get("policy", ""))
+
+
+def _best_metric_value(rows: Sequence[Mapping[str, object]], metric: str, *, higher_is_better: bool) -> object:
+    if not rows:
+        return ""
+    values = [_coerce_float(row.get(metric), 0.0) for row in rows]
+    return max(values) if higher_is_better else min(values)
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    if not path.exists() or path.stat().st_size == 0:
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _alfworld_final_audit_diagnostic(audit_summary: Mapping[str, object]) -> str:
+    if not audit_summary:
+        return "missing_dense_label_audit"
+    censored = _coerce_float(audit_summary.get("censored_action_label_rate"), 0.0)
+    monotone_fail = _coerce_float(audit_summary.get("planner_path_cost_monotone_failure_rate"), 0.0)
+    variation = _coerce_float(audit_summary.get("usable_cost_variation_rate"), 0.0)
+    if monotone_fail > 0.0:
+        return "planner_cost_monotonicity_failure_check_labels"
+    if censored > 0.30:
+        return "high_planner_censoring_rate"
+    if variation < 0.20:
+        return "low_frontier_cost_variation"
+    return "dense_labels_audited"
+
+
+def _alfworld_final_llm_diagnostic(rows: Sequence[Mapping[str, object]], manifest: Mapping[str, object]) -> str:
+    if not rows:
+        return "missing_llm_shortlist_diagnosis"
+    if not bool(manifest.get("source_progress_complete", True)):
+        return "llm_shortlist_run_incomplete"
+    dense_rows = [row for row in rows if "Dense-ranker" in str(row.get("policy", ""))]
+    if not dense_rows:
+        return "missing_dense_ranker_llm_row"
+    dense = dense_rows[0]
+    recall = _coerce_float(dense.get("proposal_recall_at_k"), 0.0)
+    missed = _coerce_float(dense.get("missed_diagnostic_in_shortlist_rate"), 0.0)
+    parse_fallback = _coerce_float(dense.get("llm_parse_fallback_rate"), 0.0)
+    if parse_fallback > 0.05:
+        return "llm_shortlist_parse_problem"
+    if recall < 0.30:
+        return "semantic_shortlist_low_oracle_recall"
+    if missed > 0.40:
+        return "controller_misses_diagnostic_inside_shortlist"
+    return "llm_shortlist_diagnosed"
 
 
 def _alfworld_llm_shortlist_run_config(

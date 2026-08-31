@@ -37,6 +37,14 @@ ALFWORLD_FRONTIER_STRATEGY_PRIORITY = "priority"
 ALFWORLD_FRONTIER_STRATEGY_SCORE_DIVERSE = "score-diverse"
 ALFWORLD_FRONTIER_STRATEGIES = {ALFWORLD_FRONTIER_STRATEGY_PRIORITY, ALFWORLD_FRONTIER_STRATEGY_SCORE_DIVERSE}
 ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS = 8.0
+ALFWORLD_CONTRACT_SIGN_EXPECTATIONS = {
+    "declared_requirement_gain": "positive",
+    "declared_observation_gain": "positive",
+    "completes_goal_placement": "positive",
+    "precondition_satisfied": "positive",
+    "policy_risk": "negative",
+    "duplicates_previous_action": "negative",
+}
 
 
 @dataclass(frozen=True)
@@ -1152,6 +1160,8 @@ def train_alfworld_dense_ranker(
         dense_feature_cache_manifest_compatible = _alfworld_dense_cache_manifest_compatible(cache_dir / "alfworld_dense_cache_manifest.json")
     ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
     ranker.train(pairs, epochs=epochs, lr=0.03, seed=seed)
+    ranker_pre_projection_diagnostics = _alfworld_ranker_weight_diagnostics(ranker)
+    ranker_projection = _project_alfworld_ranker_contract_signs(ranker)
     ranker_diagnostics = _alfworld_ranker_weight_diagnostics(ranker)
     total_finite_action_labels = sum(1 for row in action_label_rows if int(row.get("reachable", 0)) == 1)
     total_infinite_action_labels = sum(1 for row in action_label_rows if int(row.get("reachable", 0)) != 1)
@@ -1250,6 +1260,9 @@ def train_alfworld_dense_ranker(
         "expert_monotone_failures": expert_monotone_failures,
         "expert_monotone_failure_rate": 0.0 if expert_monotone_checks == 0 else expert_monotone_failures / expert_monotone_checks,
         "ranker_direct_feature_weights": ranker_diagnostics["direct_feature_weights"],
+        "ranker_pre_projection_contract_sign_violations": ranker_pre_projection_diagnostics["contract_sign_violations"],
+        "ranker_pre_projection_contract_sign_violation_count": ranker_pre_projection_diagnostics["contract_sign_violation_count"],
+        "ranker_contract_sign_projection": ranker_projection,
         "ranker_contract_sign_violations": ranker_diagnostics["contract_sign_violations"],
         "ranker_contract_sign_violation_count": ranker_diagnostics["contract_sign_violation_count"],
         "ranker_contract_sign_tolerance": ranker_diagnostics["contract_sign_tolerance"],
@@ -2202,29 +2215,14 @@ def _alfworld_dense_label_row_pairwise_usable(row: Mapping[str, object]) -> bool
 
 def _alfworld_ranker_weight_diagnostics(ranker: GenericHarnessRanker, *, tolerance: float = 0.02) -> dict[str, object]:
     names = canonical_feature_names()
-    direct_feature_names = [
-        "declared_requirement_gain",
-        "declared_observation_gain",
-        "completes_goal_placement",
-        "precondition_satisfied",
-        "policy_risk",
-        "duplicates_previous_action",
-    ]
+    direct_feature_names = list(ALFWORLD_CONTRACT_SIGN_EXPECTATIONS)
     weights = {
         name: float(ranker.weights[names.index(name)])
         for name in direct_feature_names
         if name in names
     }
-    expected_signs = {
-        "declared_requirement_gain": "positive",
-        "declared_observation_gain": "positive",
-        "completes_goal_placement": "positive",
-        "precondition_satisfied": "positive",
-        "policy_risk": "negative",
-        "duplicates_previous_action": "negative",
-    }
     violations = []
-    for name, expected in expected_signs.items():
+    for name, expected in ALFWORLD_CONTRACT_SIGN_EXPECTATIONS.items():
         value = weights.get(name)
         if value is None:
             continue
@@ -2237,6 +2235,28 @@ def _alfworld_ranker_weight_diagnostics(ranker: GenericHarnessRanker, *, toleran
         "contract_sign_violations": violations,
         "contract_sign_violation_count": len(violations),
         "contract_sign_tolerance": tolerance,
+    }
+
+
+def _project_alfworld_ranker_contract_signs(ranker: GenericHarnessRanker) -> dict[str, object]:
+    names = canonical_feature_names()
+    projected_features: list[str] = []
+    for feature, expected in ALFWORLD_CONTRACT_SIGN_EXPECTATIONS.items():
+        if feature not in names:
+            continue
+        idx = names.index(feature)
+        value = float(ranker.weights[idx])
+        if expected == "positive" and value < 0.0:
+            ranker.weights[idx] = 0.0
+            projected_features.append(f"{feature}<0")
+        elif expected == "negative" and value > 0.0:
+            ranker.weights[idx] = 0.0
+            projected_features.append(f"{feature}>0")
+    return {
+        "applied": True,
+        "scope": "direct_contract_action_features",
+        "projected_weight_count": len(projected_features),
+        "projected_features": projected_features,
     }
 
 

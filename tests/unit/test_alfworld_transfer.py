@@ -32,6 +32,7 @@ from cgr_exp.alfworld_transfer import (
     _frontier_sample,
     _gamefile_from_info,
     _planner_training_rollout_command,
+    _project_alfworld_ranker_contract_signs,
     _select_command,
     _walkthrough_training_rollout_command,
 )
@@ -621,6 +622,25 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertIn("declared_requirement_gain<0", diagnostics["contract_sign_violations"])
         self.assertIn("policy_risk>0", diagnostics["contract_sign_violations"])
         self.assertEqual(diagnostics["contract_sign_violation_count"], 2)
+
+    def test_project_ranker_contract_signs_removes_direct_semantic_reversals(self) -> None:
+        names = canonical_feature_names()
+        weights = [0.0 for _name in names]
+        weights[names.index("declared_requirement_gain")] = -0.2
+        weights[names.index("completes_goal_placement")] = -0.4
+        weights[names.index("policy_risk")] = 0.3
+        weights[names.index("duplicates_previous_action")] = -0.5
+        ranker = GenericHarnessRanker(weights)
+
+        projection = _project_alfworld_ranker_contract_signs(ranker)
+        diagnostics = _alfworld_ranker_weight_diagnostics(ranker, tolerance=0.0)
+
+        self.assertEqual(projection["projected_weight_count"], 3)
+        self.assertEqual(ranker.weights[names.index("declared_requirement_gain")], 0.0)
+        self.assertEqual(ranker.weights[names.index("completes_goal_placement")], 0.0)
+        self.assertEqual(ranker.weights[names.index("policy_risk")], 0.0)
+        self.assertEqual(ranker.weights[names.index("duplicates_previous_action")], -0.5)
+        self.assertEqual(diagnostics["contract_sign_violation_count"], 0)
 
     def test_repeated_goal_navigation_is_not_noop_after_object_is_held(self) -> None:
         candidate = alfworld_candidate_to_canonical(

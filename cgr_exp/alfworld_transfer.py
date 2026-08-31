@@ -33,6 +33,9 @@ ALFWORLD_DENSE_LABEL_REPLAY = "replay-prefix"
 ALFWORLD_DENSE_LABEL_WALKTHROUGH = "walkthrough"
 ALFWORLD_DENSE_LABEL_PLANNER = "planner"
 ALFWORLD_DENSE_LABEL_SOURCES = {ALFWORLD_DENSE_LABEL_REPLAY, ALFWORLD_DENSE_LABEL_WALKTHROUGH, ALFWORLD_DENSE_LABEL_PLANNER}
+ALFWORLD_FRONTIER_STRATEGY_PRIORITY = "priority"
+ALFWORLD_FRONTIER_STRATEGY_SCORE_DIVERSE = "score-diverse"
+ALFWORLD_FRONTIER_STRATEGIES = {ALFWORLD_FRONTIER_STRATEGY_PRIORITY, ALFWORLD_FRONTIER_STRATEGY_SCORE_DIVERSE}
 ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS = 8.0
 
 
@@ -205,6 +208,7 @@ def run_alfworld_dense_transfer(
     epochs: int = 10,
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
+    frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -237,6 +241,7 @@ def run_alfworld_dense_transfer(
             epochs=epochs,
             max_pairs_per_state=max_pairs_per_state,
             max_frontier_actions=max_frontier_actions,
+            frontier_strategy=frontier_strategy,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
             max_episode_label_seconds=max_episode_label_seconds,
@@ -278,6 +283,8 @@ def run_alfworld_dense_transfer(
         "train_episodes": train_episodes,
         "eval_episodes": eval_episodes,
         "max_steps": max_steps,
+        "max_frontier_actions": max_frontier_actions,
+        "frontier_strategy": _normalize_alfworld_frontier_strategy(frontier_strategy),
         "policies": list(policies),
         "uses_admissible_commands": True,
         "meta_commands_filtered_from_frontier": True,
@@ -317,6 +324,7 @@ def audit_alfworld_dense_labels(
     max_steps: int = 20,
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
+    frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -334,6 +342,7 @@ def audit_alfworld_dense_labels(
             fallback_label_source=label_source,
             fallback_max_pairs_per_state=max_pairs_per_state,
             fallback_max_frontier_actions=max_frontier_actions,
+            fallback_frontier_strategy=frontier_strategy,
             fallback_counterfactual_rollout_steps=counterfactual_rollout_steps,
             fallback_planner_timeout_seconds=planner_timeout_seconds,
             fallback_max_episode_label_seconds=max_episode_label_seconds,
@@ -349,6 +358,7 @@ def audit_alfworld_dense_labels(
             epochs=0,
             max_pairs_per_state=max_pairs_per_state,
             max_frontier_actions=max_frontier_actions,
+            frontier_strategy=frontier_strategy,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
             max_episode_label_seconds=max_episode_label_seconds,
@@ -374,6 +384,7 @@ def audit_alfworld_dense_labels(
         "oracle_labels_in_inference_features": False,
         "command_string_used_as_learned_feature": False,
         "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
+        "frontier_strategy": str(train_manifest.get("frontier_strategy", frontier_strategy)),
         "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
         "relational_goal_action_features": True,
         "object_identity_feature_used": False,
@@ -400,6 +411,7 @@ def run_alfworld_dense_train(
     epochs: int = 10,
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
+    frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -430,6 +442,7 @@ def run_alfworld_dense_train(
         epochs=epochs,
         max_pairs_per_state=max_pairs_per_state,
         max_frontier_actions=max_frontier_actions,
+        frontier_strategy=frontier_strategy,
         counterfactual_rollout_steps=counterfactual_rollout_steps,
         planner_timeout_seconds=planner_timeout_seconds,
         max_episode_label_seconds=max_episode_label_seconds,
@@ -449,6 +462,7 @@ def run_alfworld_dense_train(
         "training_source": _alfworld_dense_training_source(label_source),
         "label_source": str(train_manifest.get("label_source", _alfworld_dense_label_source_name(label_source))),
         "counterfactual_planner_cost_to_go": bool(train_manifest.get("counterfactual_planner_cost_to_go", False)),
+        "frontier_strategy": str(train_manifest.get("frontier_strategy", frontier_strategy)),
         "meta_commands_filtered_from_frontier": True,
         "zero_gain_write_filtered_from_frontier": True,
         "repeated_zero_gain_read_filtered_from_frontier": True,
@@ -732,6 +746,7 @@ def train_alfworld_dense_ranker(
     epochs: int = 10,
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
+    frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -848,6 +863,7 @@ def train_alfworld_dense_ranker(
                 admissible,
                 expert=frontier_reference,
                 max_frontier_actions=max_frontier_actions,
+                strategy=frontier_strategy,
                 rng=rng,
                 observation=observation,
                 objective=objective,
@@ -1187,6 +1203,7 @@ def train_alfworld_dense_ranker(
         "epochs": epochs,
         "max_pairs_per_state": max_pairs_per_state,
         "max_frontier_actions": max_frontier_actions,
+        "frontier_strategy": frontier_strategy,
         "frontier_reference_priority": "expert_plan_if_available_then_frontier_sampling_score",
         "resume_requested": resume,
         "resumed_completed_episodes": len(completed_episodes),
@@ -1365,12 +1382,14 @@ def _frontier_sample(
     *,
     expert: str | None,
     max_frontier_actions: int,
+    strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
     rng: random.Random,
     observation: str = "",
     objective: str = "",
     history: Sequence[str] = (),
     max_steps: int = 50,
 ) -> list[str]:
+    strategy = _normalize_alfworld_frontier_strategy(strategy)
     commands = list(dict.fromkeys(str(command) for command in admissible))
     if max_frontier_actions <= 0 or len(commands) <= max_frontier_actions:
         return commands
@@ -1394,6 +1413,12 @@ def _frontier_sample(
         for command in rest
     ]
     scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+    if strategy == ALFWORLD_FRONTIER_STRATEGY_SCORE_DIVERSE:
+        return _frontier_score_diverse_sample(
+            scored=scored,
+            selected=selected,
+            max_frontier_actions=max_frontier_actions,
+        )
 
     # Labeling every ALFWorld action with a planner is expensive. Keep the
     # planner/expert action, then preserve action-type diversity and high-value
@@ -1427,6 +1452,52 @@ def _frontier_sample(
         if command not in selected:
             selected.append(command)
     return selected
+
+
+def _normalize_alfworld_frontier_strategy(strategy: str) -> str:
+    normalized = str(strategy or ALFWORLD_FRONTIER_STRATEGY_PRIORITY).strip().lower().replace("_", "-")
+    if normalized not in ALFWORLD_FRONTIER_STRATEGIES:
+        raise ValueError(f"unknown ALFWorld frontier strategy: {strategy}")
+    return normalized
+
+
+def _append_unique_command(selected: list[str], command: str, *, max_frontier_actions: int) -> bool:
+    if len(selected) >= max_frontier_actions or command in selected:
+        return False
+    selected.append(command)
+    return True
+
+
+def _frontier_score_diverse_sample(
+    *,
+    scored: Sequence[tuple[float, float, str]],
+    selected: list[str],
+    max_frontier_actions: int,
+) -> list[str]:
+    if len(selected) >= max_frontier_actions:
+        return selected[:max_frontier_actions]
+    if not scored:
+        return selected
+
+    ranked = list(scored)
+    for idx in (0, len(ranked) - 1, len(ranked) // 2):
+        _append_unique_command(selected, ranked[idx][2], max_frontier_actions=max_frontier_actions)
+
+    type_best: dict[str, tuple[float, float, str]] = {}
+    type_worst: dict[str, tuple[float, float, str]] = {}
+    for item in ranked:
+        command_type = _command_type(item[2])
+        type_best.setdefault(command_type, item)
+        type_worst[command_type] = item
+
+    for command_type in sorted(type_best):
+        _append_unique_command(selected, type_best[command_type][2], max_frontier_actions=max_frontier_actions)
+    for command_type in sorted(type_worst):
+        _append_unique_command(selected, type_worst[command_type][2], max_frontier_actions=max_frontier_actions)
+
+    for _score, _tie, command in ranked:
+        _append_unique_command(selected, command, max_frontier_actions=max_frontier_actions)
+    return selected[:max_frontier_actions]
 
 
 def _frontier_priority_candidate(
@@ -3595,6 +3666,7 @@ def _load_alfworld_dense_audit_cache(
     fallback_label_source: str,
     fallback_max_pairs_per_state: int,
     fallback_max_frontier_actions: int,
+    fallback_frontier_strategy: str,
     fallback_counterfactual_rollout_steps: int,
     fallback_planner_timeout_seconds: float,
     fallback_max_episode_label_seconds: float,
@@ -3622,6 +3694,7 @@ def _load_alfworld_dense_audit_cache(
     train_manifest.setdefault("train_pair_count", len(pairs))
     train_manifest.setdefault("max_pairs_per_state", fallback_max_pairs_per_state)
     train_manifest.setdefault("max_frontier_actions", fallback_max_frontier_actions)
+    train_manifest.setdefault("frontier_strategy", fallback_frontier_strategy)
     train_manifest.setdefault("counterfactual_rollout_steps", fallback_counterfactual_rollout_steps)
     train_manifest.setdefault("planner_timeout_seconds", fallback_planner_timeout_seconds)
     train_manifest.setdefault("max_episode_label_seconds", fallback_max_episode_label_seconds)

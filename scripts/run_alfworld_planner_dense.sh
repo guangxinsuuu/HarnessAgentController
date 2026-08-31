@@ -26,6 +26,7 @@ if [[ "${MODE}" == "smoke" ]]; then
 else
   MAX_FRONTIER_ACTIONS="${MAX_FRONTIER_ACTIONS:-6}"
 fi
+FRONTIER_STRATEGY="${FRONTIER_STRATEGY:-priority}"
 COUNTERFACTUAL_ROLLOUT_STEPS="${COUNTERFACTUAL_ROLLOUT_STEPS:-30}"
 PLANNER_TIMEOUT_SECONDS="${PLANNER_TIMEOUT_SECONDS:-3}"
 MAX_EPISODE_LABEL_SECONDS="${MAX_EPISODE_LABEL_SECONDS:-60}"
@@ -56,6 +57,7 @@ It does not use an LLM or API key.
 Common environment overrides:
   TRAIN_EPISODES=50 EVAL_EPISODES=20 MAX_STEPS=40 EPOCHS=20
   MAX_FRONTIER_ACTIONS=6 PLANNER_TIMEOUT_SECONDS=3
+  FRONTIER_STRATEGY=score-diverse
   MAX_EPISODE_LABEL_SECONDS=60
   PERTURBATION_PROB=0.15 WARMUP_RANDOM_STEPS=2
   LABEL_SOURCE=planner     # exact TextWorld/PDDL cost-to-go labels
@@ -79,6 +81,7 @@ run_audit() {
     --max-steps "${MAX_STEPS}" \
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
+    --frontier-strategy "${FRONTIER_STRATEGY}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
@@ -101,6 +104,7 @@ run_train() {
     --epochs "${EPOCHS}" \
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
+    --frontier-strategy "${FRONTIER_STRATEGY}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
@@ -126,6 +130,7 @@ run_eval() {
     --epochs 0 \
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
+    --frontier-strategy "${FRONTIER_STRATEGY}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \

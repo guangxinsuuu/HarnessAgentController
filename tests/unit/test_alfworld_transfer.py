@@ -1029,6 +1029,42 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertIn("put remotecontrol 1 on armchair 1", sampled)
         self.assertGreaterEqual(len({_command_type(command) for command in sampled}), 2)
 
+    def test_frontier_score_diverse_sample_keeps_score_tail_and_action_types(self) -> None:
+        sampled = _frontier_sample(
+            [
+                "look",
+                "inventory",
+                "go to armchair 1",
+                "go to coffeetable 1",
+                "take remotecontrol 1 from coffeetable 1",
+                "put remotecontrol 1 on armchair 1",
+                "open fridge 1",
+                "help",
+            ],
+            expert="go to coffeetable 1",
+            max_frontier_actions=6,
+            strategy="score-diverse",
+            rng=random.Random(0),
+            observation="You see a coffeetable 1, an armchair 1, and a remotecontrol 1.",
+            objective="put some remotecontrol on armchair",
+            history=["obs:You see a coffeetable 1, an armchair 1, and a remotecontrol 1."],
+            max_steps=40,
+        )
+        self.assertEqual(sampled[0], "go to coffeetable 1")
+        self.assertIn("take remotecontrol 1 from coffeetable 1", sampled)
+        self.assertIn("help", sampled)
+        self.assertGreaterEqual(len({_command_type(command) for command in sampled}), 3)
+
+    def test_frontier_sample_rejects_unknown_strategy(self) -> None:
+        with self.assertRaises(ValueError):
+            _frontier_sample(
+                ["look", "inventory", "go to kitchen"],
+                expert=None,
+                max_frontier_actions=2,
+                strategy="unknown",
+                rng=random.Random(0),
+            )
+
     def test_alfworld_planner_diagnostic_uses_expert_plan_path(self) -> None:
         ranker = GenericHarnessRanker([0.0 for _name in canonical_feature_names()])
         command = _select_command(

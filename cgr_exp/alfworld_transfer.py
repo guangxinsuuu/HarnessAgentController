@@ -891,6 +891,14 @@ def summarize_alfworld_final_pipeline(
         merged = {"protocol": "llm_shortlist_eval"}
         merged.update(row)
         policy_rows.append(merged)
+    readiness_rows = _alfworld_final_readiness_rows(
+        dense_train_manifest=dense_train_manifest,
+        audit_summary=audit_summary,
+        dense_eval_rows=dense_eval_rows,
+        llm_rows=llm_rows,
+        llm_requested=llm_shortlist_dir is not None or llm_diagnosis_dir is not None,
+        llm_diagnosis_manifest=llm_diagnosis_manifest,
+    )
 
     manifest = {
         "benchmark": "alfworld_final_pipeline_summary",
@@ -906,9 +914,11 @@ def summarize_alfworld_final_pipeline(
         "llm_shortlist_status": llm_manifest.get("status", "missing") if llm_shortlist_dir is not None else "not_requested",
         "summary_rows": summary_rows,
         "policy_rows": policy_rows,
+        "readiness_rows": readiness_rows,
     }
     _write_csv(out_dir / "alfworld_final_pipeline_summary.csv", summary_rows)
     _write_csv(out_dir / "alfworld_final_pipeline_policy_table.csv", policy_rows)
+    _write_csv(out_dir / "alfworld_final_pipeline_readiness.csv", readiness_rows)
     (out_dir / "alfworld_final_pipeline_summary.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
 
@@ -5327,6 +5337,121 @@ def _alfworld_final_llm_diagnostic(rows: Sequence[Mapping[str, object]], manifes
     return "llm_shortlist_diagnosed"
 
 
+def _alfworld_final_readiness_rows(
+    *,
+    dense_train_manifest: Mapping[str, object],
+    audit_summary: Mapping[str, object],
+    dense_eval_rows: Sequence[Mapping[str, object]],
+    llm_rows: Sequence[Mapping[str, object]],
+    llm_requested: bool,
+    llm_diagnosis_manifest: Mapping[str, object],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    train_ok = (
+        str(dense_train_manifest.get("status", "")) == "complete"
+        and _coerce_bool(dense_train_manifest.get("counterfactual_planner_cost_to_go"))
+        and not _coerce_bool(dense_train_manifest.get("target_eval_trajectories_used_for_training"))
+        and not _coerce_bool(dense_train_manifest.get("llm_rollout_trajectories_used"))
+    )
+    rows.append(
+        {
+            "gate": "training_protocol",
+            "status": "pass" if train_ok else "fail",
+            "metric": "counterfactual_planner_labels_without_target_or_llm_rollout_training",
+            "value": train_ok,
+            "threshold": "must be true",
+            "next_action": "continue" if train_ok else "fix training manifest/protocol before running ALFWorld claims",
+        }
+    )
+
+    censored = _coerce_float(audit_summary.get("censored_action_label_rate"), 1.0)
+    monotone_fail = _coerce_float(audit_summary.get("planner_path_cost_monotone_failure_rate"), 1.0)
+    variation = _coerce_float(audit_summary.get("usable_cost_variation_rate"), 0.0)
+    audit_status = "pass" if audit_summary and censored <= 0.30 and monotone_fail == 0.0 and variation >= 0.20 else "warn" if audit_summary else "fail"
+    rows.append(
+        {
+            "gate": "dense_label_quality",
+            "status": audit_status,
+            "metric": "censored_rate/planner_monotone_failure/usable_cost_variation",
+            "value": f"{censored:.4f}/{monotone_fail:.4f}/{variation:.4f}" if audit_summary else "",
+            "threshold": "censored<=0.30, monotone_failure=0, variation>=0.20",
+            "next_action": "continue" if audit_status == "pass" else "increase planner timeout/cache audit before scaling symbolic training",
+        }
+    )
+
+    random_row = _find_policy_row(dense_eval_rows, "Random")
+    dense_row = _find_policy_row(dense_eval_rows, "dense-ranker")
+    planner_row = _find_policy_row(dense_eval_rows, "planner diagnostic")
+    dense_success = _coerce_float(dense_row.get("success"), 0.0)
+    random_success = _coerce_float(random_row.get("success"), 0.0)
+    planner_success = _coerce_float(planner_row.get("success"), 0.0)
+    symbolic_status = "pass" if dense_row and dense_success > random_success else "warn" if dense_row else "fail"
+    rows.append(
+        {
+            "gate": "symbolic_controller_signal",
+            "status": symbolic_status,
+            "metric": "dense_success-random_success/planner_success",
+            "value": f"{dense_success - random_success:.4f}/{planner_success:.4f}" if dense_row else "",
+            "threshold": "dense > random before spending LLM budget",
+            "next_action": "run or scale LLM shortlist" if symbolic_status == "pass" else "improve dense labels/features before real LLM run",
+        }
+    )
+
+    if not llm_requested:
+        rows.append(
+            {
+                "gate": "llm_shortlist_eval",
+                "status": "not_run",
+                "metric": "frozen_llm_semantic_shortlist",
+                "value": "",
+                "threshold": "required for final ALFWorld claim",
+                "next_action": "run llm-real or all-real",
+            }
+        )
+        return rows
+
+    llm_complete = bool(llm_rows) and _coerce_bool(llm_diagnosis_manifest.get("source_progress_complete", True))
+    llm_dense = _find_policy_row(llm_rows, "Dense-ranker")
+    recall = _coerce_float(llm_dense.get("proposal_recall_at_k"), 0.0)
+    parse_fallback = _coerce_float(llm_dense.get("llm_parse_fallback_rate"), 0.0)
+    semantic_status = "pass" if llm_complete and recall >= 0.50 and parse_fallback <= 0.05 else "warn" if llm_complete else "fail"
+    rows.append(
+        {
+            "gate": "llm_semantic_shortlist",
+            "status": semantic_status,
+            "metric": "proposal_recall_at_k/parse_fallback",
+            "value": f"{recall:.4f}/{parse_fallback:.4f}" if llm_dense else "",
+            "threshold": "recall>=0.50, parse_fallback<=0.05",
+            "next_action": "analyze controller rerank" if semantic_status == "pass" else "fix LLM shortlist prompt/parser before blaming controller",
+        }
+    )
+
+    top1_row = _find_policy_row(llm_rows, "top-1")
+    dense_llm_success = _coerce_float(llm_dense.get("success"), 0.0)
+    top1_success = _coerce_float(top1_row.get("success"), 0.0)
+    missed = _coerce_float(llm_dense.get("missed_diagnostic_in_shortlist_rate"), 0.0)
+    rerank_status = "pass" if llm_dense and dense_llm_success >= top1_success and missed <= 0.40 else "warn" if llm_dense else "fail"
+    rows.append(
+        {
+            "gate": "controller_given_shortlist",
+            "status": rerank_status,
+            "metric": "dense_success-top1_success/missed_diagnostic_inside_shortlist",
+            "value": f"{dense_llm_success - top1_success:.4f}/{missed:.4f}" if llm_dense else "",
+            "threshold": "dense>=top1, missed<=0.40",
+            "next_action": "scale ALFWorld LLM pilot" if rerank_status == "pass" else "inspect episode matrix and retrain/fix controller objective",
+        }
+    )
+    return rows
+
+
+def _find_policy_row(rows: Sequence[Mapping[str, object]], policy_substring: str) -> Mapping[str, object]:
+    needle = policy_substring.lower()
+    for row in rows:
+        if needle in str(row.get("policy", "")).lower():
+            return row
+    return {}
+
+
 def _alfworld_llm_shortlist_run_config(
     *,
     seed: int,
@@ -5413,6 +5538,14 @@ def _coerce_float(value: object, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
 
 
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:

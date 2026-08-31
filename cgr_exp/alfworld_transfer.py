@@ -217,6 +217,7 @@ def run_alfworld_dense_transfer(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
+    rank_lr: float = 0.03,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -250,6 +251,7 @@ def run_alfworld_dense_transfer(
             max_pairs_per_state=max_pairs_per_state,
             max_frontier_actions=max_frontier_actions,
             frontier_strategy=frontier_strategy,
+            rank_lr=rank_lr,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
             max_episode_label_seconds=max_episode_label_seconds,
@@ -293,6 +295,7 @@ def run_alfworld_dense_transfer(
         "max_steps": max_steps,
         "max_frontier_actions": max_frontier_actions,
         "frontier_strategy": _normalize_alfworld_frontier_strategy(frontier_strategy),
+        "rank_lr": rank_lr,
         "policies": list(policies),
         "uses_admissible_commands": True,
         "meta_commands_filtered_from_frontier": True,
@@ -333,6 +336,7 @@ def audit_alfworld_dense_labels(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
+    rank_lr: float = 0.03,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -367,6 +371,7 @@ def audit_alfworld_dense_labels(
             max_pairs_per_state=max_pairs_per_state,
             max_frontier_actions=max_frontier_actions,
             frontier_strategy=frontier_strategy,
+            rank_lr=rank_lr,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
             max_episode_label_seconds=max_episode_label_seconds,
@@ -420,6 +425,7 @@ def run_alfworld_dense_train(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
+    rank_lr: float = 0.03,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -451,6 +457,7 @@ def run_alfworld_dense_train(
         max_pairs_per_state=max_pairs_per_state,
         max_frontier_actions=max_frontier_actions,
         frontier_strategy=frontier_strategy,
+        rank_lr=rank_lr,
         counterfactual_rollout_steps=counterfactual_rollout_steps,
         planner_timeout_seconds=planner_timeout_seconds,
         max_episode_label_seconds=max_episode_label_seconds,
@@ -755,6 +762,7 @@ def train_alfworld_dense_ranker(
     max_pairs_per_state: int = 24,
     max_frontier_actions: int = 16,
     frontier_strategy: str = ALFWORLD_FRONTIER_STRATEGY_PRIORITY,
+    rank_lr: float = 0.03,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -1159,9 +1167,11 @@ def train_alfworld_dense_ranker(
     if cache_dir is not None:
         dense_feature_cache_manifest_compatible = _alfworld_dense_cache_manifest_compatible(cache_dir / "alfworld_dense_cache_manifest.json")
     ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
-    ranker.train(pairs, epochs=epochs, lr=0.03, seed=seed)
+    ranker.train(pairs, epochs=epochs, lr=rank_lr, seed=seed)
+    pre_projection_train_diagnostics = _alfworld_pairwise_ranker_diagnostics(ranker, pairs)
     ranker_pre_projection_diagnostics = _alfworld_ranker_weight_diagnostics(ranker)
     ranker_projection = _project_alfworld_ranker_contract_signs(ranker)
+    post_projection_train_diagnostics = _alfworld_pairwise_ranker_diagnostics(ranker, pairs)
     ranker_diagnostics = _alfworld_ranker_weight_diagnostics(ranker)
     total_finite_action_labels = sum(1 for row in action_label_rows if int(row.get("reachable", 0)) == 1)
     total_infinite_action_labels = sum(1 for row in action_label_rows if int(row.get("reachable", 0)) != 1)
@@ -1211,6 +1221,7 @@ def train_alfworld_dense_ranker(
         "usable_mean_cost_gap_to_best": 0.0 if not usable_cost_gaps else sum(usable_cost_gaps) / len(usable_cost_gaps),
         "usable_max_cost_gap_to_best": "" if not usable_cost_gaps else max(usable_cost_gaps),
         "epochs": epochs,
+        "rank_lr": rank_lr,
         "max_pairs_per_state": max_pairs_per_state,
         "max_frontier_actions": max_frontier_actions,
         "frontier_strategy": frontier_strategy,
@@ -1260,6 +1271,8 @@ def train_alfworld_dense_ranker(
         "expert_monotone_failures": expert_monotone_failures,
         "expert_monotone_failure_rate": 0.0 if expert_monotone_checks == 0 else expert_monotone_failures / expert_monotone_checks,
         "ranker_direct_feature_weights": ranker_diagnostics["direct_feature_weights"],
+        "ranker_pre_projection_train_diagnostics": pre_projection_train_diagnostics,
+        "ranker_post_projection_train_diagnostics": post_projection_train_diagnostics,
         "ranker_pre_projection_contract_sign_violations": ranker_pre_projection_diagnostics["contract_sign_violations"],
         "ranker_pre_projection_contract_sign_violation_count": ranker_pre_projection_diagnostics["contract_sign_violation_count"],
         "ranker_contract_sign_projection": ranker_projection,
@@ -2257,6 +2270,33 @@ def _project_alfworld_ranker_contract_signs(ranker: GenericHarnessRanker) -> dic
         "scope": "direct_contract_action_features",
         "projected_weight_count": len(projected_features),
         "projected_features": projected_features,
+    }
+
+
+def _alfworld_pairwise_ranker_diagnostics(
+    ranker: GenericHarnessRanker,
+    pairs: Sequence[tuple[tuple[float, ...], tuple[float, ...]]],
+) -> dict[str, object]:
+    if not pairs:
+        return {
+            "pair_count": 0,
+            "ranking_accuracy": 0.0,
+            "ranking_error": 0.0,
+            "mean_margin": 0.0,
+            "min_margin": 0.0,
+            "p10_margin": 0.0,
+            "median_margin": 0.0,
+        }
+    margins = sorted(float(ranker.score(positive) - ranker.score(negative)) for positive, negative in pairs)
+    wrong = sum(1 for margin in margins if margin <= 0.0)
+    return {
+        "pair_count": len(pairs),
+        "ranking_accuracy": 1.0 - wrong / len(pairs),
+        "ranking_error": wrong / len(pairs),
+        "mean_margin": sum(margins) / len(margins),
+        "min_margin": margins[0],
+        "p10_margin": margins[min(len(margins) - 1, max(0, int(0.1 * (len(margins) - 1))))],
+        "median_margin": margins[len(margins) // 2],
     }
 
 

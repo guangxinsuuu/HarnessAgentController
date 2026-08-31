@@ -29,6 +29,7 @@ from cgr_exp.alfworld_transfer import (
     _load_alfworld_dense_state_label_cache,
     _load_alfworld_dense_training_cache,
     _load_alfworld_planner_label_cache,
+    _alfworld_pairwise_ranker_diagnostics,
     _frontier_sample,
     _gamefile_from_info,
     _planner_training_rollout_command,
@@ -642,6 +643,16 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertEqual(ranker.weights[names.index("duplicates_previous_action")], -0.5)
         self.assertEqual(diagnostics["contract_sign_violation_count"], 0)
 
+    def test_pairwise_ranker_diagnostics_reports_error_and_margin(self) -> None:
+        ranker = GenericHarnessRanker([1.0, 0.0])
+        pairs = [((2.0, 0.0), (1.0, 0.0)), ((0.0, 0.0), (1.0, 0.0))]
+        diagnostics = _alfworld_pairwise_ranker_diagnostics(ranker, pairs)
+        self.assertEqual(diagnostics["pair_count"], 2)
+        self.assertEqual(diagnostics["ranking_accuracy"], 0.5)
+        self.assertEqual(diagnostics["ranking_error"], 0.5)
+        self.assertEqual(diagnostics["min_margin"], -1.0)
+        self.assertEqual(diagnostics["median_margin"], 1.0)
+
     def test_repeated_goal_navigation_is_not_noop_after_object_is_held(self) -> None:
         candidate = alfworld_candidate_to_canonical(
             candidate_id="c0",
@@ -1158,6 +1169,7 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertIn("ranker_contract_sign_violation_count", manifest["train"])
         self.assertIn("ranker_direct_feature_weights", manifest["train"])
         self.assertIn("ranker_contract_sign_tolerance", manifest["train"])
+        self.assertIn("ranker_post_projection_train_diagnostics", manifest["train"])
 
     def test_run_alfworld_dense_train_can_use_planner_label_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

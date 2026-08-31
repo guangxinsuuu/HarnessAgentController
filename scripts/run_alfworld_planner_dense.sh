@@ -20,6 +20,7 @@ else
   MAX_STEPS="${MAX_STEPS:-40}"
 fi
 EPOCHS="${EPOCHS:-10}"
+RANK_LR="${RANK_LR:-0.03}"
 MAX_PAIRS_PER_STATE="${MAX_PAIRS_PER_STATE:-16}"
 if [[ "${MODE}" == "smoke" ]]; then
   MAX_FRONTIER_ACTIONS="${MAX_FRONTIER_ACTIONS:-4}"
@@ -56,6 +57,7 @@ It does not use an LLM or API key.
 
 Common environment overrides:
   TRAIN_EPISODES=50 EVAL_EPISODES=20 MAX_STEPS=40 EPOCHS=20
+  RANK_LR=0.03
   MAX_FRONTIER_ACTIONS=6 PLANNER_TIMEOUT_SECONDS=3
   FRONTIER_STRATEGY=score-diverse
   MAX_EPISODE_LABEL_SECONDS=60
@@ -82,6 +84,7 @@ run_audit() {
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
     --frontier-strategy "${FRONTIER_STRATEGY}" \
+    --rank-lr "${RANK_LR}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
@@ -105,6 +108,7 @@ run_train() {
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
     --frontier-strategy "${FRONTIER_STRATEGY}" \
+    --rank-lr "${RANK_LR}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
@@ -131,6 +135,7 @@ run_eval() {
     --max-pairs-per-state "${MAX_PAIRS_PER_STATE}" \
     --max-frontier-actions "${MAX_FRONTIER_ACTIONS}" \
     --frontier-strategy "${FRONTIER_STRATEGY}" \
+    --rank-lr "${RANK_LR}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \

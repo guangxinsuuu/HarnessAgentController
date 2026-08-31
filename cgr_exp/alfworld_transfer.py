@@ -3662,6 +3662,11 @@ def _run_llm_shortlist_episode(
         selection["diagnostic_source"] = str(diagnostic.get("source", "none"))
         selection["matches_diagnostic"] = 1 if selection["diagnostic_command"] and command == selection["diagnostic_command"] else 0
         selection["diagnostic_in_shortlist"] = 1 if selection["diagnostic_command"] and selection["diagnostic_command"] in shortlist_commands else 0
+        selection["selected_shortlist_rank"] = _one_based_position(shortlist_commands, command)
+        selection["diagnostic_shortlist_rank"] = _one_based_position(shortlist_commands, selection["diagnostic_command"])
+        selection["selected_is_llm_top1"] = 1 if selection["selected_shortlist_rank"] == 1 else 0
+        selection["diagnostic_is_llm_top1"] = 1 if selection["diagnostic_shortlist_rank"] == 1 else 0
+        selection["missed_diagnostic_in_shortlist"] = 1 if selection["diagnostic_in_shortlist"] and not selection["matches_diagnostic"] else 0
         selection["llm_shortlist"] = " | ".join(shortlist_commands)
         selection["llm_shortlist_size"] = len(shortlist_commands)
         selection["llm_cache_hit"] = 1 if shortlist_record.get("cache_hit") else 0
@@ -3698,6 +3703,11 @@ def _run_llm_shortlist_episode(
                     "llm_shortlist": selection["llm_shortlist"],
                     "llm_shortlist_size": selection["llm_shortlist_size"],
                     "diagnostic_in_shortlist": selection["diagnostic_in_shortlist"],
+                    "selected_shortlist_rank": selection["selected_shortlist_rank"],
+                    "diagnostic_shortlist_rank": selection["diagnostic_shortlist_rank"],
+                    "selected_is_llm_top1": selection["selected_is_llm_top1"],
+                    "diagnostic_is_llm_top1": selection["diagnostic_is_llm_top1"],
+                    "missed_diagnostic_in_shortlist": selection["missed_diagnostic_in_shortlist"],
                     "llm_cache_hit": selection["llm_cache_hit"],
                     "llm_new_call": selection["llm_new_call"],
                     "llm_input_tokens": selection["llm_input_tokens"],
@@ -4704,6 +4714,16 @@ def _clean_ranked_indices(indices: object, candidate_count: int) -> list[int]:
     return clean
 
 
+def _one_based_position(items: Sequence[str], value: object) -> int:
+    value_str = str(value)
+    if not value_str:
+        return 0
+    for idx, item in enumerate(items):
+        if item == value_str:
+            return idx + 1
+    return 0
+
+
 def _aggregate_policy(policy: str, rows: Sequence[AlfworldEpisodeResult]) -> dict[str, object]:
     total = len(rows)
     return {
@@ -4742,6 +4762,10 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
                 "parse_fallback_used": 0.0,
                 "one_based_index_fix_applied": 0.0,
                 "invalid_ranked_items": 0.0,
+                "selected_top1": 0.0,
+                "diagnostic_top1": 0.0,
+                "missed_diagnostic_in_shortlist": 0.0,
+                "diagnostic_shortlist_rank_sum": 0.0,
             },
         )
         stats["steps"] += 1.0
@@ -4759,6 +4783,10 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
             shortlist_size = float(row.get("llm_shortlist_size", 0.0))
         except (TypeError, ValueError):
             shortlist_size = 0.0
+        try:
+            diagnostic_rank = int(row.get("diagnostic_shortlist_rank", 0))
+        except (TypeError, ValueError):
+            diagnostic_rank = 0
         for field in (
             "llm_explicit_ranked_count",
             "llm_explicit_top_k_count",
@@ -4772,8 +4800,19 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
             except (TypeError, ValueError):
                 value = 0.0
             stats[field.removeprefix("llm_")] += value
+        for field, stat_key in (
+            ("selected_is_llm_top1", "selected_top1"),
+            ("diagnostic_is_llm_top1", "diagnostic_top1"),
+            ("missed_diagnostic_in_shortlist", "missed_diagnostic_in_shortlist"),
+        ):
+            try:
+                value = int(row.get(field, 0))
+            except (TypeError, ValueError):
+                value = 0
+            stats[stat_key] += 1.0 if value else 0.0
         stats["matched"] += 1.0 if matched else 0.0
         stats["in_shortlist"] += 1.0 if in_shortlist else 0.0
+        stats["diagnostic_shortlist_rank_sum"] += float(diagnostic_rank) if diagnostic_rank > 0 else 0.0
         stats["shortlist_size"] += shortlist_size
     for row in rows:
         stats = by_policy.get(
@@ -4790,6 +4829,10 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
                 "parse_fallback_used": 0.0,
                 "one_based_index_fix_applied": 0.0,
                 "invalid_ranked_items": 0.0,
+                "selected_top1": 0.0,
+                "diagnostic_top1": 0.0,
+                "missed_diagnostic_in_shortlist": 0.0,
+                "diagnostic_shortlist_rank_sum": 0.0,
             },
         )
         steps = stats["steps"]
@@ -4804,6 +4847,10 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
         row["llm_parse_fallback_rate"] = 0.0 if steps == 0.0 else stats["parse_fallback_used"] / steps
         row["llm_one_based_index_fix_rate"] = 0.0 if steps == 0.0 else stats["one_based_index_fix_applied"] / steps
         row["mean_llm_invalid_ranked_items"] = 0.0 if steps == 0.0 else stats["invalid_ranked_items"] / steps
+        row["selected_llm_top1_rate"] = 0.0 if steps == 0.0 else stats["selected_top1"] / steps
+        row["diagnostic_llm_top1_rate"] = 0.0 if available == 0.0 else stats["diagnostic_top1"] / available
+        row["missed_diagnostic_in_shortlist_rate"] = 0.0 if stats["in_shortlist"] == 0.0 else stats["missed_diagnostic_in_shortlist"] / stats["in_shortlist"]
+        row["mean_diagnostic_shortlist_rank"] = 0.0 if stats["in_shortlist"] == 0.0 else stats["diagnostic_shortlist_rank_sum"] / stats["in_shortlist"]
     return rows
 
 
@@ -4922,6 +4969,7 @@ def _alfworld_llm_shortlist_policy_diagnosis(row: Mapping[str, object]) -> dict[
     explicit_top_k = _coerce_float(row.get("mean_llm_explicit_top_k_count"), 0.0)
     shortlist_size = _coerce_float(row.get("mean_llm_shortlist_size"), 0.0)
     invalid_items = _coerce_float(row.get("mean_llm_invalid_ranked_items"), 0.0)
+    missed_in_shortlist = _coerce_float(row.get("missed_diagnostic_in_shortlist_rate"), 0.0)
     hint = "inspect_episode_trace"
     if episodes < 5:
         hint = "small_sample_only"
@@ -4929,6 +4977,8 @@ def _alfworld_llm_shortlist_policy_diagnosis(row: Mapping[str, object]) -> dict[
         hint = "llm_index_parse_or_fallback_problem"
     elif diagnostic_available > 0.05 and recall < 0.30:
         hint = "semantic_shortlist_low_oracle_recall"
+    elif "Dense-ranker" in policy and missed_in_shortlist > 0.40:
+        hint = "controller_misses_diagnostic_inside_shortlist"
     elif "Dense-ranker" in policy and recall >= 0.50 and diagnostic_match < recall * 0.60:
         hint = "controller_rerank_bottleneck_given_shortlist"
     elif explicit_top_k < max(1.0, shortlist_size * 0.75):
@@ -4955,6 +5005,10 @@ def _alfworld_llm_shortlist_policy_diagnosis(row: Mapping[str, object]) -> dict[
         "llm_parse_fallback_rate": parse_fallback,
         "llm_one_based_index_fix_rate": _coerce_float(row.get("llm_one_based_index_fix_rate"), 0.0),
         "mean_llm_invalid_ranked_items": invalid_items,
+        "selected_llm_top1_rate": _coerce_float(row.get("selected_llm_top1_rate"), 0.0),
+        "diagnostic_llm_top1_rate": _coerce_float(row.get("diagnostic_llm_top1_rate"), 0.0),
+        "missed_diagnostic_in_shortlist_rate": missed_in_shortlist,
+        "mean_diagnostic_shortlist_rank": _coerce_float(row.get("mean_diagnostic_shortlist_rank"), 0.0),
         "failure_mode_hint": hint,
     }
 
@@ -5036,6 +5090,7 @@ def _alfworld_llm_shortlist_episode_matrix(
             in_shortlist_steps = sum(_coerce_int(trace.get("diagnostic_in_shortlist"), 0) for trace in traces)
             matched_steps = sum(_coerce_int(trace.get("matches_diagnostic"), 0) for trace in traces)
             parse_fallback_steps = sum(_coerce_int(trace.get("llm_parse_fallback_used"), 0) for trace in traces)
+            missed_diagnostic_steps = sum(_coerce_int(trace.get("missed_diagnostic_in_shortlist"), 0) for trace in traces)
             row[f"{prefix}_success"] = episode_row.get("success", "")
             row[f"{prefix}_steps"] = episode_row.get("steps", "")
             row[f"{prefix}_tokens"] = episode_row.get("tokens", "")
@@ -5043,9 +5098,12 @@ def _alfworld_llm_shortlist_episode_matrix(
             row[f"{prefix}_first_diagnostic"] = first.get("diagnostic_command", "")
             row[f"{prefix}_first_diagnostic_source"] = first.get("diagnostic_source", "")
             row[f"{prefix}_first_shortlist"] = first.get("llm_shortlist", "")
+            row[f"{prefix}_first_selected_shortlist_rank"] = first.get("selected_shortlist_rank", "")
+            row[f"{prefix}_first_diagnostic_shortlist_rank"] = first.get("diagnostic_shortlist_rank", "")
             row[f"{prefix}_diagnostic_available_steps"] = diagnostic_steps
             row[f"{prefix}_proposal_recall_at_k"] = 0.0 if diagnostic_steps == 0 else in_shortlist_steps / diagnostic_steps
             row[f"{prefix}_diagnostic_match_rate"] = 0.0 if diagnostic_steps == 0 else matched_steps / diagnostic_steps
+            row[f"{prefix}_missed_diagnostic_in_shortlist_rate"] = 0.0 if in_shortlist_steps == 0 else missed_diagnostic_steps / in_shortlist_steps
             row[f"{prefix}_parse_fallback_rate"] = 0.0 if not traces else parse_fallback_steps / len(traces)
         matrix.append(row)
     return matrix

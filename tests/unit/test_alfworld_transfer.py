@@ -1545,12 +1545,21 @@ class AlfworldTransferTest(unittest.TestCase):
                 self.assertIn("llm_parse_fallback_rate", row)
                 self.assertIn("llm_one_based_index_fix_rate", row)
                 self.assertIn("mean_llm_invalid_ranked_items", row)
+                self.assertIn("selected_llm_top1_rate", row)
+                self.assertIn("diagnostic_llm_top1_rate", row)
+                self.assertIn("missed_diagnostic_in_shortlist_rate", row)
+                self.assertIn("mean_diagnostic_shortlist_rank", row)
             with (out / "alfworld_llm_shortlist_step_trace.csv").open() as handle:
                 trace_rows = list(csv.DictReader(handle))
             self.assertGreater(len(trace_rows), 0)
             self.assertIn("llm_shortlist", trace_rows[0])
             self.assertIn("llm_shortlist_size", trace_rows[0])
             self.assertIn("diagnostic_in_shortlist", trace_rows[0])
+            self.assertIn("selected_shortlist_rank", trace_rows[0])
+            self.assertIn("diagnostic_shortlist_rank", trace_rows[0])
+            self.assertIn("selected_is_llm_top1", trace_rows[0])
+            self.assertIn("diagnostic_is_llm_top1", trace_rows[0])
+            self.assertIn("missed_diagnostic_in_shortlist", trace_rows[0])
             self.assertIn("llm_new_call", trace_rows[0])
             self.assertIn("llm_input_tokens", trace_rows[0])
             self.assertIn("llm_explicit_ranked_count", trace_rows[0])
@@ -1722,6 +1731,9 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("outcome_relation", matrix[0])
             self.assertIn("dense_ranker_first_command", matrix[0])
             self.assertIn("dense_ranker_proposal_recall_at_k", matrix[0])
+            self.assertIn("dense_ranker_first_selected_shortlist_rank", matrix[0])
+            self.assertIn("dense_ranker_first_diagnostic_shortlist_rank", matrix[0])
+            self.assertIn("dense_ranker_missed_diagnostic_in_shortlist_rate", matrix[0])
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]

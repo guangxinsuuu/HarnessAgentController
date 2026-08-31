@@ -771,6 +771,7 @@ def summarize_alfworld_llm_shortlist_run(out_dir: Path, *, source_dir: Path) -> 
             run_manifest = {}
     diagnosis_rows = [_alfworld_llm_shortlist_policy_diagnosis(row) for row in table_rows]
     paired_rows = _alfworld_llm_shortlist_paired_rows(episode_rows)
+    episode_matrix_rows = _alfworld_llm_shortlist_episode_matrix(episode_rows, step_trace_rows)
     summary = {
         "benchmark": "alfworld_llm_shortlist_diagnosis",
         "source_dir": str(source_dir),
@@ -788,9 +789,11 @@ def summarize_alfworld_llm_shortlist_run(out_dir: Path, *, source_dir: Path) -> 
         "lowest_parse_fallback_policy": _best_policy_by_metric(diagnosis_rows, "llm_parse_fallback_rate", higher_is_better=False),
         "diagnosis_rows": diagnosis_rows,
         "paired_rows": paired_rows,
+        "episode_matrix_rows": episode_matrix_rows,
     }
     _write_csv(out_dir / "alfworld_llm_shortlist_diagnosis.csv", diagnosis_rows)
     _write_csv(out_dir / "alfworld_llm_shortlist_paired_policy_comparison.csv", paired_rows)
+    _write_csv(out_dir / "alfworld_llm_shortlist_episode_matrix.csv", episode_matrix_rows)
     (out_dir / "alfworld_llm_shortlist_diagnosis.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     return summary
 
@@ -4991,6 +4994,90 @@ def _alfworld_llm_shortlist_paired_rows(rows: Sequence[Mapping[str, object]]) ->
             }
         )
     return paired
+
+
+def _alfworld_llm_shortlist_episode_matrix(
+    episode_rows: Sequence[Mapping[str, object]],
+    step_trace_rows: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    policies = sorted({str(row.get("policy", "")) for row in episode_rows if str(row.get("policy", ""))})
+    episodes = sorted({_coerce_int(row.get("episode"), -1) for row in episode_rows if _coerce_int(row.get("episode"), -1) >= 0})
+    by_key = {
+        (str(row.get("policy", "")), _coerce_int(row.get("episode"), -1)): row
+        for row in episode_rows
+        if str(row.get("policy", "")) and _coerce_int(row.get("episode"), -1) >= 0
+    }
+    trace_by_key: dict[tuple[str, int], list[Mapping[str, object]]] = {}
+    for row in step_trace_rows:
+        key = (str(row.get("policy", "")), _coerce_int(row.get("episode"), -1))
+        if key[0] and key[1] >= 0:
+            trace_by_key.setdefault(key, []).append(row)
+    matrix = []
+    base_policy = "Frozen LLM top-1"
+    dense_policy = "Frozen LLM shortlist + Dense-ranker"
+    for episode in episodes:
+        base_success = _coerce_int(by_key.get((base_policy, episode), {}).get("success"), 0)
+        dense_success = _coerce_int(by_key.get((dense_policy, episode), {}).get("success"), 0)
+        row: dict[str, object] = {
+            "episode": episode,
+            "base_policy": base_policy,
+            "dense_policy": dense_policy,
+            "base_success": base_success if (base_policy, episode) in by_key else "",
+            "dense_success": dense_success if (dense_policy, episode) in by_key else "",
+            "dense_minus_base_success": dense_success - base_success if (base_policy, episode) in by_key and (dense_policy, episode) in by_key else "",
+            "outcome_relation": _alfworld_episode_outcome_relation(base_success, dense_success, (base_policy, episode) in by_key, (dense_policy, episode) in by_key),
+        }
+        for policy in policies:
+            episode_row = by_key.get((policy, episode), {})
+            traces = sorted(trace_by_key.get((policy, episode), []), key=lambda item: _coerce_int(item.get("step"), 0))
+            prefix = _compact_policy_key(policy)
+            first = traces[0] if traces else {}
+            diagnostic_steps = sum(1 for trace in traces if str(trace.get("diagnostic_command", "")).strip())
+            in_shortlist_steps = sum(_coerce_int(trace.get("diagnostic_in_shortlist"), 0) for trace in traces)
+            matched_steps = sum(_coerce_int(trace.get("matches_diagnostic"), 0) for trace in traces)
+            parse_fallback_steps = sum(_coerce_int(trace.get("llm_parse_fallback_used"), 0) for trace in traces)
+            row[f"{prefix}_success"] = episode_row.get("success", "")
+            row[f"{prefix}_steps"] = episode_row.get("steps", "")
+            row[f"{prefix}_tokens"] = episode_row.get("tokens", "")
+            row[f"{prefix}_first_command"] = first.get("command", "")
+            row[f"{prefix}_first_diagnostic"] = first.get("diagnostic_command", "")
+            row[f"{prefix}_first_diagnostic_source"] = first.get("diagnostic_source", "")
+            row[f"{prefix}_first_shortlist"] = first.get("llm_shortlist", "")
+            row[f"{prefix}_diagnostic_available_steps"] = diagnostic_steps
+            row[f"{prefix}_proposal_recall_at_k"] = 0.0 if diagnostic_steps == 0 else in_shortlist_steps / diagnostic_steps
+            row[f"{prefix}_diagnostic_match_rate"] = 0.0 if diagnostic_steps == 0 else matched_steps / diagnostic_steps
+            row[f"{prefix}_parse_fallback_rate"] = 0.0 if not traces else parse_fallback_steps / len(traces)
+        matrix.append(row)
+    return matrix
+
+
+def _alfworld_episode_outcome_relation(base_success: int, dense_success: int, base_present: bool, dense_present: bool) -> str:
+    if not base_present or not dense_present:
+        return "missing_policy"
+    if dense_success and not base_success:
+        return "dense_only_success"
+    if base_success and not dense_success:
+        return "base_only_success"
+    if dense_success and base_success:
+        return "both_success"
+    return "both_fail"
+
+
+def _compact_policy_key(policy: str) -> str:
+    key = policy.lower()
+    replacements = {
+        "frozen llm shortlist + ": "",
+        "frozen llm ": "llm_",
+        " ": "_",
+        "-": "_",
+        "+": "plus",
+        "/": "_",
+    }
+    for old, new in replacements.items():
+        key = key.replace(old, new)
+    key = re.sub(r"[^a-z0-9_]+", "", key)
+    key = re.sub(r"_+", "_", key).strip("_")
+    return key or "policy"
 
 
 def _alfworld_source_progress_complete(source_dir: Path, manifest: Mapping[str, object]) -> bool:

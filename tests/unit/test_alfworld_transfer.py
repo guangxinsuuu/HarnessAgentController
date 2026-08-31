@@ -1705,6 +1705,7 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(manifest["policy_count"], 2)
             self.assertTrue((out / "alfworld_llm_shortlist_diagnosis.csv").exists())
             self.assertTrue((out / "alfworld_llm_shortlist_paired_policy_comparison.csv").exists())
+            self.assertTrue((out / "alfworld_llm_shortlist_episode_matrix.csv").exists())
             with (out / "alfworld_llm_shortlist_diagnosis.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
             self.assertEqual(len(rows), 2)
@@ -1715,6 +1716,12 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(len(paired), 1)
             self.assertEqual(paired[0]["base_policy"], "Frozen LLM top-1")
             self.assertEqual(paired[0]["compare_policy"], "Frozen LLM shortlist + Dense-ranker")
+            with (out / "alfworld_llm_shortlist_episode_matrix.csv").open() as handle:
+                matrix = list(csv.DictReader(handle))
+            self.assertEqual(len(matrix), 1)
+            self.assertIn("outcome_relation", matrix[0])
+            self.assertIn("dense_ranker_first_command", matrix[0])
+            self.assertIn("dense_ranker_proposal_recall_at_k", matrix[0])
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]

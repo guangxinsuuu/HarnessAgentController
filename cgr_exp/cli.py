@@ -9,6 +9,7 @@ from cgr_exp.alfworld_transfer import (
     ScriptedAlfworldShortlistClient,
     audit_alfworld_dense_labels,
     merge_alfworld_llm_shortlist_shards,
+    preflight_alfworld_final_run,
     run_alfworld_dense_train,
     run_alfworld_dense_transfer,
     run_alfworld_expert_train,
@@ -139,6 +140,7 @@ COMMANDS = [
     "summarize-alfworld-llm-shortlist",
     "summarize-alfworld-final-pipeline",
     "summarize-alfworld-final-splits",
+    "preflight-alfworld-final",
     "run-alfworld-expert-train",
     "run-alfworld-expert-transfer",
 ]
@@ -421,6 +423,18 @@ def main() -> None:
         if name == "summarize-alfworld-final-splits":
             p.add_argument("--split-summary-dirs", nargs="+", type=Path, required=True)
             p.add_argument("--split-labels", nargs="+", required=True)
+        if name == "preflight-alfworld-final":
+            p.add_argument("--data-root", type=Path, required=True)
+            p.add_argument("--ranker-checkpoint", type=Path, required=True)
+            p.add_argument("--mode", required=True)
+            p.add_argument("--train-episodes", type=int, default=20)
+            p.add_argument("--eval-episodes", type=int, default=20)
+            p.add_argument("--llm-episodes", type=int, default=20)
+            p.add_argument("--max-steps", type=int, default=40)
+            p.add_argument("--shortlist-k", type=int, default=4)
+            p.add_argument("--llm-shards", type=int, default=1)
+            p.add_argument("--model", default="gpt-4o-mini")
+            p.add_argument("--api-key-env", default="CGR_LLM_API_KEY")
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -2351,6 +2365,43 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'alfworld_final_seen_unseen_summary.csv'}")
+            return
+        if args.command == "preflight-alfworld-final":
+            manifest = preflight_alfworld_final_run(
+                args.output_dir,
+                data_root=args.data_root,
+                ranker_checkpoint=args.ranker_checkpoint,
+                mode=args.mode,
+                train_episodes=args.train_episodes,
+                eval_episodes=args.eval_episodes,
+                llm_episodes=args.llm_episodes,
+                max_steps=args.max_steps,
+                shortlist_k=args.shortlist_k,
+                llm_shards=args.llm_shards,
+                model=args.model,
+                api_key_env=args.api_key_env,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": manifest["status"],
+                "benchmark": manifest["benchmark"],
+                "mode": manifest["mode"],
+                "data_root": manifest["data_root"],
+                "ranker_checkpoint": manifest["ranker_checkpoint"],
+                "model": manifest["model"],
+                "fail_count": manifest["fail_count"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(
+                f"preflight status={manifest['status']} "
+                f"fail_count={manifest['fail_count']} "
+                f"wrote {args.output_dir / 'alfworld_final_preflight.csv'}"
+            )
+            if manifest["status"] != "pass":
+                raise SystemExit(2)
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

@@ -1070,6 +1070,89 @@ def summarize_alfworld_final_splits(
     return manifest
 
 
+def _preflight_row(name: str, passed: bool, evidence: str, next_action: str) -> dict[str, object]:
+    return {
+        "check": name,
+        "status": "pass" if passed else "fail",
+        "evidence": evidence,
+        "next_action": "" if passed else next_action,
+    }
+
+
+def preflight_alfworld_final_run(
+    out_dir: Path,
+    *,
+    data_root: Path,
+    ranker_checkpoint: Path,
+    mode: str,
+    train_episodes: int,
+    eval_episodes: int,
+    llm_episodes: int,
+    max_steps: int,
+    shortlist_k: int,
+    llm_shards: int,
+    model: str,
+    api_key_env: str = "CGR_LLM_API_KEY",
+) -> dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    real_llm_requested = mode in {"llm-real", "all-real"}
+    training_requested = mode in {"smoke", "symbolic", "symbolic-smoke", "all-real"}
+    checkpoint_required_before_run = mode in {"llm-mock", "all-mock", "llm-real"}
+    train_dir = data_root / "json_2.1.1" / "train"
+    valid_seen_dir = data_root / "json_2.1.1" / "valid_seen"
+    valid_unseen_dir = data_root / "json_2.1.1" / "valid_unseen"
+    logic_domain = data_root / "logic" / "alfred.pddl"
+    rows = [
+        _preflight_row("alfworld_data_root", data_root.exists(), str(data_root), "install/setup ALFWorld data"),
+        _preflight_row("alfworld_train_split", train_dir.exists(), str(train_dir), "run ALFWorld setup or set ALFWORLD_DATA"),
+        _preflight_row("alfworld_valid_seen_split", valid_seen_dir.exists(), str(valid_seen_dir), "run ALFWorld setup or set ALFWORLD_DATA"),
+        _preflight_row("alfworld_valid_unseen_split", valid_unseen_dir.exists(), str(valid_unseen_dir), "run ALFWorld setup or set ALFWORLD_DATA"),
+        _preflight_row("alfworld_logic_domain", logic_domain.exists(), str(logic_domain), "run ALFWorld setup or set ALFWORLD_DATA"),
+        _preflight_row("positive_train_episodes", train_episodes > 0 or not training_requested, str(train_episodes), "set TRAIN_EPISODES>0 for training modes"),
+        _preflight_row("positive_eval_episodes", eval_episodes > 0, str(eval_episodes), "set EVAL_EPISODES>0"),
+        _preflight_row("positive_llm_episodes", llm_episodes > 0 or mode in {"symbolic", "symbolic-smoke"}, str(llm_episodes), "set LLM_EPISODES>0"),
+        _preflight_row("positive_max_steps", max_steps > 0, str(max_steps), "set MAX_STEPS>0"),
+        _preflight_row("positive_shortlist_k", shortlist_k > 0, str(shortlist_k), "set SHORTLIST_K>0"),
+        _preflight_row("positive_llm_shards", llm_shards > 0, str(llm_shards), "set LLM_SHARDS>=1"),
+        _preflight_row(
+            "ranker_checkpoint_available_or_planned",
+            ranker_checkpoint.exists() or not checkpoint_required_before_run,
+            str(ranker_checkpoint),
+            "run symbolic/all-real first or set RANKER_CHECKPOINT",
+        ),
+        _preflight_row(
+            "api_key_available_for_real_llm",
+            bool(os.environ.get(api_key_env)) or not real_llm_requested,
+            api_key_env if real_llm_requested else "not_required",
+            f"export {api_key_env}=... before real LLM modes",
+        ),
+    ]
+    fail_count = sum(1 for row in rows if row["status"] == "fail")
+    manifest = {
+        "benchmark": "alfworld_final_run_preflight",
+        "status": "pass" if fail_count == 0 else "fail",
+        "mode": mode,
+        "data_root": str(data_root),
+        "ranker_checkpoint": str(ranker_checkpoint),
+        "model": model,
+        "real_llm_requested": real_llm_requested,
+        "training_requested": training_requested,
+        "checkpoint_required_before_run": checkpoint_required_before_run,
+        "train_episodes": train_episodes,
+        "eval_episodes": eval_episodes,
+        "llm_episodes": llm_episodes,
+        "max_steps": max_steps,
+        "shortlist_k": shortlist_k,
+        "llm_shards": llm_shards,
+        "api_key_env": api_key_env,
+        "fail_count": fail_count,
+        "rows": rows,
+    }
+    _write_csv(out_dir / "alfworld_final_preflight.csv", rows)
+    (out_dir / "alfworld_final_preflight.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
 def audit_alfworld_dense_labels(
     out_dir: Path,
     *,

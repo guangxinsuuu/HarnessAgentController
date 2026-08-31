@@ -43,6 +43,7 @@ DENSE_TRAIN_DIR="${DENSE_TRAIN_DIR:-${OUT_ROOT}_dense_train}"
 DENSE_AUDIT_DIR="${DENSE_AUDIT_DIR:-${OUT_ROOT}_dense_audit}"
 RANKER_CHECKPOINT="${RANKER_CHECKPOINT:-${DENSE_TRAIN_DIR}/alfworld_dense_ranker.json}"
 FINAL_SPLIT_SUMMARY_DIR="${FINAL_SPLIT_SUMMARY_DIR:-${OUT_ROOT}_summary}"
+PREFLIGHT_DIR="${PREFLIGHT_DIR:-${OUT_ROOT}_preflight}"
 
 SHORTLIST_K="${SHORTLIST_K:-4}"
 LLM_SHARDS="${LLM_SHARDS:-1}"
@@ -155,30 +156,51 @@ merge_splits() {
     --overwrite
 }
 
+run_preflight() {
+  "${PYTHON_BIN}" -m cgr_exp.cli preflight-alfworld-final \
+    --output-dir "${PREFLIGHT_DIR}" \
+    --data-root "${ALFWORLD_DATA}" \
+    --ranker-checkpoint "${RANKER_CHECKPOINT}" \
+    --mode "${MODE}" \
+    --train-episodes "${TRAIN_EPISODES}" \
+    --eval-episodes "${EVAL_EPISODES}" \
+    --llm-episodes "${LLM_EPISODES}" \
+    --max-steps "${MAX_STEPS}" \
+    --shortlist-k "${SHORTLIST_K}" \
+    --llm-shards "${LLM_SHARDS}" \
+    --model "${MODEL}" \
+    --overwrite
+}
+
 case "${MODE}" in
   smoke)
+    run_preflight
     run_train_once
     run_split valid_seen eval_in_distribution 1 1
     run_split valid_unseen eval_out_of_distribution 1 1
     merge_splits
     ;;
   symbolic|symbolic-smoke)
+    run_preflight
     run_train_once
     run_split valid_seen eval_in_distribution 1 0
     run_split valid_unseen eval_out_of_distribution 1 0
     merge_splits
     ;;
   llm-mock|all-mock)
+    run_preflight
     run_split valid_seen eval_in_distribution 1 1
     run_split valid_unseen eval_out_of_distribution 1 1
     merge_splits
     ;;
   llm-real)
+    run_preflight
     run_split valid_seen eval_in_distribution 0 1
     run_split valid_unseen eval_out_of_distribution 0 1
     merge_splits
     ;;
   all-real)
+    run_preflight
     run_train_once
     run_split valid_seen eval_in_distribution 0 1
     run_split valid_unseen eval_out_of_distribution 0 1

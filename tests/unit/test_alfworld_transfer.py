@@ -14,6 +14,7 @@ from cgr_exp.alfworld_transfer import (
     audit_alfworld_dense_labels,
     alfworld_candidate_to_canonical,
     merge_alfworld_llm_shortlist_shards,
+    preflight_alfworld_final_run,
     run_alfworld_dense_train,
     run_alfworld_dense_transfer,
     run_alfworld_expert_train,
@@ -1944,6 +1945,57 @@ class AlfworldTransferTest(unittest.TestCase):
             with (out / "alfworld_final_seen_unseen_policy_table.csv").open() as handle:
                 policy_rows = list(csv.DictReader(handle))
             self.assertEqual(policy_rows[1]["split"], "valid_unseen")
+
+    def test_preflight_alfworld_final_run_reports_missing_and_ready_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = root / "alfworld"
+            for path in (
+                data / "json_2.1.1" / "train",
+                data / "json_2.1.1" / "valid_seen",
+                data / "json_2.1.1" / "valid_unseen",
+                data / "logic",
+            ):
+                path.mkdir(parents=True)
+            (data / "logic" / "alfred.pddl").write_text("(define (domain alfred))", encoding="utf-8")
+            checkpoint = root / "ranker.json"
+            out = root / "preflight"
+            manifest = preflight_alfworld_final_run(
+                out,
+                data_root=data,
+                ranker_checkpoint=checkpoint,
+                mode="all-real",
+                train_episodes=1,
+                eval_episodes=1,
+                llm_episodes=1,
+                max_steps=2,
+                shortlist_k=2,
+                llm_shards=1,
+                model="gpt-4o-mini",
+                api_key_env="CGR_TEST_MISSING_KEY",
+            )
+            self.assertEqual(manifest["status"], "fail")
+            self.assertEqual(manifest["fail_count"], 1)
+            with (out / "alfworld_final_preflight.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(rows[-1]["check"], "api_key_available_for_real_llm")
+            self.assertEqual(rows[-1]["status"], "fail")
+
+            checkpoint.write_text("{}", encoding="utf-8")
+            ready = preflight_alfworld_final_run(
+                root / "preflight-ready",
+                data_root=data,
+                ranker_checkpoint=checkpoint,
+                mode="llm-mock",
+                train_episodes=0,
+                eval_episodes=1,
+                llm_episodes=1,
+                max_steps=2,
+                shortlist_k=2,
+                llm_shards=1,
+                model="mock",
+            )
+            self.assertEqual(ready["status"], "pass")
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]

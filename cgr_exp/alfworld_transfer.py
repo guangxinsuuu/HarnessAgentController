@@ -612,6 +612,7 @@ def run_alfworld_llm_shortlist_transfer(
             )
             all_results.append(result)
             completed_policy_episodes += 1
+            _write_alfworld_llm_shortlist_partial_outputs(out_dir, policies, all_results, step_trace_rows)
             _write_alfworld_llm_shortlist_progress(
                 progress_path,
                 status="running",
@@ -4638,6 +4639,8 @@ def _write_alfworld_llm_shortlist_progress(
                 "cache_keys_used": shortlister.calls,
                 "tokens": shortlister.tokens,
                 "shortlist_cache_path": str(shortlist_cache_path),
+                "partial_table_path": str(path.parent / "alfworld_llm_shortlist_partial_table.csv"),
+                "partial_per_episode_path": str(path.parent / "alfworld_llm_shortlist_partial_per_episode.csv"),
                 "updated_at_unix": time.time(),
             },
             indent=2,
@@ -4645,6 +4648,22 @@ def _write_alfworld_llm_shortlist_progress(
         ),
         encoding="utf-8",
     )
+
+
+def _write_alfworld_llm_shortlist_partial_outputs(
+    out_dir: Path,
+    policies: Sequence[str],
+    all_results: Sequence[AlfworldEpisodeResult],
+    step_trace_rows: Sequence[Mapping[str, object]],
+) -> None:
+    completed_policies = [policy for policy in policies if any(row.policy == policy for row in all_results)]
+    rows = _with_step_trace_diagnostics(
+        [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in completed_policies],
+        step_trace_rows,
+    )
+    _write_csv(out_dir / "alfworld_llm_shortlist_partial_table.csv", rows)
+    _write_csv(out_dir / "alfworld_llm_shortlist_partial_per_episode.csv", [row.__dict__ for row in all_results])
+    _write_csv(out_dir / "alfworld_llm_shortlist_partial_step_trace.csv", step_trace_rows)
 
 
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:

@@ -1524,6 +1524,9 @@ class AlfworldTransferTest(unittest.TestCase):
             progress = json.loads(progress_path.read_text(encoding="utf-8"))
             self.assertEqual(progress["status"], "complete")
             self.assertEqual(progress["completed_policy_episodes"], progress["total_policy_episodes"])
+            self.assertTrue((out / "alfworld_llm_shortlist_partial_table.csv").exists())
+            self.assertTrue((out / "alfworld_llm_shortlist_partial_per_episode.csv").exists())
+            self.assertIn("partial_table_path", progress)
             with (out / "alfworld_llm_shortlist_table.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
             self.assertEqual(len(rows), 4)

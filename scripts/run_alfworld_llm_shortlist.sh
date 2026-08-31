@@ -6,6 +6,7 @@ PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
 ALFWORLD_DATA="${ALFWORLD_DATA:-${PROJECT_ROOT}/data/alfworld}"
 SEED="${SEED:-0}"
 EVAL_SPLIT="${EVAL_SPLIT:-eval_in_distribution}"
+EPISODE_START="${EPISODE_START:-0}"
 EPISODES="${EPISODES:-20}"
 MAX_STEPS="${MAX_STEPS:-40}"
 SHORTLIST_K="${SHORTLIST_K:-4}"
@@ -41,6 +42,7 @@ fi
   --seed "${SEED}" \
   --eval-split "${EVAL_SPLIT}" \
   --ranker-checkpoint "${RANKER_CHECKPOINT}" \
+  --episode-start "${EPISODE_START}" \
   --episodes "${EPISODES}" \
   --max-steps "${MAX_STEPS}" \
   --shortlist-k "${SHORTLIST_K}" \

@@ -13,6 +13,7 @@ from cgr_exp.alfworld_transfer import (
     ScriptedAlfworldShortlistClient,
     audit_alfworld_dense_labels,
     alfworld_candidate_to_canonical,
+    merge_alfworld_llm_shortlist_shards,
     run_alfworld_dense_train,
     run_alfworld_dense_transfer,
     run_alfworld_expert_train,
@@ -1735,6 +1736,49 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("dense_ranker_first_selected_shortlist_rank", matrix[0])
             self.assertIn("dense_ranker_first_diagnostic_shortlist_rank", matrix[0])
             self.assertIn("dense_ranker_missed_diagnostic_in_shortlist_rate", matrix[0])
+
+    def test_merge_alfworld_llm_shortlist_shards_combines_episode_ranges(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint = root / "ranker.json"
+            checkpoint.write_text(GenericHarnessRanker([0.0 for _name in canonical_feature_names()]).to_json(), encoding="utf-8")
+            shard0 = root / "shard0"
+            shard1 = root / "shard1"
+            policies = ("Frozen LLM top-1",)
+            run_alfworld_llm_shortlist_transfer(
+                shard0,
+                client=ScriptedAlfworldShortlistClient(input_tokens=5, output_tokens=1),
+                model="mock-shortlist",
+                ranker_checkpoint=checkpoint,
+                episode_start=0,
+                episodes=1,
+                max_steps=2,
+                shortlist_k=2,
+                policies=policies,
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            run_alfworld_llm_shortlist_transfer(
+                shard1,
+                client=ScriptedAlfworldShortlistClient(input_tokens=5, output_tokens=1),
+                model="mock-shortlist",
+                ranker_checkpoint=checkpoint,
+                episode_start=1,
+                episodes=1,
+                max_steps=2,
+                shortlist_k=2,
+                policies=policies,
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            merged = root / "merged"
+            manifest = merge_alfworld_llm_shortlist_shards(merged, source_dirs=(shard0, shard1))
+            self.assertEqual(manifest["benchmark"], "alfworld_llm_shortlist_shard_merge")
+            self.assertEqual(manifest["episode_row_count"], 2)
+            with (merged / "alfworld_llm_shortlist_per_episode.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual([row["episode"] for row in rows], ["0", "1"])
+            with (merged / "alfworld_llm_shortlist_table.csv").open() as handle:
+                table = list(csv.DictReader(handle))
+            self.assertEqual(table[0]["episodes"], "2")
 
     def test_summarize_alfworld_final_pipeline_combines_symbolic_and_llm_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -8,6 +8,7 @@ from dataclasses import replace
 from cgr_exp.alfworld_transfer import (
     ScriptedAlfworldShortlistClient,
     audit_alfworld_dense_labels,
+    merge_alfworld_llm_shortlist_shards,
     run_alfworld_dense_train,
     run_alfworld_dense_transfer,
     run_alfworld_expert_train,
@@ -133,6 +134,7 @@ COMMANDS = [
     "run-alfworld-dense-train",
     "run-alfworld-dense-transfer",
     "run-alfworld-llm-shortlist-transfer",
+    "merge-alfworld-llm-shortlist-shards",
     "summarize-alfworld-llm-shortlist",
     "summarize-alfworld-final-pipeline",
     "run-alfworld-expert-train",
@@ -389,6 +391,7 @@ def main() -> None:
             p.add_argument("--eval-split", default="eval_in_distribution")
             p.add_argument("--config-path", type=Path, default=None)
             p.add_argument("--ranker-checkpoint", type=Path, required=True)
+            p.add_argument("--episode-start", type=int, default=0)
             p.add_argument("--episodes", type=int, default=20)
             p.add_argument("--max-steps", type=int, default=50)
             p.add_argument("--shortlist-k", type=int, default=4)
@@ -405,6 +408,8 @@ def main() -> None:
             p.add_argument("--mock", action="store_true", default=False)
         if name == "summarize-alfworld-llm-shortlist":
             p.add_argument("--source-dir", type=Path, required=True)
+        if name == "merge-alfworld-llm-shortlist-shards":
+            p.add_argument("--source-dirs", nargs="+", type=Path, required=True)
         if name == "summarize-alfworld-final-pipeline":
             p.add_argument("--dense-train-dir", type=Path, required=True)
             p.add_argument("--dense-audit-dir", type=Path, required=True)
@@ -2187,6 +2192,7 @@ def main() -> None:
                     eval_split=args.eval_split,
                     config_path=args.config_path,
                     ranker_checkpoint=args.ranker_checkpoint,
+                    episode_start=args.episode_start,
                     episodes=args.episodes,
                     max_steps=args.max_steps,
                     shortlist_k=args.shortlist_k,
@@ -2205,6 +2211,7 @@ def main() -> None:
                     eval_split=args.eval_split,
                     config_path=args.config_path,
                     ranker_checkpoint=args.ranker_checkpoint,
+                    episode_start=args.episode_start,
                     episodes=args.episodes,
                     max_steps=args.max_steps,
                     shortlist_k=args.shortlist_k,
@@ -2222,6 +2229,7 @@ def main() -> None:
                 "status": "complete",
                 "benchmark": manifest["benchmark"],
                 "eval_split": manifest["eval_split"],
+                "episode_start": manifest["episode_start"],
                 "episodes": manifest["episodes"],
                 "model": manifest["model"],
                 "shortlist_k": manifest["shortlist_k"],
@@ -2241,6 +2249,24 @@ def main() -> None:
                 "resume_config_path": manifest["resume_config_path"],
                 "resume_config_compatible": manifest["resume_config_compatible"],
                 "progress_path": manifest["progress_path"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'alfworld_llm_shortlist_table.csv'}")
+            return
+        if args.command == "merge-alfworld-llm-shortlist-shards":
+            manifest = merge_alfworld_llm_shortlist_shards(args.output_dir, source_dirs=args.source_dirs)
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "benchmark": manifest["benchmark"],
+                "source_dirs": manifest["source_dirs"],
+                "policy_count": manifest["policy_count"],
+                "episode_row_count": manifest["episode_row_count"],
+                "step_trace_row_count": manifest["step_trace_row_count"],
+                "call_row_count": manifest["call_row_count"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")

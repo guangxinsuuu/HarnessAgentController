@@ -520,6 +520,7 @@ def run_alfworld_llm_shortlist_transfer_from_env(
     eval_split: str = "eval_in_distribution",
     config_path: Path | None = None,
     ranker_checkpoint: Path | None = None,
+    episode_start: int = 0,
     episodes: int = 20,
     max_steps: int = 50,
     shortlist_k: int = 4,
@@ -546,6 +547,7 @@ def run_alfworld_llm_shortlist_transfer_from_env(
         eval_split=eval_split,
         config_path=config_path,
         ranker_checkpoint=ranker_checkpoint,
+        episode_start=episode_start,
         episodes=episodes,
         max_steps=max_steps,
         shortlist_k=shortlist_k,
@@ -566,6 +568,7 @@ def run_alfworld_llm_shortlist_transfer(
     eval_split: str = "eval_in_distribution",
     config_path: Path | None = None,
     ranker_checkpoint: Path | None = None,
+    episode_start: int = 0,
     episodes: int = 20,
     max_steps: int = 50,
     shortlist_k: int = 4,
@@ -597,6 +600,7 @@ def run_alfworld_llm_shortlist_transfer(
         eval_split=eval_split,
         config_path=config_path,
         ranker_checkpoint=ranker_checkpoint,
+        episode_start=episode_start,
         episodes=episodes,
         max_steps=max_steps,
         shortlist_k=shortlist_k,
@@ -622,10 +626,12 @@ def run_alfworld_llm_shortlist_transfer(
     all_results, step_trace_rows = _load_alfworld_llm_shortlist_resume_state(
         out_dir,
         policies=policies,
+        episode_start=episode_start,
         episodes=episodes,
         resume=resume,
     )
     completed_keys = {(row.policy, row.episode) for row in all_results}
+    episode_ids = list(range(episode_start, episode_start + episodes))
     total_policy_episodes = len(policies) * episodes
     completed_policy_episodes = len(completed_keys)
     resumed_policy_episodes = completed_policy_episodes
@@ -640,7 +646,7 @@ def run_alfworld_llm_shortlist_transfer(
         shortlist_cache_path=shortlist_cache_path,
     )
     for policy in policies:
-        episodes_to_run = [episode for episode in range(episodes) if (policy, episode) not in completed_keys]
+        episodes_to_run = [episode for episode in episode_ids if (policy, episode) not in completed_keys]
         if not episodes_to_run:
             continue
         env = _make_alfworld_env(
@@ -649,7 +655,11 @@ def run_alfworld_llm_shortlist_transfer(
             env_factory=env_factory,
             training_method=_alfworld_env_method_for_policy(policy),
         )
+        current_env_episode = 0
         for episode in episodes_to_run:
+            while current_env_episode < episode:
+                env.reset()
+                current_env_episode += 1
             result = _run_llm_shortlist_episode(
                 env,
                 policy=policy,
@@ -660,6 +670,7 @@ def run_alfworld_llm_shortlist_transfer(
                 max_steps=max_steps,
                 step_trace_rows=step_trace_rows,
             )
+            current_env_episode = episode + 1
             all_results.append(result)
             completed_keys.add((policy, episode))
             completed_policy_episodes += 1
@@ -689,6 +700,7 @@ def run_alfworld_llm_shortlist_transfer(
         "benchmark": "alfworld_llm_shortlist_controller_transfer",
         "seed": seed,
         "eval_split": eval_split,
+        "episode_start": episode_start,
         "episodes": episodes,
         "max_steps": max_steps,
         "shortlist_k": shortlist_k,
@@ -796,6 +808,92 @@ def summarize_alfworld_llm_shortlist_run(out_dir: Path, *, source_dir: Path) -> 
     _write_csv(out_dir / "alfworld_llm_shortlist_episode_matrix.csv", episode_matrix_rows)
     (out_dir / "alfworld_llm_shortlist_diagnosis.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     return summary
+
+
+def merge_alfworld_llm_shortlist_shards(out_dir: Path, *, source_dirs: Sequence[Path]) -> dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    all_results: list[AlfworldEpisodeResult] = []
+    all_step_rows: list[dict[str, object]] = []
+    all_call_rows: list[dict[str, object]] = []
+    policies: list[str] = []
+    seen_policies: set[str] = set()
+    seen_episode_keys: set[tuple[str, int]] = set()
+    shard_summaries = []
+    for source_dir in source_dirs:
+        table_path = _first_existing_path(source_dir / "alfworld_llm_shortlist_table.csv", source_dir / "alfworld_llm_shortlist_partial_table.csv")
+        per_episode_path = _first_existing_path(source_dir / "alfworld_llm_shortlist_per_episode.csv", source_dir / "alfworld_llm_shortlist_partial_per_episode.csv")
+        step_trace_path = _first_existing_path(source_dir / "alfworld_llm_shortlist_step_trace.csv", source_dir / "alfworld_llm_shortlist_partial_step_trace.csv")
+        calls_path = _first_existing_path(source_dir / "alfworld_llm_shortlist_calls.csv")
+        manifest_path = _first_existing_path(source_dir / "alfworld_llm_shortlist.json", source_dir / "command_manifest.json", source_dir / "alfworld_llm_shortlist_progress.json")
+        manifest = _read_json_object(manifest_path) if manifest_path is not None else {}
+        if table_path is None or per_episode_path is None or step_trace_path is None:
+            shard_summaries.append({"source_dir": str(source_dir), "status": "missing_required_outputs"})
+            continue
+        for row in _read_csv_rows(table_path):
+            policy = str(row.get("policy", ""))
+            if policy and policy not in seen_policies:
+                policies.append(policy)
+                seen_policies.add(policy)
+        for row in _read_csv_rows(per_episode_path):
+            policy = str(row.get("policy", ""))
+            episode = _coerce_int(row.get("episode"), -1)
+            if not policy or episode < 0 or (policy, episode) in seen_episode_keys:
+                continue
+            seen_episode_keys.add((policy, episode))
+            all_results.append(
+                AlfworldEpisodeResult(
+                    policy=policy,
+                    episode=episode,
+                    success=_coerce_int(row.get("success"), 0),
+                    final_score=_coerce_float(row.get("final_score"), 0.0),
+                    steps=_coerce_int(row.get("steps"), 0),
+                    mean_admissible_count=_coerce_float(row.get("mean_admissible_count"), 0.0),
+                    opportunity_rate=_coerce_float(row.get("opportunity_rate"), 0.0),
+                    invalid_actions=_coerce_int(row.get("invalid_actions"), 0),
+                    wall_clock_seconds=_coerce_float(row.get("wall_clock_seconds"), 0.0),
+                    tokens=_coerce_int(row.get("tokens"), 0),
+                    llm_calls=_coerce_int(row.get("llm_calls"), 0),
+                    new_tokens=_coerce_int(row.get("new_tokens"), 0),
+                    new_llm_calls=_coerce_int(row.get("new_llm_calls"), 0),
+                    cache_hits=_coerce_int(row.get("cache_hits"), 0),
+                )
+            )
+        all_step_rows.extend(_read_csv_rows(step_trace_path))
+        if calls_path is not None:
+            all_call_rows.extend(_read_csv_rows(calls_path))
+        shard_summaries.append(
+            {
+                "source_dir": str(source_dir),
+                "status": "merged",
+                "source_progress_complete": _alfworld_source_progress_complete(source_dir, manifest),
+                "table_path": str(table_path),
+                "per_episode_path": str(per_episode_path),
+                "step_trace_path": str(step_trace_path),
+            }
+        )
+    if not policies:
+        policies = sorted({row.policy for row in all_results})
+    rows = _with_step_trace_diagnostics(
+        [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies],
+        all_step_rows,
+    )
+    manifest = {
+        "benchmark": "alfworld_llm_shortlist_shard_merge",
+        "status": "complete",
+        "source_dirs": [str(path) for path in source_dirs],
+        "shard_summaries": shard_summaries,
+        "policy_count": len(policies),
+        "episode_row_count": len(all_results),
+        "step_trace_row_count": len(all_step_rows),
+        "call_row_count": len(all_call_rows),
+        "rows": rows,
+    }
+    _write_csv(out_dir / "alfworld_llm_shortlist_table.csv", rows)
+    _write_csv(out_dir / "alfworld_llm_shortlist_per_episode.csv", [row.__dict__ for row in sorted(all_results, key=lambda item: (item.policy, item.episode))])
+    _write_csv(out_dir / "alfworld_llm_shortlist_step_trace.csv", all_step_rows)
+    _write_csv(out_dir / "alfworld_llm_shortlist_calls.csv", all_call_rows)
+    (out_dir / "alfworld_llm_shortlist.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
 
 
 def summarize_alfworld_final_pipeline(
@@ -5035,6 +5133,7 @@ def _load_alfworld_llm_shortlist_resume_state(
     out_dir: Path,
     *,
     policies: Sequence[str],
+    episode_start: int,
     episodes: int,
     resume: bool,
 ) -> tuple[list[AlfworldEpisodeResult], list[dict[str, object]]]:
@@ -5050,7 +5149,7 @@ def _load_alfworld_llm_shortlist_resume_state(
     for row in _read_csv_rows(per_episode_path):
         policy = str(row.get("policy", ""))
         episode = _coerce_int(row.get("episode"), -1)
-        if policy not in policy_set or not (0 <= episode < episodes):
+        if policy not in policy_set or not (episode_start <= episode < episode_start + episodes):
             continue
         results_by_key[(policy, episode)] = AlfworldEpisodeResult(
             policy=policy,
@@ -5491,6 +5590,7 @@ def _alfworld_llm_shortlist_run_config(
     eval_split: str,
     config_path: Path | None,
     ranker_checkpoint: Path,
+    episode_start: int,
     episodes: int,
     max_steps: int,
     shortlist_k: int,
@@ -5508,6 +5608,7 @@ def _alfworld_llm_shortlist_run_config(
         "eval_split": eval_split,
         "config_path": "" if config_path is None else str(config_path),
         "ranker_checkpoint": str(ranker_checkpoint),
+        "episode_start": episode_start,
         "episodes": episodes,
         "max_steps": max_steps,
         "shortlist_k": shortlist_k,

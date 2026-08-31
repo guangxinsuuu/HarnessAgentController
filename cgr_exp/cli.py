@@ -2226,6 +2226,8 @@ def main() -> None:
                 "shortlist_cache_loaded": manifest["shortlist_cache_loaded"],
                 "resume": manifest["resume"],
                 "resumed_policy_episodes": manifest["resumed_policy_episodes"],
+                "resume_config_path": manifest["resume_config_path"],
+                "resume_config_compatible": manifest["resume_config_compatible"],
                 "progress_path": manifest["progress_path"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }

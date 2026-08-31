@@ -591,6 +591,26 @@ def run_alfworld_llm_shortlist_transfer(
         shortlist_cache_path = out_dir / "alfworld_llm_shortlist_cache.jsonl"
     shortlist_cache_loaded = shortlist_cache_path.exists()
     progress_path = out_dir / "alfworld_llm_shortlist_progress.json"
+    run_config_path = out_dir / "alfworld_llm_shortlist_run_config.json"
+    run_config = _alfworld_llm_shortlist_run_config(
+        seed=seed,
+        eval_split=eval_split,
+        config_path=config_path,
+        ranker_checkpoint=ranker_checkpoint,
+        episodes=episodes,
+        max_steps=max_steps,
+        shortlist_k=shortlist_k,
+        model=model,
+        temperature=temperature,
+        top_p=top_p,
+        shortlist_cache_path=shortlist_cache_path,
+    )
+    resume_config_compatible = _check_or_write_alfworld_llm_shortlist_run_config(
+        run_config_path,
+        run_config,
+        out_dir=out_dir,
+        resume=resume,
+    )
     shortlister = AlfworldLLMShortlistCache(
         client,
         model=model,
@@ -695,6 +715,8 @@ def run_alfworld_llm_shortlist_transfer(
         "shortlist_cache_loaded": shortlist_cache_loaded,
         "resume": resume,
         "resumed_policy_episodes": resumed_policy_episodes if resume else 0,
+        "resume_config_path": str(run_config_path),
+        "resume_config_compatible": resume_config_compatible,
         "progress_path": str(progress_path),
         "contract": canonical_contract_manifest(),
         "rows": rows,
@@ -4821,6 +4843,80 @@ def _load_alfworld_llm_shortlist_resume_state(
         if (policy, episode) in completed_keys:
             trace_rows.append(row)
     return list(results_by_key.values()), trace_rows
+
+
+def _alfworld_llm_shortlist_run_config(
+    *,
+    seed: int,
+    eval_split: str,
+    config_path: Path | None,
+    ranker_checkpoint: Path,
+    episodes: int,
+    max_steps: int,
+    shortlist_k: int,
+    model: str,
+    temperature: float,
+    top_p: float,
+    shortlist_cache_path: Path,
+) -> dict[str, object]:
+    contract = canonical_contract_manifest()
+    return {
+        "benchmark": "alfworld_llm_shortlist_controller_transfer",
+        "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
+        "feature_schema_hash": contract["feature_schema_hash"],
+        "seed": seed,
+        "eval_split": eval_split,
+        "config_path": "" if config_path is None else str(config_path),
+        "ranker_checkpoint": str(ranker_checkpoint),
+        "episodes": episodes,
+        "max_steps": max_steps,
+        "shortlist_k": shortlist_k,
+        "model": model,
+        "temperature": temperature,
+        "top_p": top_p,
+        "shortlist_cache_path": str(shortlist_cache_path),
+    }
+
+
+def _check_or_write_alfworld_llm_shortlist_run_config(
+    path: Path,
+    current: Mapping[str, object],
+    *,
+    out_dir: Path,
+    resume: bool,
+) -> bool:
+    partial_exists = any(
+        (out_dir / name).exists()
+        for name in (
+            "alfworld_llm_shortlist_partial_per_episode.csv",
+            "alfworld_llm_shortlist_per_episode.csv",
+            "alfworld_llm_shortlist_partial_step_trace.csv",
+            "alfworld_llm_shortlist_step_trace.csv",
+        )
+    )
+    if resume:
+        if not path.exists():
+            if partial_exists:
+                raise RuntimeError(
+                    "cannot resume ALFWorld LLM-shortlist run without alfworld_llm_shortlist_run_config.json; "
+                    "rerun in a new output directory or start this directory without RESUME=1"
+                )
+            path.write_text(json.dumps(dict(current), indent=2, sort_keys=True), encoding="utf-8")
+            return True
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"cannot resume ALFWorld LLM-shortlist run with invalid config JSON: {path}") from exc
+        mismatches = {
+            key: {"existing": existing.get(key), "current": value}
+            for key, value in current.items()
+            if existing.get(key) != value
+        }
+        if mismatches:
+            raise RuntimeError(f"cannot resume ALFWorld LLM-shortlist run with incompatible config: {json.dumps(mismatches, sort_keys=True)}")
+        return True
+    path.write_text(json.dumps(dict(current), indent=2, sort_keys=True), encoding="utf-8")
+    return True
 
 
 def _coerce_int(value: object, default: int = 0) -> int:

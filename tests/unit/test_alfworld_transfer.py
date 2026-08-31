@@ -10,12 +10,14 @@ from pathlib import Path
 from cgr_exp.alfworld_transfer import (
     ALFWORLD_ADAPTER_VERSION,
     AlfworldDenseActionLabel,
+    ScriptedAlfworldShortlistClient,
     audit_alfworld_dense_labels,
     alfworld_candidate_to_canonical,
     run_alfworld_dense_train,
     run_alfworld_dense_transfer,
     run_alfworld_expert_train,
     run_alfworld_expert_transfer,
+    run_alfworld_llm_shortlist_transfer,
     run_alfworld_transfer,
     _contract_filtered_admissible_commands,
     _command_type,
@@ -35,6 +37,7 @@ from cgr_exp.alfworld_transfer import (
     _planner_training_rollout_command,
     _project_alfworld_ranker_contract_signs,
     _select_command,
+    _select_llm_shortlist_command,
     _walkthrough_training_rollout_command,
 )
 from cgr_exp.harness_contract import canonical_feature_names
@@ -1489,6 +1492,62 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(manifest["train"]["checkpoint"], str(checkpoint))
             self.assertTrue((out / "alfworld_dense_transfer_table.csv").exists())
             self.assertTrue((out / "alfworld_dense_transfer_step_trace.csv").exists())
+
+    def test_run_alfworld_llm_shortlist_transfer_uses_frozen_ranker_and_records_tokens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            checkpoint.write_text(GenericHarnessRanker([0.0 for _name in canonical_feature_names()]).to_json(), encoding="utf-8")
+            out = Path(tmp) / "llm-shortlist"
+            manifest = run_alfworld_llm_shortlist_transfer(
+                out,
+                client=ScriptedAlfworldShortlistClient(input_tokens=11, output_tokens=3),
+                model="mock-shortlist",
+                ranker_checkpoint=checkpoint,
+                episodes=1,
+                max_steps=4,
+                shortlist_k=2,
+                policies=(
+                    "Frozen LLM top-1",
+                    "Frozen LLM shortlist + Random",
+                    "Frozen LLM shortlist + Dense-ranker",
+                    "Frozen LLM shortlist + Planner diagnostic",
+                ),
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            self.assertEqual(manifest["benchmark"], "alfworld_llm_shortlist_controller_transfer")
+            self.assertTrue(manifest["llm_semantic_shortlist_used"])
+            self.assertFalse(manifest["target_eval_trajectories_used_for_training"])
+            self.assertFalse(manifest["llm_rollout_trajectories_used_for_training"])
+            self.assertGreater(manifest["actual_unique_llm_calls"], 0)
+            with (out / "alfworld_llm_shortlist_table.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(len(rows), 4)
+            for row in rows:
+                self.assertGreater(int(row["llm_calls"]), 0)
+                self.assertGreater(int(row["tokens"]), 0)
+            with (out / "alfworld_llm_shortlist_step_trace.csv").open() as handle:
+                trace_rows = list(csv.DictReader(handle))
+            self.assertGreater(len(trace_rows), 0)
+            self.assertIn("llm_shortlist", trace_rows[0])
+            self.assertIn("llm_input_tokens", trace_rows[0])
+
+    def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
+        weights = [0.0 for _name in canonical_feature_names()]
+        weights[canonical_feature_names().index("action_is_write")] = 10.0
+        ranker = GenericHarnessRanker(weights)
+        command, selection = _select_llm_shortlist_command(
+            policy="Frozen LLM shortlist + Dense-ranker",
+            observation="You are in a kitchen. You see an apple.",
+            objective="put apple on table",
+            history=["obs:You are in a kitchen. You see an apple."],
+            admissible=["look around", "take apple"],
+            shortlist_indices=[0],
+            ranker=ranker,
+            rng=random.Random(0),
+            max_steps=10,
+        )
+        self.assertEqual(command, "look around")
+        self.assertEqual(selection["top_ranked_commands"], "look around")
 
     def test_alfworld_step_trace_records_diagnostic_alignment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

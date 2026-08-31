@@ -16,6 +16,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from cgr_exp.harness_contract import ActionFeatures, CanonicalCandidate, RuntimeFeatures, canonical_contract_manifest, canonical_feature_names
 from cgr_exp.harness_ranker import GenericHarnessMLPRanker, GenericHarnessRanker, load_generic_harness_ranker, train_generic_harness_ranker
+from cgr_exp.proposers.llm_adapter import OpenAICompatibleHTTPClient
 from cgr_exp.workflow_source_generator import SOURCE_WORKFLOW_FAMILIES, generate_workflow_source_tasks, source_generator_manifest
 
 
@@ -61,6 +62,8 @@ class AlfworldEpisodeResult:
     opportunity_rate: float
     invalid_actions: int
     wall_clock_seconds: float
+    tokens: int = 0
+    llm_calls: int = 0
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,98 @@ class AlfworldGoalSpec:
     receptacle_terms: frozenset[str]
     transform_terms: frozenset[str]
     raw_terms: frozenset[str]
+
+
+class AlfworldLLMShortlistCache:
+    def __init__(self, client: Any, *, model: str, k: int = 4, temperature: float = 0.0, top_p: float = 1.0):
+        self.client = client
+        self.model = model
+        self.k = k
+        self.temperature = temperature
+        self.top_p = top_p
+        self.records: list[dict[str, object]] = []
+        self._cache: dict[str, dict[str, object]] = {}
+
+    def shortlist(
+        self,
+        *,
+        objective: str,
+        observation: str,
+        history: Sequence[str],
+        admissible: Sequence[str],
+    ) -> dict[str, object]:
+        key = json.dumps(
+            {
+                "model": self.model,
+                "k": self.k,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "objective": objective,
+                "observation": observation,
+                "history": list(history),
+                "admissible": list(admissible),
+            },
+            sort_keys=True,
+        )
+        if key in self._cache:
+            cached = dict(self._cache[key])
+            cached["cache_hit"] = True
+            cached["latency"] = 0.0
+            return cached
+        response = self.client.rank_alfworld_actions(
+            objective=objective,
+            observation=observation,
+            history=list(history),
+            admissible=list(admissible),
+            k=self.k,
+            model=self.model,
+            temperature=self.temperature,
+            top_p=self.top_p,
+        )
+        ranked_indices = _clean_ranked_indices(response.get("ranked_indices", []), len(admissible))
+        row = {
+            "ranked_indices": ranked_indices[: max(1, self.k)],
+            "input_tokens": int(response.get("input_tokens", 0)),
+            "output_tokens": int(response.get("output_tokens", 0)),
+            "latency": float(response.get("latency", 0.0)),
+            "raw_output": str(response.get("raw_output", "")),
+            "cache_hit": False,
+        }
+        self._cache[key] = dict(row)
+        self.records.append(row)
+        return row
+
+    @property
+    def tokens(self) -> int:
+        return sum(int(row.get("input_tokens", 0)) + int(row.get("output_tokens", 0)) for row in self.records)
+
+    @property
+    def calls(self) -> int:
+        return len(self.records)
+
+
+class ScriptedAlfworldShortlistClient:
+    def __init__(self, *, input_tokens: int = 0, output_tokens: int = 0):
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+    def rank_alfworld_actions(self, *args, **kwargs) -> dict[str, object]:
+        objective = str(kwargs.get("objective", ""))
+        observation = str(kwargs.get("observation", ""))
+        history = list(kwargs.get("history", []))
+        admissible = [str(item) for item in kwargs.get("admissible", [])]
+        scored = [
+            (_hand_score(command, observation, objective, history), -idx, idx)
+            for idx, command in enumerate(admissible)
+        ]
+        scored.sort(reverse=True)
+        return {
+            "ranked_indices": [idx for _score, _tie, idx in scored],
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "latency": 0.0,
+            "raw_output": json.dumps({"ranked_indices": [idx for _score, _tie, idx in scored]}),
+        }
 
 
 def run_alfworld_transfer(
@@ -335,6 +430,139 @@ def run_alfworld_dense_transfer(
     _write_csv(out_dir / "alfworld_dense_training_trace.csv", train_rows)
     _write_csv(out_dir / "alfworld_dense_action_labels.csv", action_label_rows)
     (out_dir / "alfworld_dense_transfer.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
+def run_alfworld_llm_shortlist_transfer_from_env(
+    out_dir: Path,
+    *,
+    model: str | None = None,
+    timeout: float = 120.0,
+    seed: int = 0,
+    eval_split: str = "eval_in_distribution",
+    config_path: Path | None = None,
+    ranker_checkpoint: Path | None = None,
+    episodes: int = 20,
+    max_steps: int = 50,
+    shortlist_k: int = 4,
+    temperature: float = 0.0,
+    top_p: float = 1.0,
+    policies: Sequence[str] = (
+        "Frozen LLM top-1",
+        "Frozen LLM shortlist + Random",
+        "Frozen LLM shortlist + Dense-ranker",
+        "Frozen LLM shortlist + Planner diagnostic",
+    ),
+) -> dict[str, object]:
+    client = OpenAICompatibleHTTPClient.from_env()
+    client.timeout = timeout
+    if model is not None:
+        client.model = model
+    return run_alfworld_llm_shortlist_transfer(
+        out_dir,
+        client=client,
+        model=model or client.model,
+        seed=seed,
+        eval_split=eval_split,
+        config_path=config_path,
+        ranker_checkpoint=ranker_checkpoint,
+        episodes=episodes,
+        max_steps=max_steps,
+        shortlist_k=shortlist_k,
+        temperature=temperature,
+        top_p=top_p,
+        policies=policies,
+    )
+
+
+def run_alfworld_llm_shortlist_transfer(
+    out_dir: Path,
+    *,
+    client: Any,
+    model: str,
+    seed: int = 0,
+    eval_split: str = "eval_in_distribution",
+    config_path: Path | None = None,
+    ranker_checkpoint: Path | None = None,
+    episodes: int = 20,
+    max_steps: int = 50,
+    shortlist_k: int = 4,
+    temperature: float = 0.0,
+    top_p: float = 1.0,
+    policies: Sequence[str] = (
+        "Frozen LLM top-1",
+        "Frozen LLM shortlist + Random",
+        "Frozen LLM shortlist + Dense-ranker",
+        "Frozen LLM shortlist + Planner diagnostic",
+    ),
+    env_factory: Callable[..., Any] | None = None,
+) -> dict[str, object]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if env_factory is None:
+        _assert_alfworld_available()
+    if ranker_checkpoint is None:
+        raise RuntimeError("run-alfworld-llm-shortlist-transfer requires a frozen ALFWorld dense ranker checkpoint")
+    ranker = load_generic_harness_ranker(ranker_checkpoint.read_text(encoding="utf-8"))
+    shortlister = AlfworldLLMShortlistCache(client, model=model, k=shortlist_k, temperature=temperature, top_p=top_p)
+    all_results: list[AlfworldEpisodeResult] = []
+    step_trace_rows: list[dict[str, object]] = []
+    for policy in policies:
+        env = _make_alfworld_env(
+            split=eval_split,
+            config_path=config_path,
+            env_factory=env_factory,
+            training_method=_alfworld_env_method_for_policy(policy),
+        )
+        for episode in range(episodes):
+            all_results.append(
+                _run_llm_shortlist_episode(
+                    env,
+                    policy=policy,
+                    ranker=ranker,
+                    shortlister=shortlister,
+                    seed=seed * 100000 + episode,
+                    episode=episode,
+                    max_steps=max_steps,
+                    step_trace_rows=step_trace_rows,
+                )
+            )
+    rows = _with_step_trace_diagnostics(
+        [_aggregate_policy(policy, [row for row in all_results if row.policy == policy]) for policy in policies],
+        step_trace_rows,
+    )
+    manifest = {
+        "benchmark": "alfworld_llm_shortlist_controller_transfer",
+        "seed": seed,
+        "eval_split": eval_split,
+        "episodes": episodes,
+        "max_steps": max_steps,
+        "shortlist_k": shortlist_k,
+        "model": model,
+        "temperature": temperature,
+        "top_p": top_p,
+        "policies": list(policies),
+        "ranker_checkpoint": str(ranker_checkpoint),
+        "uses_admissible_commands": True,
+        "llm_semantic_shortlist_used": True,
+        "llm_calls_are_one_per_state": True,
+        "llm_rollout_trajectories_used_for_training": False,
+        "target_eval_trajectories_used_for_training": False,
+        "oracle_labels_in_inference_features": False,
+        "command_string_used_as_learned_feature": False,
+        "alfworld_adapter_version": ALFWORLD_ADAPTER_VERSION,
+        "relational_goal_action_features": True,
+        "object_identity_feature_used": False,
+        "controller_checkpoint_frozen_before_eval": True,
+        "actual_unique_llm_calls": shortlister.calls,
+        "actual_unique_llm_tokens": shortlister.tokens,
+        "contract": canonical_contract_manifest(),
+        "rows": rows,
+    }
+    _write_csv(out_dir / "alfworld_llm_shortlist_table.csv", rows)
+    _write_csv(out_dir / "alfworld_llm_shortlist_per_episode.csv", [row.__dict__ for row in all_results])
+    _write_csv(out_dir / "alfworld_llm_shortlist_step_trace.csv", step_trace_rows)
+    _write_csv(out_dir / "alfworld_llm_shortlist_calls.csv", shortlister.records)
+    (out_dir / "alfworld_llm_shortlist.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     return manifest
 
 
@@ -2975,7 +3203,7 @@ def _alfworld_env_method_for_policy(policy: str) -> str:
 
 
 def _is_alfworld_planner_diagnostic(policy: str) -> bool:
-    return policy in {"ALFWorld expert-plan diagnostic", "ALFWorld planner diagnostic"}
+    return policy in {"ALFWorld expert-plan diagnostic", "ALFWorld planner diagnostic", "Frozen LLM shortlist + Planner diagnostic"}
 
 
 def _default_alfworld_textworld_config(*, training_method: str = "dqn") -> dict[str, Any]:
@@ -3116,6 +3344,131 @@ def _run_episode(
     )
 
 
+def _run_llm_shortlist_episode(
+    env: Any,
+    *,
+    policy: str,
+    ranker: GenericHarnessRanker | GenericHarnessMLPRanker,
+    shortlister: AlfworldLLMShortlistCache,
+    seed: int,
+    episode: int,
+    max_steps: int,
+    step_trace_rows: list[dict[str, object]] | None = None,
+) -> AlfworldEpisodeResult:
+    rng = random.Random(seed)
+    start = time.perf_counter()
+    obs, info = env.reset()
+    observation = _first(obs)
+    objective = _objective_from_info(info, observation)
+    gamefile = _gamefile_from_info(info)
+    history: list[str] = [f"obs:{observation}"]
+    prefix: list[str] = []
+    walkthrough_cache: dict[str, list[str]] = {}
+    final_score = 0.0
+    invalid_actions = 0
+    admissible_counts = []
+    opportunities = 0
+    steps = 0
+    done = False
+    token_total = 0
+    call_total = 0
+    for step in range(max_steps):
+        admissible = _contract_filtered_admissible_commands(
+            _admissible_from_info(info),
+            observation=observation,
+            objective=objective,
+            history=history,
+            max_steps=max_steps,
+        )
+        if not admissible:
+            break
+        admissible_counts.append(len(admissible))
+        opportunities += 1 if len(admissible) >= 2 else 0
+        diagnostic = _alfworld_diagnostic_action_with_source(
+            info,
+            gamefile=gamefile,
+            prefix=prefix,
+            admissible=admissible,
+            walkthrough_cache=walkthrough_cache,
+        )
+        shortlist_record = shortlister.shortlist(
+            objective=objective,
+            observation=observation,
+            history=history,
+            admissible=admissible,
+        )
+        token_total += int(shortlist_record.get("input_tokens", 0)) + int(shortlist_record.get("output_tokens", 0))
+        call_total += 1
+        command, selection = _select_llm_shortlist_command(
+            policy=policy,
+            observation=observation,
+            objective=objective,
+            history=history,
+            admissible=admissible,
+            shortlist_indices=list(shortlist_record.get("ranked_indices", [])),
+            ranker=ranker,
+            rng=rng,
+            max_steps=max_steps,
+            diagnostic_action=str(diagnostic.get("command", "")),
+        )
+        selection = dict(selection)
+        selection["diagnostic_command"] = str(diagnostic.get("command", ""))
+        selection["diagnostic_source"] = str(diagnostic.get("source", "none"))
+        selection["matches_diagnostic"] = 1 if selection["diagnostic_command"] and command == selection["diagnostic_command"] else 0
+        selection["llm_shortlist"] = " | ".join(admissible[idx] for idx in list(shortlist_record.get("ranked_indices", []))[: shortlister.k] if 0 <= idx < len(admissible))
+        selection["llm_cache_hit"] = 1 if shortlist_record.get("cache_hit") else 0
+        selection["llm_input_tokens"] = int(shortlist_record.get("input_tokens", 0))
+        selection["llm_output_tokens"] = int(shortlist_record.get("output_tokens", 0))
+        if command not in admissible:
+            invalid_actions += 1
+        next_obs, scores, dones, info = env.step([command])
+        final_score = float(_first(scores, 0.0))
+        done = bool(_first(dones, False))
+        if step_trace_rows is not None:
+            row = _step_trace_row(
+                policy=policy,
+                episode=episode,
+                step=step,
+                command=command,
+                selection=selection,
+                observation=observation,
+                objective=objective,
+                history=history,
+                admissible=admissible,
+                max_steps=max_steps,
+                success_after_step=1 if done and final_score > 0 else 0,
+            )
+            row.update(
+                {
+                    "llm_shortlist": selection["llm_shortlist"],
+                    "llm_cache_hit": selection["llm_cache_hit"],
+                    "llm_input_tokens": selection["llm_input_tokens"],
+                    "llm_output_tokens": selection["llm_output_tokens"],
+                }
+            )
+            step_trace_rows.append(row)
+        observation = str(_first(next_obs, ""))
+        gamefile = _gamefile_from_info(info) or gamefile
+        prefix.append(command)
+        history.extend([f"act:{command}", f"obs:{observation}"])
+        steps = step + 1
+        if done:
+            break
+    return AlfworldEpisodeResult(
+        policy=policy,
+        episode=episode,
+        success=1 if done and final_score > 0 else 0,
+        final_score=final_score,
+        steps=steps,
+        mean_admissible_count=0.0 if not admissible_counts else sum(admissible_counts) / len(admissible_counts),
+        opportunity_rate=0.0 if not admissible_counts else opportunities / len(admissible_counts),
+        invalid_actions=invalid_actions,
+        wall_clock_seconds=time.perf_counter() - start,
+        tokens=token_total,
+        llm_calls=call_total,
+    )
+
+
 def _select_command(
     policy: str,
     observation: str,
@@ -3202,6 +3555,99 @@ def _select_command_with_trace(
             "candidate_score_summary": _candidate_score_summary(scored),
         }
     raise ValueError(f"unknown ALFWorld policy: {policy}")
+
+
+def _select_llm_shortlist_command(
+    *,
+    policy: str,
+    observation: str,
+    objective: str,
+    history: Sequence[str],
+    admissible: Sequence[str],
+    shortlist_indices: Sequence[int],
+    ranker: GenericHarnessRanker | GenericHarnessMLPRanker,
+    rng: random.Random,
+    max_steps: int,
+    diagnostic_action: str = "",
+) -> tuple[str, dict[str, object]]:
+    clean_indices: list[int] = []
+    seen: set[int] = set()
+    for item in shortlist_indices:
+        try:
+            idx = int(item)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= idx < len(admissible) and idx not in seen:
+            clean_indices.append(idx)
+            seen.add(idx)
+    shortlist = [admissible[idx] for idx in clean_indices]
+    if not shortlist:
+        shortlist = list(admissible)
+    if policy == "Frozen LLM top-1":
+        return shortlist[0], {
+            "score": "",
+            "second_best_score": "",
+            "score_margin": "",
+            "expert_available": 0,
+            "top_ranked_commands": " | ".join(shortlist[:5]),
+            "candidate_score_summary": "",
+        }
+    if policy == "Frozen LLM shortlist + Random":
+        command = rng.choice(shortlist)
+        return command, {
+            "score": "",
+            "second_best_score": "",
+            "score_margin": "",
+            "expert_available": 0,
+            "top_ranked_commands": " | ".join(shortlist[:5]),
+            "candidate_score_summary": "",
+        }
+    if policy == "Frozen LLM shortlist + Planner diagnostic":
+        if diagnostic_action in shortlist:
+            command = diagnostic_action
+        else:
+            command = shortlist[0]
+        return command, {
+            "score": "",
+            "second_best_score": "",
+            "score_margin": "",
+            "expert_available": 1 if diagnostic_action in shortlist else 0,
+            "top_ranked_commands": " | ".join(shortlist[:5]),
+            "candidate_score_summary": "",
+        }
+    if policy == "Frozen LLM shortlist + Dense-ranker":
+        scored = []
+        for idx, command in enumerate(shortlist):
+            candidate = alfworld_candidate_to_canonical(
+                candidate_id=f"alfworld-llm-shortlist:{len(history)}:{idx}",
+                observation=observation,
+                objective=objective,
+                history=history,
+                admissible_commands=admissible,
+                command=command,
+                max_steps=max_steps,
+            )
+            scored.append((ranker.score(candidate.feature_vector()), -idx, command))
+        scored.sort(reverse=True)
+        scored = _prefer_non_stagnating_selection(
+            scored=scored,
+            observation=observation,
+            objective=objective,
+            history=history,
+            admissible=shortlist,
+            max_steps=max_steps,
+        )
+        score = scored[0][0]
+        second = scored[1][0] if len(scored) >= 2 else ""
+        return scored[0][2], {
+            "score": score,
+            "second_best_score": second,
+            "score_margin": "" if second == "" else score - float(second),
+            "expert_available": 0,
+            "top_ranked_commands": _ranked_command_summary(scored),
+            "candidate_score_summary": _candidate_score_summary(scored),
+        }
+    raise ValueError(f"unknown ALFWorld LLM-shortlist policy: {policy}")
 
 
 def _prefer_non_stagnating_selection(
@@ -3973,6 +4419,24 @@ def _first(value: Any, default: Any = None) -> Any:
     return value
 
 
+def _clean_ranked_indices(indices: object, candidate_count: int) -> list[int]:
+    fallback = list(range(candidate_count))
+    if not isinstance(indices, Sequence) or isinstance(indices, (str, bytes, bytearray)):
+        return fallback
+    clean: list[int] = []
+    seen: set[int] = set()
+    for item in indices:
+        try:
+            idx = int(item)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= idx < candidate_count and idx not in seen:
+            clean.append(idx)
+            seen.add(idx)
+    clean.extend(idx for idx in fallback if idx not in seen)
+    return clean
+
+
 def _aggregate_policy(policy: str, rows: Sequence[AlfworldEpisodeResult]) -> dict[str, object]:
     total = len(rows)
     return {
@@ -3985,8 +4449,8 @@ def _aggregate_policy(policy: str, rows: Sequence[AlfworldEpisodeResult]) -> dic
         "invalid_actions": 0 if total == 0 else sum(row.invalid_actions for row in rows),
         "wall_clock_seconds": 0.0 if total == 0 else sum(row.wall_clock_seconds for row in rows),
         "episodes": total,
-        "tokens": 0,
-        "llm_calls": 0,
+        "tokens": 0 if total == 0 else sum(row.tokens for row in rows),
+        "llm_calls": 0 if total == 0 else sum(row.llm_calls for row in rows),
     }
 
 

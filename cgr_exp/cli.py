@@ -6,11 +6,14 @@ from pathlib import Path
 from dataclasses import replace
 
 from cgr_exp.alfworld_transfer import (
+    ScriptedAlfworldShortlistClient,
     audit_alfworld_dense_labels,
     run_alfworld_dense_train,
     run_alfworld_dense_transfer,
     run_alfworld_expert_train,
     run_alfworld_expert_transfer,
+    run_alfworld_llm_shortlist_transfer,
+    run_alfworld_llm_shortlist_transfer_from_env,
     run_alfworld_transfer,
 )
 from cgr_exp.analysis.statistics import write_seed_aggregate
@@ -127,6 +130,7 @@ COMMANDS = [
     "run-alfworld-transfer",
     "run-alfworld-dense-train",
     "run-alfworld-dense-transfer",
+    "run-alfworld-llm-shortlist-transfer",
     "run-alfworld-expert-train",
     "run-alfworld-expert-transfer",
 ]
@@ -377,6 +381,22 @@ def main() -> None:
             p.add_argument("--warmup-random-steps", type=int, default=5)
             p.add_argument("--ranker-checkpoint", type=Path, default=None)
             p.add_argument("--policies", default="Random,Hand heuristic,ALFWorld dense-ranker")
+        if name == "run-alfworld-llm-shortlist-transfer":
+            p.add_argument("--eval-split", default="eval_in_distribution")
+            p.add_argument("--config-path", type=Path, default=None)
+            p.add_argument("--ranker-checkpoint", type=Path, required=True)
+            p.add_argument("--episodes", type=int, default=20)
+            p.add_argument("--max-steps", type=int, default=50)
+            p.add_argument("--shortlist-k", type=int, default=4)
+            p.add_argument("--model", default=None)
+            p.add_argument("--timeout", type=float, default=120.0)
+            p.add_argument("--temperature", type=float, default=0.0)
+            p.add_argument("--top-p", type=float, default=1.0)
+            p.add_argument(
+                "--policies",
+                default="Frozen LLM top-1,Frozen LLM shortlist + Random,Frozen LLM shortlist + Dense-ranker,Frozen LLM shortlist + Planner diagnostic",
+            )
+            p.add_argument("--mock", action="store_true", default=False)
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -2141,6 +2161,64 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'alfworld_dense_transfer_table.csv'}")
+            return
+        if args.command == "run-alfworld-llm-shortlist-transfer":
+            policies = tuple(item.strip() for item in args.policies.split(",") if item.strip())
+            if args.mock:
+                manifest = run_alfworld_llm_shortlist_transfer(
+                    args.output_dir,
+                    client=ScriptedAlfworldShortlistClient(input_tokens=10, output_tokens=2),
+                    model=args.model or "mock-alfworld-shortlist",
+                    seed=args.seed,
+                    eval_split=args.eval_split,
+                    config_path=args.config_path,
+                    ranker_checkpoint=args.ranker_checkpoint,
+                    episodes=args.episodes,
+                    max_steps=args.max_steps,
+                    shortlist_k=args.shortlist_k,
+                    temperature=args.temperature,
+                    top_p=args.top_p,
+                    policies=policies,
+                )
+            else:
+                manifest = run_alfworld_llm_shortlist_transfer_from_env(
+                    args.output_dir,
+                    model=args.model,
+                    timeout=args.timeout,
+                    seed=args.seed,
+                    eval_split=args.eval_split,
+                    config_path=args.config_path,
+                    ranker_checkpoint=args.ranker_checkpoint,
+                    episodes=args.episodes,
+                    max_steps=args.max_steps,
+                    shortlist_k=args.shortlist_k,
+                    temperature=args.temperature,
+                    top_p=args.top_p,
+                    policies=policies,
+                )
+            command_manifest = {
+                "command": args.command,
+                "seed": args.seed,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "benchmark": manifest["benchmark"],
+                "eval_split": manifest["eval_split"],
+                "episodes": manifest["episodes"],
+                "model": manifest["model"],
+                "shortlist_k": manifest["shortlist_k"],
+                "ranker_checkpoint": manifest["ranker_checkpoint"],
+                "llm_semantic_shortlist_used": manifest["llm_semantic_shortlist_used"],
+                "llm_calls_are_one_per_state": manifest["llm_calls_are_one_per_state"],
+                "llm_rollout_trajectories_used_for_training": manifest["llm_rollout_trajectories_used_for_training"],
+                "target_eval_trajectories_used_for_training": manifest["target_eval_trajectories_used_for_training"],
+                "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
+                "actual_unique_llm_calls": manifest["actual_unique_llm_calls"],
+                "actual_unique_llm_tokens": manifest["actual_unique_llm_tokens"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'alfworld_llm_shortlist_table.csv'}")
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

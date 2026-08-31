@@ -288,6 +288,64 @@ class OpenAICompatibleHTTPClient:
             "raw_output": content,
         }
 
+    def rank_alfworld_actions(self, *args, **kwargs):
+        objective = str(kwargs.get("objective", ""))
+        observation = str(kwargs.get("observation", ""))
+        history = list(kwargs.get("history", []))
+        admissible = [str(item) for item in kwargs.get("admissible", [])]
+        k = int(kwargs.get("k", 4))
+        model = kwargs.get("model") or self.model
+        temperature = float(kwargs.get("temperature", 0.0))
+        top_p = float(kwargs.get("top_p", 1.0))
+        started = time.perf_counter()
+        prompt = json.dumps(
+            {
+                "task": "alfworld_admissible_action_shortlist",
+                "instruction": (
+                    "Choose the most promising next actions for completing the ALFWorld task. "
+                    "Return JSON with ranked_indices, using zero-based indices from admissible_actions. "
+                    "Return each selected index at most once. Do not invent actions."
+                ),
+                "response_schema": {"ranked_indices": ["integer index from admissible_actions, best first"]},
+                "objective": objective,
+                "observation": observation,
+                "recent_history": history[-12:],
+                "k": k,
+                "admissible_actions": [{"index": idx, "command": command} for idx, command in enumerate(admissible)],
+            },
+            sort_keys=True,
+        )
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "Rank ALFWorld admissible actions. Return only JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": temperature,
+            "top_p": top_p,
+            "response_format": {"type": "json_object"},
+        }
+        req = request.Request(
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(payload, sort_keys=True).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        body = self._post_json(req)
+        content = body["choices"][0]["message"]["content"]
+        usage = body.get("usage", {})
+        ranked_indices = _parse_ranked_indices(content, len(admissible))
+        return {
+            "ranked_indices": ranked_indices[: max(1, k)],
+            "input_tokens": int(usage.get("prompt_tokens", 0)),
+            "output_tokens": int(usage.get("completion_tokens", 0)),
+            "latency": time.perf_counter() - started,
+            "raw_output": content,
+        }
+
     def _prompt_for_state_score(self, task, node) -> str:
         if isinstance(task, SchedulingTask) and hasattr(node, "structured_state"):
             scheduled = tuple(node.structured_state.get("scheduled", []))
@@ -556,6 +614,31 @@ def _parse_frontier_scores(raw: str, nodes: Sequence[object]) -> list[float]:
         return fallback
     rank_map = {str(node_id): float(len(ranking) - idx) for idx, node_id in enumerate(ranking)}
     return [rank_map.get(node_id, 0.0) for node_id in node_ids]
+
+
+def _parse_ranked_indices(raw: str, candidate_count: int) -> list[int]:
+    fallback = list(range(candidate_count))
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return fallback
+    ranking = parsed.get("ranked_indices") if isinstance(parsed, dict) else parsed
+    if ranking is None and isinstance(parsed, dict):
+        ranking = parsed.get("ranking")
+    if not isinstance(ranking, list):
+        return fallback
+    clean: list[int] = []
+    seen: set[int] = set()
+    for item in ranking:
+        try:
+            idx = int(item)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= idx < candidate_count and idx not in seen:
+            clean.append(idx)
+            seen.add(idx)
+    clean.extend(idx for idx in fallback if idx not in seen)
+    return clean
 
 
 class RealLLMProposerAdapter:

@@ -895,7 +895,9 @@ def summarize_alfworld_final_pipeline(
         dense_train_manifest=dense_train_manifest,
         audit_summary=audit_summary,
         dense_eval_rows=dense_eval_rows,
+        dense_eval_manifest=dense_eval_manifest,
         llm_rows=llm_rows,
+        llm_manifest=llm_manifest,
         llm_requested=llm_shortlist_dir is not None or llm_diagnosis_dir is not None,
         llm_diagnosis_manifest=llm_diagnosis_manifest,
     )
@@ -5342,7 +5344,9 @@ def _alfworld_final_readiness_rows(
     dense_train_manifest: Mapping[str, object],
     audit_summary: Mapping[str, object],
     dense_eval_rows: Sequence[Mapping[str, object]],
+    dense_eval_manifest: Mapping[str, object],
     llm_rows: Sequence[Mapping[str, object]],
+    llm_manifest: Mapping[str, object],
     llm_requested: bool,
     llm_diagnosis_manifest: Mapping[str, object],
 ) -> list[dict[str, object]]:
@@ -5382,6 +5386,7 @@ def _alfworld_final_readiness_rows(
     random_row = _find_policy_row(dense_eval_rows, "Random")
     dense_row = _find_policy_row(dense_eval_rows, "dense-ranker")
     planner_row = _find_policy_row(dense_eval_rows, "planner diagnostic")
+    symbolic_episodes = _coerce_float(dense_row.get("episodes"), _coerce_float(dense_eval_manifest.get("eval_episodes"), 0.0))
     dense_success = _coerce_float(dense_row.get("success"), 0.0)
     random_success = _coerce_float(random_row.get("success"), 0.0)
     planner_success = _coerce_float(planner_row.get("success"), 0.0)
@@ -5394,6 +5399,17 @@ def _alfworld_final_readiness_rows(
             "value": f"{dense_success - random_success:.4f}/{planner_success:.4f}" if dense_row else "",
             "threshold": "dense > random before spending LLM budget",
             "next_action": "run or scale LLM shortlist" if symbolic_status == "pass" else "improve dense labels/features before real LLM run",
+        }
+    )
+    symbolic_sample_status = "pass" if symbolic_episodes >= 20 else "warn" if symbolic_episodes > 0 else "fail"
+    rows.append(
+        {
+            "gate": "symbolic_sample_size",
+            "status": symbolic_sample_status,
+            "metric": "symbolic_eval_episodes",
+            "value": f"{symbolic_episodes:.0f}" if symbolic_episodes else "",
+            "threshold": ">=20 for pilot interpretation",
+            "next_action": "interpret symbolic pilot" if symbolic_sample_status == "pass" else "treat symbolic result as smoke only; run at least 20 eval episodes",
         }
     )
 
@@ -5412,6 +5428,7 @@ def _alfworld_final_readiness_rows(
 
     llm_complete = bool(llm_rows) and _coerce_bool(llm_diagnosis_manifest.get("source_progress_complete", True))
     llm_dense = _find_policy_row(llm_rows, "Dense-ranker")
+    llm_episodes = _coerce_float(llm_dense.get("episodes"), _coerce_float(llm_manifest.get("episodes"), 0.0))
     recall = _coerce_float(llm_dense.get("proposal_recall_at_k"), 0.0)
     parse_fallback = _coerce_float(llm_dense.get("llm_parse_fallback_rate"), 0.0)
     semantic_status = "pass" if llm_complete and recall >= 0.50 and parse_fallback <= 0.05 else "warn" if llm_complete else "fail"
@@ -5425,12 +5442,28 @@ def _alfworld_final_readiness_rows(
             "next_action": "analyze controller rerank" if semantic_status == "pass" else "fix LLM shortlist prompt/parser before blaming controller",
         }
     )
+    llm_sample_status = "pass" if llm_episodes >= 20 else "warn" if llm_episodes > 0 else "fail"
+    rows.append(
+        {
+            "gate": "llm_sample_size",
+            "status": llm_sample_status,
+            "metric": "llm_eval_episodes",
+            "value": f"{llm_episodes:.0f}" if llm_episodes else "",
+            "threshold": ">=20 for pilot interpretation",
+            "next_action": "interpret LLM pilot" if llm_sample_status == "pass" else "treat LLM result as smoke only; run at least 20 episodes",
+        }
+    )
 
     top1_row = _find_policy_row(llm_rows, "top-1")
     dense_llm_success = _coerce_float(llm_dense.get("success"), 0.0)
     top1_success = _coerce_float(top1_row.get("success"), 0.0)
     missed = _coerce_float(llm_dense.get("missed_diagnostic_in_shortlist_rate"), 0.0)
-    rerank_status = "pass" if llm_dense and dense_llm_success >= top1_success and missed <= 0.40 else "warn" if llm_dense else "fail"
+    if semantic_status != "pass":
+        rerank_status = "blocked"
+        rerank_next_action = "resolve LLM semantic shortlist gate before judging controller rerank"
+    else:
+        rerank_status = "pass" if llm_dense and dense_llm_success >= top1_success and missed <= 0.40 else "warn" if llm_dense else "fail"
+        rerank_next_action = "scale ALFWorld LLM pilot" if rerank_status == "pass" else "inspect episode matrix and retrain/fix controller objective"
     rows.append(
         {
             "gate": "controller_given_shortlist",
@@ -5438,7 +5471,7 @@ def _alfworld_final_readiness_rows(
             "metric": "dense_success-top1_success/missed_diagnostic_inside_shortlist",
             "value": f"{dense_llm_success - top1_success:.4f}/{missed:.4f}" if llm_dense else "",
             "threshold": "dense>=top1, missed<=0.40",
-            "next_action": "scale ALFWorld LLM pilot" if rerank_status == "pass" else "inspect episode matrix and retrain/fix controller objective",
+            "next_action": rerank_next_action,
         }
     )
     return rows

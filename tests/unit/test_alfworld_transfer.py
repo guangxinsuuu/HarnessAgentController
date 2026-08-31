@@ -1840,9 +1840,22 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(rows[3]["best_policy"], "Frozen LLM shortlist + Dense-ranker")
             with (out / "alfworld_final_pipeline_readiness.csv").open() as handle:
                 readiness = list(csv.DictReader(handle))
-            self.assertEqual([row["gate"] for row in readiness], ["training_protocol", "dense_label_quality", "symbolic_controller_signal", "llm_semantic_shortlist", "controller_given_shortlist"])
+            self.assertEqual(
+                [row["gate"] for row in readiness],
+                [
+                    "training_protocol",
+                    "dense_label_quality",
+                    "symbolic_controller_signal",
+                    "symbolic_sample_size",
+                    "llm_semantic_shortlist",
+                    "llm_sample_size",
+                    "controller_given_shortlist",
+                ],
+            )
             self.assertEqual(readiness[0]["status"], "pass")
             self.assertEqual(readiness[1]["status"], "pass")
+            self.assertEqual(readiness[3]["status"], "warn")
+            self.assertEqual(readiness[5]["status"], "warn")
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]

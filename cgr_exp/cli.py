@@ -397,6 +397,7 @@ def main() -> None:
                 "--policies",
                 default="Frozen LLM top-1,Frozen LLM shortlist + Random,Frozen LLM shortlist + Dense-ranker,Frozen LLM shortlist + Planner diagnostic",
             )
+            p.add_argument("--resume", action="store_true", default=False)
             p.add_argument("--mock", action="store_true", default=False)
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
@@ -2180,6 +2181,7 @@ def main() -> None:
                     temperature=args.temperature,
                     top_p=args.top_p,
                     shortlist_cache_path=args.shortlist_cache_path,
+                    resume=args.resume,
                     policies=policies,
                 )
             else:
@@ -2197,6 +2199,7 @@ def main() -> None:
                     temperature=args.temperature,
                     top_p=args.top_p,
                     shortlist_cache_path=args.shortlist_cache_path,
+                    resume=args.resume,
                     policies=policies,
                 )
             command_manifest = {
@@ -2221,6 +2224,8 @@ def main() -> None:
                 "new_llm_calls": manifest["new_llm_calls"],
                 "shortlist_cache_path": manifest["shortlist_cache_path"],
                 "shortlist_cache_loaded": manifest["shortlist_cache_loaded"],
+                "resume": manifest["resume"],
+                "resumed_policy_episodes": manifest["resumed_policy_episodes"],
                 "progress_path": manifest["progress_path"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }

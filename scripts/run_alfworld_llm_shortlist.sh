@@ -18,6 +18,8 @@ OUT_DIR="${OUT_DIR:-runs/alfworld_llm_shortlist_${EPISODES}_seed${SEED}}"
 SHORTLIST_CACHE_PATH="${SHORTLIST_CACHE_PATH:-${OUT_DIR}/alfworld_llm_shortlist_cache.jsonl}"
 POLICIES="${POLICIES:-Frozen LLM top-1,Frozen LLM shortlist + Random,Frozen LLM shortlist + Dense-ranker,Frozen LLM shortlist + Planner diagnostic}"
 MOCK="${MOCK:-0}"
+RESUME="${RESUME:-0}"
+OVERWRITE="${OVERWRITE:-1}"
 
 export ALFWORLD_DATA
 export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
@@ -25,6 +27,11 @@ export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 args=()
 if [[ "${MOCK}" == "1" ]]; then
   args+=("--mock")
+fi
+if [[ "${RESUME}" == "1" ]]; then
+  args+=("--resume")
+elif [[ "${OVERWRITE}" == "1" ]]; then
+  args+=("--overwrite")
 fi
 
 "${PYTHON_BIN}" -m cgr_exp.cli run-alfworld-llm-shortlist-transfer \
@@ -41,5 +48,4 @@ fi
   --top-p "${TOP_P}" \
   --shortlist-cache-path "${SHORTLIST_CACHE_PATH}" \
   --policies "${POLICIES}" \
-  "${args[@]}" \
-  --overwrite
+  "${args[@]}"

@@ -1605,6 +1605,47 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertGreater(int(rows[0]["cache_hits"]), 0)
             self.assertIn("mean_llm_explicit_ranked_count", rows[0])
 
+    def test_run_alfworld_llm_shortlist_transfer_resumes_completed_policy_episodes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            checkpoint.write_text(GenericHarnessRanker([0.0 for _name in canonical_feature_names()]).to_json(), encoding="utf-8")
+            out = Path(tmp) / "llm-shortlist"
+            cache_path = out / "shortlist-cache.jsonl"
+            first = run_alfworld_llm_shortlist_transfer(
+                out,
+                client=ScriptedAlfworldShortlistClient(input_tokens=11, output_tokens=3),
+                model="mock-shortlist",
+                ranker_checkpoint=checkpoint,
+                episodes=1,
+                max_steps=3,
+                shortlist_k=2,
+                shortlist_cache_path=cache_path,
+                policies=("Frozen LLM top-1",),
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            self.assertEqual(first["resumed_policy_episodes"], 0)
+
+            second = run_alfworld_llm_shortlist_transfer(
+                out,
+                client=ScriptedAlfworldShortlistClient(input_tokens=11, output_tokens=3),
+                model="mock-shortlist",
+                ranker_checkpoint=checkpoint,
+                episodes=1,
+                max_steps=3,
+                shortlist_k=2,
+                shortlist_cache_path=cache_path,
+                resume=True,
+                policies=("Frozen LLM top-1", "Frozen LLM shortlist + Random"),
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            self.assertTrue(second["resume"])
+            self.assertEqual(second["resumed_policy_episodes"], 1)
+            with (out / "alfworld_llm_shortlist_per_episode.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(sum(1 for row in rows if row["policy"] == "Frozen LLM top-1"), 1)
+            self.assertEqual(sum(1 for row in rows if row["policy"] == "Frozen LLM shortlist + Random"), 1)
+
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]
         weights[canonical_feature_names().index("action_is_write")] = 10.0

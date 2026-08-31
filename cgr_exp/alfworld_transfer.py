@@ -526,6 +526,7 @@ def run_alfworld_llm_shortlist_transfer_from_env(
     temperature: float = 0.0,
     top_p: float = 1.0,
     shortlist_cache_path: Path | None = None,
+    resume: bool = False,
     policies: Sequence[str] = (
         "Frozen LLM top-1",
         "Frozen LLM shortlist + Random",
@@ -551,6 +552,7 @@ def run_alfworld_llm_shortlist_transfer_from_env(
         temperature=temperature,
         top_p=top_p,
         shortlist_cache_path=shortlist_cache_path,
+        resume=resume,
         policies=policies,
     )
 
@@ -570,6 +572,7 @@ def run_alfworld_llm_shortlist_transfer(
     temperature: float = 0.0,
     top_p: float = 1.0,
     shortlist_cache_path: Path | None = None,
+    resume: bool = False,
     policies: Sequence[str] = (
         "Frozen LLM top-1",
         "Frozen LLM shortlist + Random",
@@ -596,10 +599,16 @@ def run_alfworld_llm_shortlist_transfer(
         top_p=top_p,
         cache_path=shortlist_cache_path,
     )
-    all_results: list[AlfworldEpisodeResult] = []
-    step_trace_rows: list[dict[str, object]] = []
+    all_results, step_trace_rows = _load_alfworld_llm_shortlist_resume_state(
+        out_dir,
+        policies=policies,
+        episodes=episodes,
+        resume=resume,
+    )
+    completed_keys = {(row.policy, row.episode) for row in all_results}
     total_policy_episodes = len(policies) * episodes
-    completed_policy_episodes = 0
+    completed_policy_episodes = len(completed_keys)
+    resumed_policy_episodes = completed_policy_episodes
     _write_alfworld_llm_shortlist_progress(
         progress_path,
         status="running",
@@ -611,13 +620,16 @@ def run_alfworld_llm_shortlist_transfer(
         shortlist_cache_path=shortlist_cache_path,
     )
     for policy in policies:
+        episodes_to_run = [episode for episode in range(episodes) if (policy, episode) not in completed_keys]
+        if not episodes_to_run:
+            continue
         env = _make_alfworld_env(
             split=eval_split,
             config_path=config_path,
             env_factory=env_factory,
             training_method=_alfworld_env_method_for_policy(policy),
         )
-        for episode in range(episodes):
+        for episode in episodes_to_run:
             result = _run_llm_shortlist_episode(
                 env,
                 policy=policy,
@@ -629,6 +641,7 @@ def run_alfworld_llm_shortlist_transfer(
                 step_trace_rows=step_trace_rows,
             )
             all_results.append(result)
+            completed_keys.add((policy, episode))
             completed_policy_episodes += 1
             _write_alfworld_llm_shortlist_partial_outputs(out_dir, policies, all_results, step_trace_rows)
             _write_alfworld_llm_shortlist_progress(
@@ -680,6 +693,8 @@ def run_alfworld_llm_shortlist_transfer(
         "new_llm_calls": shortlister.new_calls,
         "shortlist_cache_path": str(shortlist_cache_path),
         "shortlist_cache_loaded": shortlist_cache_loaded,
+        "resume": resume,
+        "resumed_policy_episodes": resumed_policy_episodes if resume else 0,
         "progress_path": str(progress_path),
         "contract": canonical_contract_manifest(),
         "rows": rows,
@@ -4761,13 +4776,81 @@ def _write_alfworld_llm_shortlist_partial_outputs(
     _write_csv(out_dir / "alfworld_llm_shortlist_partial_step_trace.csv", step_trace_rows)
 
 
+def _load_alfworld_llm_shortlist_resume_state(
+    out_dir: Path,
+    *,
+    policies: Sequence[str],
+    episodes: int,
+    resume: bool,
+) -> tuple[list[AlfworldEpisodeResult], list[dict[str, object]]]:
+    if not resume:
+        return [], []
+    policy_set = set(policies)
+    per_episode_path = out_dir / "alfworld_llm_shortlist_partial_per_episode.csv"
+    step_trace_path = out_dir / "alfworld_llm_shortlist_partial_step_trace.csv"
+    if not per_episode_path.exists():
+        per_episode_path = out_dir / "alfworld_llm_shortlist_per_episode.csv"
+        step_trace_path = out_dir / "alfworld_llm_shortlist_step_trace.csv"
+    results_by_key: dict[tuple[str, int], AlfworldEpisodeResult] = {}
+    for row in _read_csv_rows(per_episode_path):
+        policy = str(row.get("policy", ""))
+        episode = _coerce_int(row.get("episode"), -1)
+        if policy not in policy_set or not (0 <= episode < episodes):
+            continue
+        results_by_key[(policy, episode)] = AlfworldEpisodeResult(
+            policy=policy,
+            episode=episode,
+            success=_coerce_int(row.get("success"), 0),
+            final_score=_coerce_float(row.get("final_score"), 0.0),
+            steps=_coerce_int(row.get("steps"), 0),
+            mean_admissible_count=_coerce_float(row.get("mean_admissible_count"), 0.0),
+            opportunity_rate=_coerce_float(row.get("opportunity_rate"), 0.0),
+            invalid_actions=_coerce_int(row.get("invalid_actions"), 0),
+            wall_clock_seconds=_coerce_float(row.get("wall_clock_seconds"), 0.0),
+            tokens=_coerce_int(row.get("tokens"), 0),
+            llm_calls=_coerce_int(row.get("llm_calls"), 0),
+            new_tokens=_coerce_int(row.get("new_tokens"), 0),
+            new_llm_calls=_coerce_int(row.get("new_llm_calls"), 0),
+            cache_hits=_coerce_int(row.get("cache_hits"), 0),
+        )
+    completed_keys = set(results_by_key)
+    trace_rows = []
+    for row in _read_csv_rows(step_trace_path):
+        policy = str(row.get("policy", ""))
+        episode = _coerce_int(row.get("episode"), -1)
+        if (policy, episode) in completed_keys:
+            trace_rows.append(row)
+    return list(results_by_key.values()), trace_rows
+
+
+def _coerce_int(value: object, default: int = 0) -> int:
+    try:
+        return int(float(value))  # CSV values may be written as "1.0".
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _write_csv(path: Path, rows: Iterable[Mapping[str, object]]) -> None:
     rows = list(rows)
     if not rows:
         path.write_text("", encoding="utf-8")
         return
+    fieldnames: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for field in row:
+            if field not in seen:
+                fieldnames.append(field)
+                seen.add(field)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
 

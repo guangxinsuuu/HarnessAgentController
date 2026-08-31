@@ -3397,6 +3397,12 @@ def _run_llm_shortlist_episode(
             history=history,
             admissible=admissible,
         )
+        shortlist_indices = list(shortlist_record.get("ranked_indices", []))
+        shortlist_commands = [
+            admissible[idx]
+            for idx in shortlist_indices[: shortlister.k]
+            if isinstance(idx, int) and 0 <= idx < len(admissible)
+        ]
         token_total += int(shortlist_record.get("input_tokens", 0)) + int(shortlist_record.get("output_tokens", 0))
         call_total += 1
         command, selection = _select_llm_shortlist_command(
@@ -3405,7 +3411,7 @@ def _run_llm_shortlist_episode(
             objective=objective,
             history=history,
             admissible=admissible,
-            shortlist_indices=list(shortlist_record.get("ranked_indices", [])),
+            shortlist_indices=shortlist_indices,
             ranker=ranker,
             rng=rng,
             max_steps=max_steps,
@@ -3415,7 +3421,9 @@ def _run_llm_shortlist_episode(
         selection["diagnostic_command"] = str(diagnostic.get("command", ""))
         selection["diagnostic_source"] = str(diagnostic.get("source", "none"))
         selection["matches_diagnostic"] = 1 if selection["diagnostic_command"] and command == selection["diagnostic_command"] else 0
-        selection["llm_shortlist"] = " | ".join(admissible[idx] for idx in list(shortlist_record.get("ranked_indices", []))[: shortlister.k] if 0 <= idx < len(admissible))
+        selection["diagnostic_in_shortlist"] = 1 if selection["diagnostic_command"] and selection["diagnostic_command"] in shortlist_commands else 0
+        selection["llm_shortlist"] = " | ".join(shortlist_commands)
+        selection["llm_shortlist_size"] = len(shortlist_commands)
         selection["llm_cache_hit"] = 1 if shortlist_record.get("cache_hit") else 0
         selection["llm_input_tokens"] = int(shortlist_record.get("input_tokens", 0))
         selection["llm_output_tokens"] = int(shortlist_record.get("output_tokens", 0))
@@ -3441,6 +3449,8 @@ def _run_llm_shortlist_episode(
             row.update(
                 {
                     "llm_shortlist": selection["llm_shortlist"],
+                    "llm_shortlist_size": selection["llm_shortlist_size"],
+                    "diagnostic_in_shortlist": selection["diagnostic_in_shortlist"],
                     "llm_cache_hit": selection["llm_cache_hit"],
                     "llm_input_tokens": selection["llm_input_tokens"],
                     "llm_output_tokens": selection["llm_output_tokens"],
@@ -4458,7 +4468,7 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
     by_policy: dict[str, dict[str, float]] = {}
     for row in step_trace_rows:
         policy = str(row.get("policy", ""))
-        stats = by_policy.setdefault(policy, {"steps": 0.0, "available": 0.0, "matched": 0.0})
+        stats = by_policy.setdefault(policy, {"steps": 0.0, "available": 0.0, "matched": 0.0, "in_shortlist": 0.0, "shortlist_size": 0.0})
         stats["steps"] += 1.0
         if str(row.get("diagnostic_command", "")).strip():
             stats["available"] += 1.0
@@ -4466,13 +4476,25 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
             matched = int(row.get("matches_diagnostic", 0))
         except (TypeError, ValueError):
             matched = 0
+        try:
+            in_shortlist = int(row.get("diagnostic_in_shortlist", 0))
+        except (TypeError, ValueError):
+            in_shortlist = 0
+        try:
+            shortlist_size = float(row.get("llm_shortlist_size", 0.0))
+        except (TypeError, ValueError):
+            shortlist_size = 0.0
         stats["matched"] += 1.0 if matched else 0.0
+        stats["in_shortlist"] += 1.0 if in_shortlist else 0.0
+        stats["shortlist_size"] += shortlist_size
     for row in rows:
-        stats = by_policy.get(str(row.get("policy", "")), {"steps": 0.0, "available": 0.0, "matched": 0.0})
+        stats = by_policy.get(str(row.get("policy", "")), {"steps": 0.0, "available": 0.0, "matched": 0.0, "in_shortlist": 0.0, "shortlist_size": 0.0})
         steps = stats["steps"]
         available = stats["available"]
         row["diagnostic_available_rate"] = 0.0 if steps == 0.0 else available / steps
         row["diagnostic_match_rate"] = 0.0 if available == 0.0 else stats["matched"] / available
+        row["proposal_recall_at_k"] = 0.0 if available == 0.0 else stats["in_shortlist"] / available
+        row["mean_llm_shortlist_size"] = 0.0 if steps == 0.0 else stats["shortlist_size"] / steps
     return rows
 
 

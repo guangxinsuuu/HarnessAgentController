@@ -1525,10 +1525,14 @@ class AlfworldTransferTest(unittest.TestCase):
             for row in rows:
                 self.assertGreater(int(row["llm_calls"]), 0)
                 self.assertGreater(int(row["tokens"]), 0)
+                self.assertIn("proposal_recall_at_k", row)
+                self.assertIn("mean_llm_shortlist_size", row)
             with (out / "alfworld_llm_shortlist_step_trace.csv").open() as handle:
                 trace_rows = list(csv.DictReader(handle))
             self.assertGreater(len(trace_rows), 0)
             self.assertIn("llm_shortlist", trace_rows[0])
+            self.assertIn("llm_shortlist_size", trace_rows[0])
+            self.assertIn("diagnostic_in_shortlist", trace_rows[0])
             self.assertIn("llm_input_tokens", trace_rows[0])
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass
 import csv
+import hashlib
 import importlib.util
 import json
 import multiprocessing as mp
@@ -129,14 +130,65 @@ class AlfworldGoalSpec:
 
 
 class AlfworldLLMShortlistCache:
-    def __init__(self, client: Any, *, model: str, k: int = 4, temperature: float = 0.0, top_p: float = 1.0):
+    def __init__(
+        self,
+        client: Any,
+        *,
+        model: str,
+        k: int = 4,
+        temperature: float = 0.0,
+        top_p: float = 1.0,
+        cache_path: Path | None = None,
+    ):
         self.client = client
         self.model = model
         self.k = k
         self.temperature = temperature
         self.top_p = top_p
+        self.cache_path = cache_path
         self.records: list[dict[str, object]] = []
         self._cache: dict[str, dict[str, object]] = {}
+        self._used_keys: set[str] = set()
+        if self.cache_path is not None and self.cache_path.exists():
+            self._load_disk_cache(self.cache_path)
+
+    def _load_disk_cache(self, path: Path) -> None:
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                key = str(row.get("cache_key", ""))
+                if not key:
+                    continue
+                ranked_indices = row.get("ranked_indices", [])
+                if not isinstance(ranked_indices, list):
+                    continue
+                self._cache[key] = {
+                    "ranked_indices": ranked_indices,
+                    "input_tokens": int(row.get("input_tokens", 0)),
+                    "output_tokens": int(row.get("output_tokens", 0)),
+                    "latency": float(row.get("latency", 0.0)),
+                    "raw_output": str(row.get("raw_output", "")),
+                    "cache_hit": False,
+                }
+
+    def _cache_key(self, payload: Mapping[str, object]) -> str:
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _append_disk_cache(self, key: str, row: Mapping[str, object]) -> None:
+        if self.cache_path is None:
+            return
+        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+        persisted = dict(row)
+        persisted["cache_key"] = key
+        with self.cache_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(persisted, sort_keys=True) + "\n")
 
     def shortlist(
         self,
@@ -146,19 +198,18 @@ class AlfworldLLMShortlistCache:
         history: Sequence[str],
         admissible: Sequence[str],
     ) -> dict[str, object]:
-        key = json.dumps(
-            {
-                "model": self.model,
-                "k": self.k,
-                "temperature": self.temperature,
-                "top_p": self.top_p,
-                "objective": objective,
-                "observation": observation,
-                "history": list(history),
-                "admissible": list(admissible),
-            },
-            sort_keys=True,
-        )
+        key_payload = {
+            "model": self.model,
+            "k": self.k,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "objective": objective,
+            "observation": observation,
+            "history": list(history),
+            "admissible": list(admissible),
+        }
+        key = self._cache_key(key_payload)
+        self._used_keys.add(key)
         if key in self._cache:
             cached = dict(self._cache[key])
             cached["cache_hit"] = True
@@ -185,14 +236,23 @@ class AlfworldLLMShortlistCache:
         }
         self._cache[key] = dict(row)
         self.records.append(row)
+        self._append_disk_cache(key, row)
         return row
 
     @property
     def tokens(self) -> int:
-        return sum(int(row.get("input_tokens", 0)) + int(row.get("output_tokens", 0)) for row in self.records)
+        return sum(
+            int(self._cache[key].get("input_tokens", 0)) + int(self._cache[key].get("output_tokens", 0))
+            for key in self._used_keys
+            if key in self._cache
+        )
 
     @property
     def calls(self) -> int:
+        return len([key for key in self._used_keys if key in self._cache])
+
+    @property
+    def new_calls(self) -> int:
         return len(self.records)
 
 
@@ -447,6 +507,7 @@ def run_alfworld_llm_shortlist_transfer_from_env(
     shortlist_k: int = 4,
     temperature: float = 0.0,
     top_p: float = 1.0,
+    shortlist_cache_path: Path | None = None,
     policies: Sequence[str] = (
         "Frozen LLM top-1",
         "Frozen LLM shortlist + Random",
@@ -471,6 +532,7 @@ def run_alfworld_llm_shortlist_transfer_from_env(
         shortlist_k=shortlist_k,
         temperature=temperature,
         top_p=top_p,
+        shortlist_cache_path=shortlist_cache_path,
         policies=policies,
     )
 
@@ -489,6 +551,7 @@ def run_alfworld_llm_shortlist_transfer(
     shortlist_k: int = 4,
     temperature: float = 0.0,
     top_p: float = 1.0,
+    shortlist_cache_path: Path | None = None,
     policies: Sequence[str] = (
         "Frozen LLM top-1",
         "Frozen LLM shortlist + Random",
@@ -503,7 +566,17 @@ def run_alfworld_llm_shortlist_transfer(
     if ranker_checkpoint is None:
         raise RuntimeError("run-alfworld-llm-shortlist-transfer requires a frozen ALFWorld dense ranker checkpoint")
     ranker = load_generic_harness_ranker(ranker_checkpoint.read_text(encoding="utf-8"))
-    shortlister = AlfworldLLMShortlistCache(client, model=model, k=shortlist_k, temperature=temperature, top_p=top_p)
+    if shortlist_cache_path is None:
+        shortlist_cache_path = out_dir / "alfworld_llm_shortlist_cache.jsonl"
+    shortlist_cache_loaded = shortlist_cache_path.exists()
+    shortlister = AlfworldLLMShortlistCache(
+        client,
+        model=model,
+        k=shortlist_k,
+        temperature=temperature,
+        top_p=top_p,
+        cache_path=shortlist_cache_path,
+    )
     all_results: list[AlfworldEpisodeResult] = []
     step_trace_rows: list[dict[str, object]] = []
     for policy in policies:
@@ -555,6 +628,9 @@ def run_alfworld_llm_shortlist_transfer(
         "controller_checkpoint_frozen_before_eval": True,
         "actual_unique_llm_calls": shortlister.calls,
         "actual_unique_llm_tokens": shortlister.tokens,
+        "new_llm_calls": shortlister.new_calls,
+        "shortlist_cache_path": str(shortlist_cache_path),
+        "shortlist_cache_loaded": shortlist_cache_loaded,
         "contract": canonical_contract_manifest(),
         "rows": rows,
     }

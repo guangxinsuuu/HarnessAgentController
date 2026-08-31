@@ -15,6 +15,7 @@ TEMPERATURE="${TEMPERATURE:-0.0}"
 TOP_P="${TOP_P:-1.0}"
 RANKER_CHECKPOINT="${RANKER_CHECKPOINT:-runs/alfworld_dense_v17_agg_train20_agg20_eval10_seed0_train/alfworld_dense_ranker.json}"
 OUT_DIR="${OUT_DIR:-runs/alfworld_llm_shortlist_${EPISODES}_seed${SEED}}"
+SHORTLIST_CACHE_PATH="${SHORTLIST_CACHE_PATH:-${OUT_DIR}/alfworld_llm_shortlist_cache.jsonl}"
 POLICIES="${POLICIES:-Frozen LLM top-1,Frozen LLM shortlist + Random,Frozen LLM shortlist + Dense-ranker,Frozen LLM shortlist + Planner diagnostic}"
 MOCK="${MOCK:-0}"
 
@@ -38,6 +39,7 @@ fi
   --timeout "${TIMEOUT}" \
   --temperature "${TEMPERATURE}" \
   --top-p "${TOP_P}" \
+  --shortlist-cache-path "${SHORTLIST_CACHE_PATH}" \
   --policies "${POLICIES}" \
   "${args[@]}" \
   --overwrite

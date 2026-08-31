@@ -392,6 +392,7 @@ def main() -> None:
             p.add_argument("--timeout", type=float, default=120.0)
             p.add_argument("--temperature", type=float, default=0.0)
             p.add_argument("--top-p", type=float, default=1.0)
+            p.add_argument("--shortlist-cache-path", type=Path, default=None)
             p.add_argument(
                 "--policies",
                 default="Frozen LLM top-1,Frozen LLM shortlist + Random,Frozen LLM shortlist + Dense-ranker,Frozen LLM shortlist + Planner diagnostic",
@@ -2178,6 +2179,7 @@ def main() -> None:
                     shortlist_k=args.shortlist_k,
                     temperature=args.temperature,
                     top_p=args.top_p,
+                    shortlist_cache_path=args.shortlist_cache_path,
                     policies=policies,
                 )
             else:
@@ -2194,6 +2196,7 @@ def main() -> None:
                     shortlist_k=args.shortlist_k,
                     temperature=args.temperature,
                     top_p=args.top_p,
+                    shortlist_cache_path=args.shortlist_cache_path,
                     policies=policies,
                 )
             command_manifest = {
@@ -2215,6 +2218,9 @@ def main() -> None:
                 "oracle_labels_in_inference_features": manifest["oracle_labels_in_inference_features"],
                 "actual_unique_llm_calls": manifest["actual_unique_llm_calls"],
                 "actual_unique_llm_tokens": manifest["actual_unique_llm_tokens"],
+                "new_llm_calls": manifest["new_llm_calls"],
+                "shortlist_cache_path": manifest["shortlist_cache_path"],
+                "shortlist_cache_loaded": manifest["shortlist_cache_loaded"],
                 "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")

@@ -1535,6 +1535,47 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("diagnostic_in_shortlist", trace_rows[0])
             self.assertIn("llm_input_tokens", trace_rows[0])
 
+    def test_run_alfworld_llm_shortlist_transfer_reuses_disk_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "ranker.json"
+            checkpoint.write_text(GenericHarnessRanker([0.0 for _name in canonical_feature_names()]).to_json(), encoding="utf-8")
+            out = Path(tmp) / "llm-shortlist"
+            cache_path = out / "shortlist-cache.jsonl"
+            first = run_alfworld_llm_shortlist_transfer(
+                out,
+                client=ScriptedAlfworldShortlistClient(input_tokens=11, output_tokens=3),
+                model="mock-shortlist",
+                ranker_checkpoint=checkpoint,
+                episodes=1,
+                max_steps=3,
+                shortlist_k=2,
+                shortlist_cache_path=cache_path,
+                policies=("Frozen LLM top-1",),
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            self.assertGreater(first["new_llm_calls"], 0)
+            self.assertTrue(cache_path.exists())
+
+            class NoCallClient:
+                def rank_alfworld_actions(self, *args, **kwargs):
+                    raise AssertionError("disk cache should satisfy the second run")
+
+            second = run_alfworld_llm_shortlist_transfer(
+                out,
+                client=NoCallClient(),
+                model="mock-shortlist",
+                ranker_checkpoint=checkpoint,
+                episodes=1,
+                max_steps=3,
+                shortlist_k=2,
+                shortlist_cache_path=cache_path,
+                policies=("Frozen LLM top-1",),
+                env_factory=lambda **_kwargs: FakeDenseAlfworldEnv(),
+            )
+            self.assertTrue(second["shortlist_cache_loaded"])
+            self.assertEqual(second["new_llm_calls"], 0)
+            self.assertEqual(second["actual_unique_llm_calls"], first["actual_unique_llm_calls"])
+
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]
         weights[canonical_feature_names().index("action_is_write")] = 10.0

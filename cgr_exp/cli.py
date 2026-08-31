@@ -16,6 +16,7 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_llm_shortlist_transfer,
     run_alfworld_llm_shortlist_transfer_from_env,
     run_alfworld_transfer,
+    summarize_alfworld_final_splits,
     summarize_alfworld_final_pipeline,
     summarize_alfworld_llm_shortlist_run,
 )
@@ -137,6 +138,7 @@ COMMANDS = [
     "merge-alfworld-llm-shortlist-shards",
     "summarize-alfworld-llm-shortlist",
     "summarize-alfworld-final-pipeline",
+    "summarize-alfworld-final-splits",
     "run-alfworld-expert-train",
     "run-alfworld-expert-transfer",
 ]
@@ -416,6 +418,9 @@ def main() -> None:
             p.add_argument("--dense-eval-dir", type=Path, required=True)
             p.add_argument("--llm-shortlist-dir", type=Path, default=None)
             p.add_argument("--llm-diagnosis-dir", type=Path, default=None)
+        if name == "summarize-alfworld-final-splits":
+            p.add_argument("--split-summary-dirs", nargs="+", type=Path, required=True)
+            p.add_argument("--split-labels", nargs="+", required=True)
         if name == "run-scheduling-tot-q2":
             p.add_argument("--model", default=None)
             p.add_argument("--train-count", type=int, default=200)
@@ -2324,6 +2329,28 @@ def main() -> None:
             }
             (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
             print(f"wrote {args.output_dir / 'alfworld_final_pipeline_summary.csv'}")
+            return
+        if args.command == "summarize-alfworld-final-splits":
+            manifest = summarize_alfworld_final_splits(
+                args.output_dir,
+                split_summary_dirs=args.split_summary_dirs,
+                split_labels=args.split_labels,
+            )
+            command_manifest = {
+                "command": args.command,
+                "output_dir": str(args.output_dir),
+                "overwrite": args.overwrite,
+                "status": "complete",
+                "benchmark": manifest["benchmark"],
+                "split_labels": manifest["split_labels"],
+                "split_summary_dirs": manifest["split_summary_dirs"],
+                "summary_row_count": manifest["summary_row_count"],
+                "policy_row_count": manifest["policy_row_count"],
+                "readiness_row_count": manifest["readiness_row_count"],
+                "produced_artifacts": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
+            }
+            (args.output_dir / "command_manifest.json").write_text(json.dumps(command_manifest, indent=2, sort_keys=True), encoding="utf-8")
+            print(f"wrote {args.output_dir / 'alfworld_final_seen_unseen_summary.csv'}")
             return
         if args.command == "build-current-experiment-status":
             manifest = build_current_experiment_status(

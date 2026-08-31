@@ -1028,6 +1028,48 @@ def summarize_alfworld_final_pipeline(
     return manifest
 
 
+def summarize_alfworld_final_splits(
+    out_dir: Path,
+    *,
+    split_summary_dirs: Sequence[Path],
+    split_labels: Sequence[str],
+) -> dict[str, object]:
+    if len(split_summary_dirs) != len(split_labels):
+        raise ValueError("split_summary_dirs and split_labels must have the same length")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary_rows: list[dict[str, object]] = []
+    policy_rows: list[dict[str, object]] = []
+    readiness_rows: list[dict[str, object]] = []
+    split_manifests: list[dict[str, object]] = []
+    for label, source_dir in zip(split_labels, split_summary_dirs):
+        manifest = _read_json_object(source_dir / "alfworld_final_pipeline_summary.json")
+        split_manifests.append({"split": label, "source_dir": str(source_dir), "status": manifest.get("status", "missing")})
+        for filename, rows in (
+            ("alfworld_final_pipeline_summary.csv", summary_rows),
+            ("alfworld_final_pipeline_policy_table.csv", policy_rows),
+            ("alfworld_final_pipeline_readiness.csv", readiness_rows),
+        ):
+            for row in _read_csv_rows(source_dir / filename):
+                merged = {"split": label}
+                merged.update(row)
+                rows.append(merged)
+    manifest = {
+        "benchmark": "alfworld_final_seen_unseen_summary",
+        "status": "complete",
+        "split_labels": list(split_labels),
+        "split_summary_dirs": [str(path) for path in split_summary_dirs],
+        "split_manifests": split_manifests,
+        "summary_row_count": len(summary_rows),
+        "policy_row_count": len(policy_rows),
+        "readiness_row_count": len(readiness_rows),
+    }
+    _write_csv(out_dir / "alfworld_final_seen_unseen_summary.csv", summary_rows)
+    _write_csv(out_dir / "alfworld_final_seen_unseen_policy_table.csv", policy_rows)
+    _write_csv(out_dir / "alfworld_final_seen_unseen_readiness.csv", readiness_rows)
+    (out_dir / "alfworld_final_seen_unseen_summary.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
 def audit_alfworld_dense_labels(
     out_dir: Path,
     *,

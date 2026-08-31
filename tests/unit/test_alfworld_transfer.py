@@ -20,6 +20,7 @@ from cgr_exp.alfworld_transfer import (
     run_alfworld_expert_transfer,
     run_alfworld_llm_shortlist_transfer,
     run_alfworld_transfer,
+    summarize_alfworld_final_splits,
     summarize_alfworld_final_pipeline,
     summarize_alfworld_llm_shortlist_run,
     _contract_filtered_admissible_commands,
@@ -1903,6 +1904,46 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertEqual(readiness[1]["status"], "pass")
             self.assertEqual(readiness[3]["status"], "warn")
             self.assertEqual(readiness[5]["status"], "warn")
+
+    def test_summarize_alfworld_final_splits_merges_seen_unseen_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seen = root / "seen"
+            unseen = root / "unseen"
+            out = root / "merged"
+            for source, policy, success in (
+                (seen, "seen-policy", "1.0"),
+                (unseen, "unseen-policy", "0.0"),
+            ):
+                source.mkdir()
+                (source / "alfworld_final_pipeline_summary.json").write_text(json.dumps({"status": "complete"}), encoding="utf-8")
+                with (source / "alfworld_final_pipeline_summary.csv").open("w", encoding="utf-8", newline="") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=["stage", "best_policy", "best_success"])
+                    writer.writeheader()
+                    writer.writerow({"stage": "llm_shortlist_eval", "best_policy": policy, "best_success": success})
+                with (source / "alfworld_final_pipeline_policy_table.csv").open("w", encoding="utf-8", newline="") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=["protocol", "policy", "success"])
+                    writer.writeheader()
+                    writer.writerow({"protocol": "llm_shortlist_eval", "policy": policy, "success": success})
+                with (source / "alfworld_final_pipeline_readiness.csv").open("w", encoding="utf-8", newline="") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=["gate", "status"])
+                    writer.writeheader()
+                    writer.writerow({"gate": "llm_sample_size", "status": "warn"})
+
+            manifest = summarize_alfworld_final_splits(
+                out,
+                split_summary_dirs=(seen, unseen),
+                split_labels=("valid_seen", "valid_unseen"),
+            )
+            self.assertEqual(manifest["benchmark"], "alfworld_final_seen_unseen_summary")
+            self.assertEqual(manifest["summary_row_count"], 2)
+            with (out / "alfworld_final_seen_unseen_summary.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual([row["split"] for row in rows], ["valid_seen", "valid_unseen"])
+            self.assertEqual(rows[0]["best_policy"], "seen-policy")
+            with (out / "alfworld_final_seen_unseen_policy_table.csv").open() as handle:
+                policy_rows = list(csv.DictReader(handle))
+            self.assertEqual(policy_rows[1]["split"], "valid_unseen")
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]

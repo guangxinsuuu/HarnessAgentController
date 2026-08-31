@@ -160,6 +160,43 @@ class LLMAdapterTest(unittest.TestCase):
         self.assertEqual(prompt["task"], "alfworld_admissible_action_shortlist")
         self.assertEqual(prompt["admissible_actions"][1]["command"], "take apple")
 
+    def test_openai_compatible_http_client_accepts_structured_and_one_based_alfworld_indices(self) -> None:
+        requests = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "choices": [{"message": {"content": '{"ranked_indices":[{"index":3},{"action_index":1}]}'}}],
+                        "usage": {"prompt_tokens": 19, "completion_tokens": 6},
+                    }
+                ).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            requests.append((request, timeout))
+            return FakeResponse()
+
+        client = OpenAICompatibleHTTPClient(
+            base_url="https://llm.example/v1",
+            api_key="secret-key",
+            model="test-model",
+            urlopen=fake_urlopen,
+        )
+        response = client.rank_alfworld_actions(
+            objective="put apple on table",
+            observation="You see a table.",
+            history=["obs:You see a table."],
+            admissible=["look", "take apple", "go to kitchen"],
+            k=2,
+        )
+        self.assertEqual(response["ranked_indices"], [2, 0])
+
     def test_openai_compatible_http_client_uses_state_local_game24_prompt(self) -> None:
         requests = []
 

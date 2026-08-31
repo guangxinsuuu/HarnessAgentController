@@ -627,13 +627,20 @@ def _parse_ranked_indices(raw: str, candidate_count: int) -> list[int]:
         ranking = parsed.get("ranking")
     if not isinstance(ranking, list):
         return fallback
-    clean: list[int] = []
-    seen: set[int] = set()
+    raw_indices: list[int] = []
     for item in ranking:
+        value = item
+        if isinstance(item, dict):
+            value = item.get("index", item.get("action_index", item.get("candidate_index")))
         try:
-            idx = int(item)
+            raw_indices.append(int(value))
         except (TypeError, ValueError):
             continue
+    if raw_indices and min(raw_indices) >= 1 and max(raw_indices) == candidate_count:
+        raw_indices = [idx - 1 for idx in raw_indices]
+    clean: list[int] = []
+    seen: set[int] = set()
+    for idx in raw_indices:
         if 0 <= idx < candidate_count and idx not in seen:
             clean.append(idx)
             seen.add(idx)

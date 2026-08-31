@@ -1538,6 +1538,12 @@ class AlfworldTransferTest(unittest.TestCase):
                 self.assertIn("cache_hits", row)
                 self.assertIn("proposal_recall_at_k", row)
                 self.assertIn("mean_llm_shortlist_size", row)
+                self.assertIn("mean_llm_explicit_ranked_count", row)
+                self.assertIn("mean_llm_explicit_top_k_count", row)
+                self.assertIn("mean_llm_fallback_filled_count", row)
+                self.assertIn("llm_parse_fallback_rate", row)
+                self.assertIn("llm_one_based_index_fix_rate", row)
+                self.assertIn("mean_llm_invalid_ranked_items", row)
             with (out / "alfworld_llm_shortlist_step_trace.csv").open() as handle:
                 trace_rows = list(csv.DictReader(handle))
             self.assertGreater(len(trace_rows), 0)
@@ -1546,6 +1552,12 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("diagnostic_in_shortlist", trace_rows[0])
             self.assertIn("llm_new_call", trace_rows[0])
             self.assertIn("llm_input_tokens", trace_rows[0])
+            self.assertIn("llm_explicit_ranked_count", trace_rows[0])
+            self.assertIn("llm_explicit_top_k_count", trace_rows[0])
+            self.assertIn("llm_fallback_filled_count", trace_rows[0])
+            self.assertIn("llm_parse_fallback_used", trace_rows[0])
+            self.assertIn("llm_one_based_index_fix_applied", trace_rows[0])
+            self.assertIn("llm_invalid_ranked_items", trace_rows[0])
 
     def test_run_alfworld_llm_shortlist_transfer_reuses_disk_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1591,6 +1603,7 @@ class AlfworldTransferTest(unittest.TestCase):
                 rows = list(csv.DictReader(handle))
             self.assertEqual(rows[0]["new_llm_calls"], "0")
             self.assertGreater(int(rows[0]["cache_hits"]), 0)
+            self.assertIn("mean_llm_explicit_ranked_count", rows[0])
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]

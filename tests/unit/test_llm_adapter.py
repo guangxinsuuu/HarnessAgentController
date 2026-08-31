@@ -153,6 +153,11 @@ class LLMAdapterTest(unittest.TestCase):
             k=2,
         )
         self.assertEqual(response["ranked_indices"], [2, 0])
+        self.assertEqual(response["explicit_ranked_count"], 2)
+        self.assertEqual(response["explicit_top_k_count"], 2)
+        self.assertEqual(response["fallback_filled_count"], 1)
+        self.assertFalse(response["parse_fallback_used"])
+        self.assertEqual(response["invalid_ranked_items"], 3)
         self.assertEqual(response["input_tokens"], 17)
         self.assertEqual(response["output_tokens"], 5)
         body = json.loads(requests[0][0].data.decode("utf-8"))
@@ -196,6 +201,11 @@ class LLMAdapterTest(unittest.TestCase):
             k=2,
         )
         self.assertEqual(response["ranked_indices"], [2, 0])
+        self.assertEqual(response["explicit_ranked_count"], 2)
+        self.assertEqual(response["explicit_top_k_count"], 2)
+        self.assertEqual(response["fallback_filled_count"], 1)
+        self.assertTrue(response["one_based_index_fix_applied"])
+        self.assertFalse(response["parse_fallback_used"])
 
     def test_openai_compatible_http_client_uses_state_local_game24_prompt(self) -> None:
         requests = []

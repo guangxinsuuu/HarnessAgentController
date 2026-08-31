@@ -177,6 +177,12 @@ class AlfworldLLMShortlistCache:
                     "output_tokens": int(row.get("output_tokens", 0)),
                     "latency": float(row.get("latency", 0.0)),
                     "raw_output": str(row.get("raw_output", "")),
+                    "explicit_ranked_count": int(row.get("explicit_ranked_count", 0)),
+                    "explicit_top_k_count": int(row.get("explicit_top_k_count", 0)),
+                    "fallback_filled_count": int(row.get("fallback_filled_count", 0)),
+                    "parse_fallback_used": bool(row.get("parse_fallback_used", False)),
+                    "one_based_index_fix_applied": bool(row.get("one_based_index_fix_applied", False)),
+                    "invalid_ranked_items": int(row.get("invalid_ranked_items", 0)),
                     "cache_hit": False,
                 }
 
@@ -229,12 +235,21 @@ class AlfworldLLMShortlistCache:
             top_p=self.top_p,
         )
         ranked_indices = _clean_ranked_indices(response.get("ranked_indices", []), len(admissible))
+        explicit_ranked_count = int(response.get("explicit_ranked_count", len(ranked_indices)))
+        explicit_ranked_count = max(0, min(explicit_ranked_count, len(admissible)))
+        explicit_top_k_count = int(response.get("explicit_top_k_count", min(explicit_ranked_count, max(1, self.k))))
         row = {
             "ranked_indices": ranked_indices[: max(1, self.k)],
             "input_tokens": int(response.get("input_tokens", 0)),
             "output_tokens": int(response.get("output_tokens", 0)),
             "latency": float(response.get("latency", 0.0)),
             "raw_output": str(response.get("raw_output", "")),
+            "explicit_ranked_count": explicit_ranked_count,
+            "explicit_top_k_count": max(0, min(explicit_top_k_count, max(1, self.k))),
+            "fallback_filled_count": int(response.get("fallback_filled_count", max(0, len(admissible) - explicit_ranked_count))),
+            "parse_fallback_used": bool(response.get("parse_fallback_used", explicit_ranked_count == 0)),
+            "one_based_index_fix_applied": bool(response.get("one_based_index_fix_applied", False)),
+            "invalid_ranked_items": int(response.get("invalid_ranked_items", 0)),
             "cache_hit": False,
         }
         self._cache[key] = dict(row)
@@ -3557,6 +3572,12 @@ def _run_llm_shortlist_episode(
         selection["llm_new_call"] = 0 if shortlist_record.get("cache_hit") else 1
         selection["llm_input_tokens"] = int(shortlist_record.get("input_tokens", 0))
         selection["llm_output_tokens"] = int(shortlist_record.get("output_tokens", 0))
+        selection["llm_explicit_ranked_count"] = int(shortlist_record.get("explicit_ranked_count", 0))
+        selection["llm_explicit_top_k_count"] = int(shortlist_record.get("explicit_top_k_count", 0))
+        selection["llm_fallback_filled_count"] = int(shortlist_record.get("fallback_filled_count", 0))
+        selection["llm_parse_fallback_used"] = 1 if shortlist_record.get("parse_fallback_used") else 0
+        selection["llm_one_based_index_fix_applied"] = 1 if shortlist_record.get("one_based_index_fix_applied") else 0
+        selection["llm_invalid_ranked_items"] = int(shortlist_record.get("invalid_ranked_items", 0))
         if command not in admissible:
             invalid_actions += 1
         next_obs, scores, dones, info = env.step([command])
@@ -3585,6 +3606,12 @@ def _run_llm_shortlist_episode(
                     "llm_new_call": selection["llm_new_call"],
                     "llm_input_tokens": selection["llm_input_tokens"],
                     "llm_output_tokens": selection["llm_output_tokens"],
+                    "llm_explicit_ranked_count": selection["llm_explicit_ranked_count"],
+                    "llm_explicit_top_k_count": selection["llm_explicit_top_k_count"],
+                    "llm_fallback_filled_count": selection["llm_fallback_filled_count"],
+                    "llm_parse_fallback_used": selection["llm_parse_fallback_used"],
+                    "llm_one_based_index_fix_applied": selection["llm_one_based_index_fix_applied"],
+                    "llm_invalid_ranked_items": selection["llm_invalid_ranked_items"],
                 }
             )
             step_trace_rows.append(row)
@@ -4605,7 +4632,22 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
     by_policy: dict[str, dict[str, float]] = {}
     for row in step_trace_rows:
         policy = str(row.get("policy", ""))
-        stats = by_policy.setdefault(policy, {"steps": 0.0, "available": 0.0, "matched": 0.0, "in_shortlist": 0.0, "shortlist_size": 0.0})
+        stats = by_policy.setdefault(
+            policy,
+            {
+                "steps": 0.0,
+                "available": 0.0,
+                "matched": 0.0,
+                "in_shortlist": 0.0,
+                "shortlist_size": 0.0,
+                "explicit_ranked_count": 0.0,
+                "explicit_top_k_count": 0.0,
+                "fallback_filled_count": 0.0,
+                "parse_fallback_used": 0.0,
+                "one_based_index_fix_applied": 0.0,
+                "invalid_ranked_items": 0.0,
+            },
+        )
         stats["steps"] += 1.0
         if str(row.get("diagnostic_command", "")).strip():
             stats["available"] += 1.0
@@ -4621,17 +4663,51 @@ def _with_step_trace_diagnostics(rows: list[dict[str, object]], step_trace_rows:
             shortlist_size = float(row.get("llm_shortlist_size", 0.0))
         except (TypeError, ValueError):
             shortlist_size = 0.0
+        for field in (
+            "llm_explicit_ranked_count",
+            "llm_explicit_top_k_count",
+            "llm_fallback_filled_count",
+            "llm_parse_fallback_used",
+            "llm_one_based_index_fix_applied",
+            "llm_invalid_ranked_items",
+        ):
+            try:
+                value = float(row.get(field, 0.0))
+            except (TypeError, ValueError):
+                value = 0.0
+            stats[field.removeprefix("llm_")] += value
         stats["matched"] += 1.0 if matched else 0.0
         stats["in_shortlist"] += 1.0 if in_shortlist else 0.0
         stats["shortlist_size"] += shortlist_size
     for row in rows:
-        stats = by_policy.get(str(row.get("policy", "")), {"steps": 0.0, "available": 0.0, "matched": 0.0, "in_shortlist": 0.0, "shortlist_size": 0.0})
+        stats = by_policy.get(
+            str(row.get("policy", "")),
+            {
+                "steps": 0.0,
+                "available": 0.0,
+                "matched": 0.0,
+                "in_shortlist": 0.0,
+                "shortlist_size": 0.0,
+                "explicit_ranked_count": 0.0,
+                "explicit_top_k_count": 0.0,
+                "fallback_filled_count": 0.0,
+                "parse_fallback_used": 0.0,
+                "one_based_index_fix_applied": 0.0,
+                "invalid_ranked_items": 0.0,
+            },
+        )
         steps = stats["steps"]
         available = stats["available"]
         row["diagnostic_available_rate"] = 0.0 if steps == 0.0 else available / steps
         row["diagnostic_match_rate"] = 0.0 if available == 0.0 else stats["matched"] / available
         row["proposal_recall_at_k"] = 0.0 if available == 0.0 else stats["in_shortlist"] / available
         row["mean_llm_shortlist_size"] = 0.0 if steps == 0.0 else stats["shortlist_size"] / steps
+        row["mean_llm_explicit_ranked_count"] = 0.0 if steps == 0.0 else stats["explicit_ranked_count"] / steps
+        row["mean_llm_explicit_top_k_count"] = 0.0 if steps == 0.0 else stats["explicit_top_k_count"] / steps
+        row["mean_llm_fallback_filled_count"] = 0.0 if steps == 0.0 else stats["fallback_filled_count"] / steps
+        row["llm_parse_fallback_rate"] = 0.0 if steps == 0.0 else stats["parse_fallback_used"] / steps
+        row["llm_one_based_index_fix_rate"] = 0.0 if steps == 0.0 else stats["one_based_index_fix_applied"] / steps
+        row["mean_llm_invalid_ranked_items"] = 0.0 if steps == 0.0 else stats["invalid_ranked_items"] / steps
     return rows
 
 

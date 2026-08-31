@@ -337,13 +337,21 @@ class OpenAICompatibleHTTPClient:
         body = self._post_json(req)
         content = body["choices"][0]["message"]["content"]
         usage = body.get("usage", {})
-        ranked_indices = _parse_ranked_indices(content, len(admissible))
+        ranked_metadata = _parse_ranked_indices_with_metadata(content, len(admissible))
+        ranked_indices = list(ranked_metadata["ranked_indices"])
+        shortlist_len = max(1, k)
         return {
-            "ranked_indices": ranked_indices[: max(1, k)],
+            "ranked_indices": ranked_indices[:shortlist_len],
             "input_tokens": int(usage.get("prompt_tokens", 0)),
             "output_tokens": int(usage.get("completion_tokens", 0)),
             "latency": time.perf_counter() - started,
             "raw_output": content,
+            "explicit_ranked_count": int(ranked_metadata["explicit_ranked_count"]),
+            "explicit_top_k_count": min(int(ranked_metadata["explicit_ranked_count"]), shortlist_len),
+            "fallback_filled_count": int(ranked_metadata["fallback_filled_count"]),
+            "parse_fallback_used": bool(ranked_metadata["parse_fallback_used"]),
+            "one_based_index_fix_applied": bool(ranked_metadata["one_based_index_fix_applied"]),
+            "invalid_ranked_items": int(ranked_metadata["invalid_ranked_items"]),
         }
 
     def _prompt_for_state_score(self, task, node) -> str:
@@ -617,17 +625,38 @@ def _parse_frontier_scores(raw: str, nodes: Sequence[object]) -> list[float]:
 
 
 def _parse_ranked_indices(raw: str, candidate_count: int) -> list[int]:
+    return list(_parse_ranked_indices_with_metadata(raw, candidate_count)["ranked_indices"])
+
+
+def _parse_ranked_indices_with_metadata(raw: str, candidate_count: int) -> dict[str, object]:
     fallback = list(range(candidate_count))
     try:
         parsed = json.loads(raw)
     except Exception:
-        return fallback
+        return {
+            "ranked_indices": fallback,
+            "explicit_ranked_count": 0,
+            "explicit_top_k_count": 0,
+            "fallback_filled_count": candidate_count,
+            "parse_fallback_used": True,
+            "one_based_index_fix_applied": False,
+            "invalid_ranked_items": 0,
+        }
     ranking = parsed.get("ranked_indices") if isinstance(parsed, dict) else parsed
     if ranking is None and isinstance(parsed, dict):
         ranking = parsed.get("ranking")
     if not isinstance(ranking, list):
-        return fallback
+        return {
+            "ranked_indices": fallback,
+            "explicit_ranked_count": 0,
+            "explicit_top_k_count": 0,
+            "fallback_filled_count": candidate_count,
+            "parse_fallback_used": True,
+            "one_based_index_fix_applied": False,
+            "invalid_ranked_items": 0,
+        }
     raw_indices: list[int] = []
+    invalid_items = 0
     for item in ranking:
         value = item
         if isinstance(item, dict):
@@ -635,8 +664,10 @@ def _parse_ranked_indices(raw: str, candidate_count: int) -> list[int]:
         try:
             raw_indices.append(int(value))
         except (TypeError, ValueError):
+            invalid_items += 1
             continue
-    if raw_indices and min(raw_indices) >= 1 and max(raw_indices) == candidate_count:
+    one_based_fix = bool(raw_indices and min(raw_indices) >= 1 and max(raw_indices) == candidate_count)
+    if one_based_fix:
         raw_indices = [idx - 1 for idx in raw_indices]
     clean: list[int] = []
     seen: set[int] = set()
@@ -644,8 +675,19 @@ def _parse_ranked_indices(raw: str, candidate_count: int) -> list[int]:
         if 0 <= idx < candidate_count and idx not in seen:
             clean.append(idx)
             seen.add(idx)
+        else:
+            invalid_items += 1
+    explicit_ranked_count = len(clean)
     clean.extend(idx for idx in fallback if idx not in seen)
-    return clean
+    return {
+        "ranked_indices": clean,
+        "explicit_ranked_count": explicit_ranked_count,
+        "explicit_top_k_count": explicit_ranked_count,
+        "fallback_filled_count": max(0, candidate_count - explicit_ranked_count),
+        "parse_fallback_used": explicit_ranked_count == 0,
+        "one_based_index_fix_applied": one_based_fix,
+        "invalid_ranked_items": invalid_items,
+    }
 
 
 class RealLLMProposerAdapter:

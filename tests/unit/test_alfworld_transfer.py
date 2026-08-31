@@ -1533,6 +1533,9 @@ class AlfworldTransferTest(unittest.TestCase):
             for row in rows:
                 self.assertGreater(int(row["llm_calls"]), 0)
                 self.assertGreater(int(row["tokens"]), 0)
+                self.assertIn("new_llm_calls", row)
+                self.assertIn("new_tokens", row)
+                self.assertIn("cache_hits", row)
                 self.assertIn("proposal_recall_at_k", row)
                 self.assertIn("mean_llm_shortlist_size", row)
             with (out / "alfworld_llm_shortlist_step_trace.csv").open() as handle:
@@ -1541,6 +1544,7 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertIn("llm_shortlist", trace_rows[0])
             self.assertIn("llm_shortlist_size", trace_rows[0])
             self.assertIn("diagnostic_in_shortlist", trace_rows[0])
+            self.assertIn("llm_new_call", trace_rows[0])
             self.assertIn("llm_input_tokens", trace_rows[0])
 
     def test_run_alfworld_llm_shortlist_transfer_reuses_disk_cache(self) -> None:
@@ -1583,6 +1587,10 @@ class AlfworldTransferTest(unittest.TestCase):
             self.assertTrue(second["shortlist_cache_loaded"])
             self.assertEqual(second["new_llm_calls"], 0)
             self.assertEqual(second["actual_unique_llm_calls"], first["actual_unique_llm_calls"])
+            with (out / "alfworld_llm_shortlist_table.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(rows[0]["new_llm_calls"], "0")
+            self.assertGreater(int(rows[0]["cache_hits"]), 0)
 
     def test_llm_shortlist_dense_ranker_only_selects_within_shortlist(self) -> None:
         weights = [0.0 for _name in canonical_feature_names()]

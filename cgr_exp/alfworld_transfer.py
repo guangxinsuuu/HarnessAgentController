@@ -65,6 +65,9 @@ class AlfworldEpisodeResult:
     wall_clock_seconds: float
     tokens: int = 0
     llm_calls: int = 0
+    new_tokens: int = 0
+    new_llm_calls: int = 0
+    cache_hits: int = 0
 
 
 @dataclass(frozen=True)
@@ -3490,6 +3493,9 @@ def _run_llm_shortlist_episode(
     done = False
     token_total = 0
     call_total = 0
+    new_token_total = 0
+    new_call_total = 0
+    cache_hits = 0
     for step in range(max_steps):
         admissible = _contract_filtered_admissible_commands(
             _admissible_from_info(info),
@@ -3523,6 +3529,11 @@ def _run_llm_shortlist_episode(
         ]
         token_total += int(shortlist_record.get("input_tokens", 0)) + int(shortlist_record.get("output_tokens", 0))
         call_total += 1
+        if shortlist_record.get("cache_hit"):
+            cache_hits += 1
+        else:
+            new_call_total += 1
+            new_token_total += int(shortlist_record.get("input_tokens", 0)) + int(shortlist_record.get("output_tokens", 0))
         command, selection = _select_llm_shortlist_command(
             policy=policy,
             observation=observation,
@@ -3543,6 +3554,7 @@ def _run_llm_shortlist_episode(
         selection["llm_shortlist"] = " | ".join(shortlist_commands)
         selection["llm_shortlist_size"] = len(shortlist_commands)
         selection["llm_cache_hit"] = 1 if shortlist_record.get("cache_hit") else 0
+        selection["llm_new_call"] = 0 if shortlist_record.get("cache_hit") else 1
         selection["llm_input_tokens"] = int(shortlist_record.get("input_tokens", 0))
         selection["llm_output_tokens"] = int(shortlist_record.get("output_tokens", 0))
         if command not in admissible:
@@ -3570,6 +3582,7 @@ def _run_llm_shortlist_episode(
                     "llm_shortlist_size": selection["llm_shortlist_size"],
                     "diagnostic_in_shortlist": selection["diagnostic_in_shortlist"],
                     "llm_cache_hit": selection["llm_cache_hit"],
+                    "llm_new_call": selection["llm_new_call"],
                     "llm_input_tokens": selection["llm_input_tokens"],
                     "llm_output_tokens": selection["llm_output_tokens"],
                 }
@@ -3594,6 +3607,9 @@ def _run_llm_shortlist_episode(
         wall_clock_seconds=time.perf_counter() - start,
         tokens=token_total,
         llm_calls=call_total,
+        new_tokens=new_token_total,
+        new_llm_calls=new_call_total,
+        cache_hits=cache_hits,
     )
 
 
@@ -4579,6 +4595,9 @@ def _aggregate_policy(policy: str, rows: Sequence[AlfworldEpisodeResult]) -> dic
         "episodes": total,
         "tokens": 0 if total == 0 else sum(row.tokens for row in rows),
         "llm_calls": 0 if total == 0 else sum(row.llm_calls for row in rows),
+        "new_tokens": 0 if total == 0 else sum(row.new_tokens for row in rows),
+        "new_llm_calls": 0 if total == 0 else sum(row.new_llm_calls for row in rows),
+        "cache_hits": 0 if total == 0 else sum(row.cache_hits for row in rows),
     }
 
 

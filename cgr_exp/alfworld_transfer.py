@@ -223,6 +223,8 @@ def run_alfworld_dense_transfer(
     ranker_model: str = ALFWORLD_RANKER_MODEL_LINEAR,
     rank_hidden_dim: int = 32,
     rank_lr: float = 0.03,
+    aggregation_rounds: int = 0,
+    aggregation_episodes: int = 0,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -261,6 +263,8 @@ def run_alfworld_dense_transfer(
             ranker_model=ranker_model,
             rank_hidden_dim=rank_hidden_dim,
             rank_lr=rank_lr,
+            aggregation_rounds=aggregation_rounds,
+            aggregation_episodes=aggregation_episodes,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
             max_episode_label_seconds=max_episode_label_seconds,
@@ -348,6 +352,8 @@ def audit_alfworld_dense_labels(
     ranker_model: str = ALFWORLD_RANKER_MODEL_LINEAR,
     rank_hidden_dim: int = 32,
     rank_lr: float = 0.03,
+    aggregation_rounds: int = 0,
+    aggregation_episodes: int = 0,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -385,6 +391,8 @@ def audit_alfworld_dense_labels(
             ranker_model=ranker_model,
             rank_hidden_dim=rank_hidden_dim,
             rank_lr=rank_lr,
+            aggregation_rounds=aggregation_rounds,
+            aggregation_episodes=aggregation_episodes,
             counterfactual_rollout_steps=counterfactual_rollout_steps,
             planner_timeout_seconds=planner_timeout_seconds,
             max_episode_label_seconds=max_episode_label_seconds,
@@ -441,6 +449,8 @@ def run_alfworld_dense_train(
     ranker_model: str = ALFWORLD_RANKER_MODEL_LINEAR,
     rank_hidden_dim: int = 32,
     rank_lr: float = 0.03,
+    aggregation_rounds: int = 0,
+    aggregation_episodes: int = 0,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -475,6 +485,8 @@ def run_alfworld_dense_train(
         ranker_model=ranker_model,
         rank_hidden_dim=rank_hidden_dim,
         rank_lr=rank_lr,
+        aggregation_rounds=aggregation_rounds,
+        aggregation_episodes=aggregation_episodes,
         counterfactual_rollout_steps=counterfactual_rollout_steps,
         planner_timeout_seconds=planner_timeout_seconds,
         max_episode_label_seconds=max_episode_label_seconds,
@@ -782,6 +794,8 @@ def train_alfworld_dense_ranker(
     ranker_model: str = ALFWORLD_RANKER_MODEL_LINEAR,
     rank_hidden_dim: int = 32,
     rank_lr: float = 0.03,
+    aggregation_rounds: int = 0,
+    aggregation_episodes: int = 0,
     counterfactual_rollout_steps: int = 20,
     planner_timeout_seconds: float = ALFWORLD_PLANNER_LABEL_TIMEOUT_SECONDS,
     max_episode_label_seconds: float = 0.0,
@@ -1155,6 +1169,8 @@ def train_alfworld_dense_ranker(
         trace_rows.append(
             {
                 "episode": episode,
+                "aggregation_round": "",
+                "rollout_policy": "base_training_policy",
                 "pairs": episode_pairs,
                 "action_labels": episode_labels,
                 "steps": _action_count(history),
@@ -1186,11 +1202,61 @@ def train_alfworld_dense_ranker(
     if cache_dir is not None:
         dense_feature_cache_manifest_compatible = _alfworld_dense_cache_manifest_compatible(cache_dir / "alfworld_dense_cache_manifest.json")
     ranker_model = _normalize_alfworld_ranker_model(ranker_model)
-    if ranker_model == ALFWORLD_RANKER_MODEL_MLP:
-        ranker = GenericHarnessMLPRanker(len(canonical_feature_names()), hidden_dim=rank_hidden_dim, seed=seed)
-    else:
-        ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
-    ranker.train(pairs, epochs=epochs, lr=rank_lr, seed=seed)
+    ranker = _fit_alfworld_dense_ranker(
+        pairs,
+        ranker_model=ranker_model,
+        rank_hidden_dim=rank_hidden_dim,
+        epochs=epochs,
+        rank_lr=rank_lr,
+        seed=seed,
+    )
+    aggregation_round_summaries: list[dict[str, object]] = []
+    aggregation_rounds = max(0, int(aggregation_rounds))
+    aggregation_episodes = int(aggregation_episodes if aggregation_episodes > 0 else train_episodes)
+    for round_idx in range(aggregation_rounds):
+        summary = _collect_alfworld_dense_ranker_aggregation_round(
+            seed=seed,
+            round_idx=round_idx,
+            episode_offset=train_episodes + round_idx * aggregation_episodes,
+            episodes=aggregation_episodes,
+            completed_episodes=completed_episodes,
+            config_path=config_path,
+            max_steps=max_steps,
+            max_pairs_per_state=max_pairs_per_state,
+            max_frontier_actions=max_frontier_actions,
+            frontier_strategy=frontier_strategy,
+            counterfactual_rollout_steps=counterfactual_rollout_steps,
+            planner_timeout_seconds=planner_timeout_seconds,
+            max_episode_label_seconds=max_episode_label_seconds,
+            label_source=label_source,
+            ranker=ranker,
+            pairs=pairs,
+            trace_rows=trace_rows,
+            action_label_rows=action_label_rows,
+            cache_dir=cache_dir,
+            planner_label_cache=planner_label_cache,
+            planner_label_cache_path=planner_label_cache_path,
+            env_factory=env_factory,
+        )
+        aggregation_round_summaries.append(summary)
+        labeled_states += int(summary.get("labeled_states", 0))
+        skipped_states += int(summary.get("skipped_states", 0))
+        finite_action_labels += int(summary.get("finite_action_labels", 0))
+        infinite_action_labels += int(summary.get("infinite_action_labels", 0))
+        episode_label_timeouts += int(summary.get("episode_label_timeouts", 0))
+        planner_label_cache_hits += int(summary.get("planner_label_cache_hits", 0))
+        planner_label_cache_misses += int(summary.get("planner_label_cache_misses", 0))
+        for key, value in dict(summary.get("label_status_counts", {})).items():
+            label_status_counts[str(key)] = label_status_counts.get(str(key), 0) + int(value)
+        if int(summary.get("added_pairs", 0)) > 0:
+            ranker = _fit_alfworld_dense_ranker(
+                pairs,
+                ranker_model=ranker_model,
+                rank_hidden_dim=rank_hidden_dim,
+                epochs=epochs,
+                rank_lr=rank_lr,
+                seed=seed + round_idx + 1,
+            )
     pre_projection_train_diagnostics = _alfworld_pairwise_ranker_diagnostics(ranker, pairs)
     ranker_pre_projection_diagnostics = _alfworld_ranker_weight_diagnostics(ranker)
     ranker_projection = _project_alfworld_ranker_contract_signs(ranker)
@@ -1247,6 +1313,12 @@ def train_alfworld_dense_ranker(
         "ranker_model": ranker_model,
         "rank_hidden_dim": rank_hidden_dim if ranker_model == ALFWORLD_RANKER_MODEL_MLP else 0,
         "rank_lr": rank_lr,
+        "aggregation_rounds": aggregation_rounds,
+        "aggregation_episodes": aggregation_episodes,
+        "aggregation_added_pairs": sum(int(row.get("added_pairs", 0)) for row in aggregation_round_summaries),
+        "aggregation_added_states": sum(int(row.get("labeled_states", 0)) for row in aggregation_round_summaries),
+        "aggregation_rollout_policy": "current_dense_ranker",
+        "aggregation_round_summaries": aggregation_round_summaries,
         "max_pairs_per_state": max_pairs_per_state,
         "max_frontier_actions": max_frontier_actions,
         "frontier_strategy": frontier_strategy,
@@ -1333,6 +1405,300 @@ def alfworld_candidate_to_canonical(
         max_steps=max_steps,
     )
     return CanonicalCandidate(candidate_id=candidate_id, state=state, action=action)
+
+
+def _fit_alfworld_dense_ranker(
+    pairs: Sequence[tuple[tuple[float, ...], tuple[float, ...]]],
+    *,
+    ranker_model: str,
+    rank_hidden_dim: int,
+    epochs: int,
+    rank_lr: float,
+    seed: int,
+) -> GenericHarnessRanker | GenericHarnessMLPRanker:
+    ranker_model = _normalize_alfworld_ranker_model(ranker_model)
+    if ranker_model == ALFWORLD_RANKER_MODEL_MLP:
+        ranker: GenericHarnessRanker | GenericHarnessMLPRanker = GenericHarnessMLPRanker(
+            len(canonical_feature_names()),
+            hidden_dim=rank_hidden_dim,
+            seed=seed,
+        )
+    else:
+        ranker = GenericHarnessRanker.create(len(canonical_feature_names()), seed=seed)
+    ranker.train(pairs, epochs=epochs, lr=rank_lr, seed=seed)
+    return ranker
+
+
+def _collect_alfworld_dense_ranker_aggregation_round(
+    *,
+    seed: int,
+    round_idx: int,
+    episode_offset: int,
+    episodes: int,
+    completed_episodes: set[int],
+    config_path: Path | None,
+    max_steps: int,
+    max_pairs_per_state: int,
+    max_frontier_actions: int,
+    frontier_strategy: str,
+    counterfactual_rollout_steps: int,
+    planner_timeout_seconds: float,
+    max_episode_label_seconds: float,
+    label_source: str,
+    ranker: GenericHarnessRanker | GenericHarnessMLPRanker,
+    pairs: list[tuple[tuple[float, ...], tuple[float, ...]]],
+    trace_rows: list[dict[str, object]],
+    action_label_rows: list[dict[str, object]],
+    cache_dir: Path | None,
+    planner_label_cache: dict[str, AlfworldDenseActionLabel],
+    planner_label_cache_path: Path | None,
+    env_factory: Callable[..., Any] | None,
+) -> dict[str, object]:
+    if episodes <= 0:
+        return {
+            "round": round_idx,
+            "episodes": 0,
+            "skipped_completed_episodes": 0,
+            "added_pairs": 0,
+            "labeled_states": 0,
+            "skipped_states": 0,
+            "finite_action_labels": 0,
+            "infinite_action_labels": 0,
+            "episode_label_timeouts": 0,
+            "planner_label_cache_hits": 0,
+            "planner_label_cache_misses": 0,
+            "label_status_counts": {},
+        }
+
+    rng = random.Random(seed * 1000003 + round_idx)
+    train_env = _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
+    if label_source == ALFWORLD_DENSE_LABEL_PLANNER:
+        label_env = _make_alfworld_planner_env(env_factory=env_factory)
+    elif label_source == ALFWORLD_DENSE_LABEL_REPLAY:
+        label_env = _make_alfworld_env(split="train", config_path=config_path, env_factory=env_factory, training_method="dagger")
+    else:
+        label_env = None
+    walkthrough_cache: dict[str, list[str]] = {}
+    added_pairs = 0
+    labeled_states = 0
+    skipped_states = 0
+    finite_action_labels = 0
+    infinite_action_labels = 0
+    skipped_completed = 0
+    episode_label_timeouts = 0
+    planner_label_cache_hits = 0
+    planner_label_cache_misses = 0
+    label_status_counts: dict[str, int] = {}
+
+    for local_episode in range(episodes):
+        episode = episode_offset + local_episode
+        if episode in completed_episodes:
+            train_env.reset()
+            skipped_completed += 1
+            continue
+        obs, info = train_env.reset()
+        observation = _first(obs)
+        objective = _objective_from_info(info, observation)
+        gamefile = _gamefile_from_info(info)
+        history: list[str] = [f"obs:{observation}"]
+        prefix: list[str] = []
+        episode_pairs = 0
+        episode_labels = 0
+        episode_pair_rows: list[dict[str, object]] = []
+        episode_state_label_rows: list[dict[str, object]] = []
+        final_score = 0.0
+        skip_reason = ""
+        episode_start = time.perf_counter()
+        for step in range(max_steps):
+            if max_episode_label_seconds > 0.0 and (time.perf_counter() - episode_start) >= max_episode_label_seconds:
+                skip_reason = "aggregation_episode_label_timeout"
+                episode_label_timeouts += 1
+                break
+            admissible = _contract_filtered_admissible_commands(
+                _admissible_from_info(info),
+                observation=observation,
+                objective=objective,
+                history=history,
+                max_steps=max_steps,
+            )
+            if not admissible:
+                break
+            frontier = _frontier_sample(
+                admissible,
+                expert=None,
+                max_frontier_actions=max_frontier_actions,
+                strategy=frontier_strategy,
+                rng=rng,
+                observation=observation,
+                objective=objective,
+                history=history,
+                max_steps=max_steps,
+            )
+            if label_source == ALFWORLD_DENSE_LABEL_WALKTHROUGH:
+                labels = _label_frontier_by_walkthrough_suffix(
+                    gamefile=gamefile,
+                    prefix=prefix,
+                    commands=frontier,
+                    max_rollout_steps=counterfactual_rollout_steps,
+                    walkthrough_cache=walkthrough_cache,
+                )
+            elif label_source == ALFWORLD_DENSE_LABEL_PLANNER:
+                if label_env is None:
+                    raise RuntimeError("planner ALFWorld aggregation requires a PDDL planner environment")
+                labels = _label_frontier_by_planner_cost(
+                    label_env,
+                    gamefile=gamefile,
+                    prefix=prefix,
+                    commands=frontier,
+                    max_rollout_steps=counterfactual_rollout_steps,
+                    timeout_seconds=planner_timeout_seconds,
+                    label_cache=planner_label_cache,
+                    cache_path=planner_label_cache_path,
+                )
+                planner_label_cache_hits += sum(1 for label in labels if label.label_status.endswith("_cache_hit"))
+                planner_label_cache_misses += sum(1 for label in labels if not label.label_status.endswith("_cache_hit"))
+            else:
+                if label_env is None:
+                    raise RuntimeError("replay-prefix ALFWorld aggregation requires a label environment")
+                labels = _label_frontier_by_expert_rollout(
+                    label_env,
+                    gamefile=gamefile,
+                    prefix=prefix,
+                    commands=frontier,
+                    max_rollout_steps=counterfactual_rollout_steps,
+                )
+            labels = _annotate_alfworld_dense_label_ranks(labels)
+            row_labels = []
+            for label in labels:
+                action_label = AlfworldDenseActionLabel(
+                    episode=episode,
+                    step=step,
+                    command=label.command,
+                    cost_to_success=label.cost_to_success,
+                    reachable=label.reachable,
+                    final_score=label.final_score,
+                    rollout_steps=label.rollout_steps,
+                    label_source=label.label_source,
+                    label_status=label.label_status,
+                    pairwise_usable=label.pairwise_usable,
+                    oracle_rank=label.oracle_rank,
+                    best_cost_to_success=label.best_cost_to_success,
+                    cost_gap_to_best=label.cost_gap_to_best,
+                )
+                action_label_rows.append(action_label.__dict__)
+                row_labels.append(label)
+                finite_action_labels += 1 if label.reachable else 0
+                infinite_action_labels += 0 if label.reachable else 1
+                label_status_counts[label.label_status] = label_status_counts.get(label.label_status, 0) + 1
+            episode_labels += len(labels)
+            state_pairs = _dense_labels_to_pairs(
+                labels=row_labels,
+                observation=observation,
+                objective=objective,
+                history=history,
+                admissible_commands=admissible,
+                max_steps=max_steps,
+                max_pairs=max_pairs_per_state,
+                rng=rng,
+                episode=episode,
+                step=step,
+            )
+            if state_pairs:
+                labeled_states += 1
+                pairs.extend(state_pairs)
+                episode_pairs += len(state_pairs)
+                added_pairs += len(state_pairs)
+                episode_pair_rows.extend(
+                    {
+                        "episode": episode,
+                        "positive": list(positive),
+                        "negative": list(negative),
+                        **_alfworld_dense_pair_cache_metadata(),
+                    }
+                    for positive, negative in state_pairs
+                )
+            else:
+                skipped_states += 1
+            command, _selection = _select_command_with_trace(
+                "ALFWorld dense-ranker",
+                observation,
+                objective,
+                history,
+                admissible,
+                ranker,
+                rng,
+                max_steps,
+            )
+            episode_state_label_rows.append(
+                _alfworld_dense_state_label_cache_row(
+                    episode=episode,
+                    step=step,
+                    observation=observation,
+                    objective=objective,
+                    history=history,
+                    admissible_commands=admissible,
+                    max_steps=max_steps,
+                    labels=row_labels,
+                    label_source=label_source,
+                    selected_rollout_command=command,
+                    selected_rollout_source=f"aggregation_ranker_round_{round_idx}",
+                )
+            )
+            next_obs, scores, dones, info = train_env.step([command])
+            prefix.append(command)
+            final_score = float(_first(scores, 0.0))
+            observation = str(_first(next_obs, ""))
+            history.extend([f"act:{command}", f"obs:{observation}"])
+            if bool(_first(dones, False)):
+                break
+        trace_rows.append(
+            {
+                "episode": episode,
+                "aggregation_round": round_idx,
+                "rollout_policy": "current_dense_ranker",
+                "pairs": episode_pairs,
+                "action_labels": episode_labels,
+                "steps": _action_count(history),
+                "final_score": final_score,
+                "label_seconds": time.perf_counter() - episode_start,
+                "skip_reason": skip_reason,
+                "planner_path_cost_monotone_checks": "",
+                "planner_path_cost_monotone_failures": "",
+                "planner_path_cost_monotone_inconclusive": "",
+            }
+        )
+        completed_episodes.add(episode)
+        if cache_dir is not None:
+            _append_alfworld_dense_training_cache(
+                cache_dir,
+                pair_rows=episode_pair_rows,
+                state_label_rows=episode_state_label_rows,
+                trace_rows=trace_rows,
+                action_label_rows=action_label_rows,
+            )
+        print(
+            "[alfworld-dense-aggregate] "
+            f"round={round_idx + 1}, {local_episode + 1}/{episodes} episodes, "
+            f"states={labeled_states}, added_pairs={added_pairs}, "
+            f"finite_labels={finite_action_labels}, inf_labels={infinite_action_labels}",
+            flush=True,
+        )
+
+    return {
+        "round": round_idx,
+        "episodes": episodes,
+        "episode_offset": episode_offset,
+        "skipped_completed_episodes": skipped_completed,
+        "added_pairs": added_pairs,
+        "labeled_states": labeled_states,
+        "skipped_states": skipped_states,
+        "finite_action_labels": finite_action_labels,
+        "infinite_action_labels": infinite_action_labels,
+        "episode_label_timeouts": episode_label_timeouts,
+        "planner_label_cache_hits": planner_label_cache_hits,
+        "planner_label_cache_misses": planner_label_cache_misses,
+        "label_status_counts": dict(sorted(label_status_counts.items())),
+    }
 
 
 def alfworld_runtime_features(

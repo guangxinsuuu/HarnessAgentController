@@ -1244,6 +1244,34 @@ class AlfworldTransferTest(unittest.TestCase):
         self.assertIn("pairwise_usable_action_labels", manifest["train"])
         self.assertIn("censored_action_label_rate", manifest["train"])
 
+    def test_run_alfworld_dense_train_can_collect_ranker_aggregation_states(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "dense-train"
+            manifest = run_alfworld_dense_train(
+                out,
+                train_episodes=1,
+                max_steps=4,
+                epochs=2,
+                max_pairs_per_state=8,
+                max_frontier_actions=2,
+                counterfactual_rollout_steps=4,
+                planner_timeout_seconds=1,
+                label_source="planner",
+                warmup_random_steps=0,
+                perturbation_prob=0.0,
+                aggregation_rounds=1,
+                aggregation_episodes=1,
+                env_factory=lambda **_kwargs: FakePlannerBatchAlfworldEnv(),
+            )
+        self.assertEqual(manifest["train"]["aggregation_rounds"], 1)
+        self.assertEqual(manifest["train"]["aggregation_episodes"], 1)
+        self.assertEqual(manifest["train"]["aggregation_rollout_policy"], "current_dense_ranker")
+        self.assertGreater(manifest["train"]["aggregation_added_pairs"], 0)
+        self.assertGreater(manifest["train"]["aggregation_added_states"], 0)
+        self.assertEqual(manifest["target_eval_trajectories_used_for_training"], False)
+        self.assertEqual(manifest["llm_rollout_trajectories_used"], False)
+        self.assertGreater(manifest["train"]["pairwise_usable_action_labels"], 0)
+
     def test_run_alfworld_dense_train_can_resume_pair_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "dense-train"

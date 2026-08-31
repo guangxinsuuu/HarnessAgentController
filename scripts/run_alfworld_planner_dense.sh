@@ -23,6 +23,8 @@ EPOCHS="${EPOCHS:-10}"
 RANKER_MODEL="${RANKER_MODEL:-linear}"
 RANK_HIDDEN_DIM="${RANK_HIDDEN_DIM:-32}"
 RANK_LR="${RANK_LR:-0.03}"
+AGGREGATION_ROUNDS="${AGGREGATION_ROUNDS:-0}"
+AGGREGATION_EPISODES="${AGGREGATION_EPISODES:-0}"
 MAX_PAIRS_PER_STATE="${MAX_PAIRS_PER_STATE:-16}"
 if [[ "${MODE}" == "smoke" ]]; then
   MAX_FRONTIER_ACTIONS="${MAX_FRONTIER_ACTIONS:-4}"
@@ -62,6 +64,7 @@ Common environment overrides:
   RANKER_MODEL=linear     # or mlp
   RANK_HIDDEN_DIM=32
   RANK_LR=0.03
+  AGGREGATION_ROUNDS=1 AGGREGATION_EPISODES=20
   MAX_FRONTIER_ACTIONS=6 PLANNER_TIMEOUT_SECONDS=3
   FRONTIER_STRATEGY=score-diverse
   MAX_EPISODE_LABEL_SECONDS=60
@@ -91,6 +94,8 @@ run_audit() {
     --ranker-model "${RANKER_MODEL}" \
     --rank-hidden-dim "${RANK_HIDDEN_DIM}" \
     --rank-lr "${RANK_LR}" \
+    --aggregation-rounds "${AGGREGATION_ROUNDS}" \
+    --aggregation-episodes "${AGGREGATION_EPISODES}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
@@ -117,6 +122,8 @@ run_train() {
     --ranker-model "${RANKER_MODEL}" \
     --rank-hidden-dim "${RANK_HIDDEN_DIM}" \
     --rank-lr "${RANK_LR}" \
+    --aggregation-rounds "${AGGREGATION_ROUNDS}" \
+    --aggregation-episodes "${AGGREGATION_EPISODES}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \
@@ -146,6 +153,8 @@ run_eval() {
     --ranker-model "${RANKER_MODEL}" \
     --rank-hidden-dim "${RANK_HIDDEN_DIM}" \
     --rank-lr "${RANK_LR}" \
+    --aggregation-rounds "${AGGREGATION_ROUNDS}" \
+    --aggregation-episodes "${AGGREGATION_EPISODES}" \
     --counterfactual-rollout-steps "${COUNTERFACTUAL_ROLLOUT_STEPS}" \
     --planner-timeout-seconds "${PLANNER_TIMEOUT_SECONDS}" \
     --max-episode-label-seconds "${MAX_EPISODE_LABEL_SECONDS}" \

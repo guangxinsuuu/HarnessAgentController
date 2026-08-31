@@ -295,6 +295,8 @@ def main() -> None:
             p.add_argument("--ranker-model", choices=("linear", "mlp"), default="linear")
             p.add_argument("--rank-hidden-dim", type=int, default=32)
             p.add_argument("--rank-lr", type=float, default=0.03)
+            p.add_argument("--aggregation-rounds", type=int, default=0)
+            p.add_argument("--aggregation-episodes", type=int, default=0)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
             p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
             p.add_argument("--max-episode-label-seconds", type=float, default=0.0)
@@ -343,6 +345,8 @@ def main() -> None:
             p.add_argument("--ranker-model", choices=("linear", "mlp"), default="linear")
             p.add_argument("--rank-hidden-dim", type=int, default=32)
             p.add_argument("--rank-lr", type=float, default=0.03)
+            p.add_argument("--aggregation-rounds", type=int, default=0)
+            p.add_argument("--aggregation-episodes", type=int, default=0)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
             p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
             p.add_argument("--max-episode-label-seconds", type=float, default=0.0)
@@ -363,6 +367,8 @@ def main() -> None:
             p.add_argument("--ranker-model", choices=("linear", "mlp"), default="linear")
             p.add_argument("--rank-hidden-dim", type=int, default=32)
             p.add_argument("--rank-lr", type=float, default=0.03)
+            p.add_argument("--aggregation-rounds", type=int, default=0)
+            p.add_argument("--aggregation-episodes", type=int, default=0)
             p.add_argument("--counterfactual-rollout-steps", type=int, default=20)
             p.add_argument("--planner-timeout-seconds", type=float, default=8.0)
             p.add_argument("--max-episode-label-seconds", type=float, default=0.0)
@@ -1852,6 +1858,8 @@ def main() -> None:
                 ranker_model=args.ranker_model,
                 rank_hidden_dim=args.rank_hidden_dim,
                 rank_lr=args.rank_lr,
+                aggregation_rounds=args.aggregation_rounds,
+                aggregation_episodes=args.aggregation_episodes,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
                 planner_timeout_seconds=args.planner_timeout_seconds,
                 max_episode_label_seconds=args.max_episode_label_seconds,
@@ -2025,6 +2033,8 @@ def main() -> None:
                 ranker_model=args.ranker_model,
                 rank_hidden_dim=args.rank_hidden_dim,
                 rank_lr=args.rank_lr,
+                aggregation_rounds=args.aggregation_rounds,
+                aggregation_episodes=args.aggregation_episodes,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
                 planner_timeout_seconds=args.planner_timeout_seconds,
                 max_episode_label_seconds=args.max_episode_label_seconds,
@@ -2048,6 +2058,10 @@ def main() -> None:
                 "ranker_model": manifest["train"]["ranker_model"],
                 "rank_hidden_dim": manifest["train"]["rank_hidden_dim"],
                 "rank_lr": manifest["train"]["rank_lr"],
+                "aggregation_rounds": manifest["train"].get("aggregation_rounds", 0),
+                "aggregation_episodes": manifest["train"].get("aggregation_episodes", 0),
+                "aggregation_added_pairs": manifest["train"].get("aggregation_added_pairs", 0),
+                "aggregation_added_states": manifest["train"].get("aggregation_added_states", 0),
                 "counterfactual_planner_cost_to_go": manifest["train"]["counterfactual_planner_cost_to_go"],
                 "meta_commands_filtered_from_frontier": manifest["meta_commands_filtered_from_frontier"],
                 "llm_rollout_trajectories_used": manifest["llm_rollout_trajectories_used"],
@@ -2081,6 +2095,8 @@ def main() -> None:
                 ranker_model=args.ranker_model,
                 rank_hidden_dim=args.rank_hidden_dim,
                 rank_lr=args.rank_lr,
+                aggregation_rounds=args.aggregation_rounds,
+                aggregation_episodes=args.aggregation_episodes,
                 counterfactual_rollout_steps=args.counterfactual_rollout_steps,
                 planner_timeout_seconds=args.planner_timeout_seconds,
                 max_episode_label_seconds=args.max_episode_label_seconds,
@@ -2108,6 +2124,10 @@ def main() -> None:
                 "ranker_model": manifest["train"].get("ranker_model", args.ranker_model),
                 "rank_hidden_dim": manifest["train"].get("rank_hidden_dim", args.rank_hidden_dim),
                 "rank_lr": args.rank_lr,
+                "aggregation_rounds": manifest["train"].get("aggregation_rounds", args.aggregation_rounds),
+                "aggregation_episodes": manifest["train"].get("aggregation_episodes", args.aggregation_episodes),
+                "aggregation_added_pairs": manifest["train"].get("aggregation_added_pairs", 0),
+                "aggregation_added_states": manifest["train"].get("aggregation_added_states", 0),
                 "counterfactual_planner_cost_to_go": manifest["train"]["counterfactual_planner_cost_to_go"],
                 "meta_commands_filtered_from_frontier": manifest["meta_commands_filtered_from_frontier"],
                 "llm_rollout_trajectories_used": manifest["llm_rollout_trajectories_used"],
